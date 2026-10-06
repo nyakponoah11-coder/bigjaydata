@@ -214,6 +214,7 @@ export default async function HomePage() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 lg:gap-8">
           {allNetworkKeys.map((networkKey) => {
             const theme = getNetworkTheme(networkKey);
+            const networkProducts = networksMap.get(networkKey) || [];
             const hasPackages = networkProducts.length > 0;
             const startingPrice = hasPackages
               ? Math.min(...networkProducts.map((p) => p.price))
