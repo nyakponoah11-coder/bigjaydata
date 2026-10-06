@@ -34,7 +34,7 @@ export default function Footer({
               </span>
             </Link>
             <p className="text-xs text-slate-400 leading-relaxed">
-              Ghana's premier automated mobile data platform (DATA1GH). Get instant, affordable MTN, Telecel, and AT data packages delivered directly to your line in seconds.
+              Ghana's premier automated mobile data platform. Get instant, affordable MTN, Telecel, and AT data packages delivered directly to your line in seconds.
             </p>
             <div className="flex items-center gap-2 text-xs text-emerald-400 font-medium">
               <ShieldCheck className="w-4 h-4 text-emerald-400" />
@@ -139,14 +139,14 @@ export default function Footer({
         {/* Bottom Bar */}
         <div className="pt-8 mt-8 border-t border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-500">
           <p>
-            &copy; {currentYear} {storeName} (DATA1GH). All rights reserved. Automated Telco Gateway.
+            &copy; {currentYear} {storeName}. All rights reserved. Automated Telco Gateway.
           </p>
           <div className="flex items-center gap-4 text-[11px]">
             <span className="flex items-center gap-1 text-slate-400">
               Secured with <span className="font-semibold text-emerald-400">Paystack</span>
             </span>
             <span>•</span>
-            <span className="text-slate-400">DataMart Integrated</span>
+            <span className="text-slate-300 font-medium">Built by Stoney</span>
           </div>
         </div>
       </div>

@@ -140,7 +140,7 @@ export default function ReceiptClientView({ initialOrder, reference, settings }:
             {isDelivered ? (
               <span>Your line has been credited with high-speed internet data.</span>
             ) : isPending ? (
-              <span>Your bundle is dispatching through DataMart API gateway.</span>
+              <span>Your bundle is dispatching through automated telecom gateway.</span>
             ) : (
               <span>Automatic dispatch failed. Our admin team will push your package manually.</span>
             )}
@@ -168,7 +168,7 @@ export default function ReceiptClientView({ initialOrder, reference, settings }:
                   🎉 Congratulations!
                 </strong>
                 Your <strong>{order.network.toUpperCase()} {order.package_size}</strong> data bundle has been successfully credited to{" "}
-                <strong>{order.phone}</strong>. Thank you for buying from {settings.store_name} (DATA1GH)!
+                <strong>{order.phone}</strong>. Thank you for buying from {settings.store_name}!
               </div>
             </div>
           ) : isPending ? (
@@ -178,7 +178,7 @@ export default function ReceiptClientView({ initialOrder, reference, settings }:
                 <strong className="block font-bold mb-0.5 text-amber-800">
                   ⏳ Delivery In Progress
                 </strong>
-                Our automated DataMart dispatch is crediting your line. This typically takes 15 to 60 seconds.
+                Our automated dispatch is crediting your line. This typically takes 15 to 60 seconds.
                 Click <em>"Refresh Status"</em> below to check for instant completion.
               </div>
             </div>

@@ -3,10 +3,10 @@ import "./globals.css";
 import SocialProofPopup from "@/components/SocialProofPopup";
 
 export const metadata: Metadata = {
-  title: "BIGJ DATA (DATA1GH) | Instant Mobile Data Bundles in Ghana",
+  title: "BIGJ DATA | Instant Mobile Data Bundles in Ghana",
   description:
-    "Buy cheap MTN, Telecel, and AT data bundles instantly in Ghana. Fully automated 24/7 delivery to your phone line via DataMart & Paystack.",
-  keywords: "BIGJ DATA, DATA1GH, buy data Ghana, MTN cheap data, Telecel data bundle, AT data, DataMart Ghana",
+    "Buy cheap MTN, Telecel, and AT data bundles instantly in Ghana. Fully automated 24/7 delivery to your phone line via Paystack.",
+  keywords: "BIGJ DATA, buy data Ghana, MTN cheap data, Telecel data bundle, AT data, instant internet Ghana",
 };
 
 export default function RootLayout({

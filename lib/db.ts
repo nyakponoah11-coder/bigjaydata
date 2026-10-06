@@ -191,36 +191,78 @@ export const db = {
   },
 
   async addProduct(product: Omit<Product, "id" | "created_at">): Promise<Product> {
-    const newProduct: Product = {
-      ...product,
-      id: "prod-" + Math.random().toString(36).substring(2, 9),
-      created_at: new Date().toISOString(),
-    };
-
     if (isSupabaseConfigured && supabaseAdmin) {
       try {
-        const { data, error } = await supabaseAdmin.from("products").insert([newProduct]).select().single();
-        if (!error && data) return data as Product;
-      } catch (err) {
-        console.error("Supabase addProduct error:", err);
+        const { data, error } = await supabaseAdmin
+          .from("products")
+          .insert([
+            {
+              network: product.network.toLowerCase().trim(),
+              size: product.size.trim(),
+              price: Number(product.price),
+              cost_price: Number(product.cost_price || 0),
+              is_active: product.is_active !== false,
+            },
+          ])
+          .select()
+          .single();
+        if (error) {
+          console.error("Supabase addProduct error:", error);
+          throw new Error(error.message);
+        }
+        if (data) {
+          const created = data as Product;
+          globalStore.__bigj_products = [created, ...(globalStore.__bigj_products || [])];
+          return created;
+        }
+      } catch (err: any) {
+        console.error("Supabase addProduct exception:", err?.message || err);
+        throw err;
       }
     }
 
-    globalStore.__bigj_products!.push(newProduct);
+    const newProduct: Product = {
+      ...product,
+      id: crypto.randomUUID(),
+      created_at: new Date().toISOString(),
+    };
+    globalStore.__bigj_products = [newProduct, ...(globalStore.__bigj_products || [])];
     return newProduct;
   },
 
   async updateProduct(id: string, updates: Partial<Product>): Promise<Product | null> {
     if (isSupabaseConfigured && supabaseAdmin) {
       try {
-        const { data, error } = await supabaseAdmin.from("products").update(updates).eq("id", id).select().single();
-        if (!error && data) return data as Product;
-      } catch (err) {
-        console.error("Supabase updateProduct error:", err);
+        const payload: any = {};
+        if (updates.network !== undefined) payload.network = updates.network.toLowerCase().trim();
+        if (updates.size !== undefined) payload.size = updates.size.trim();
+        if (updates.price !== undefined) payload.price = Number(updates.price);
+        if (updates.cost_price !== undefined) payload.cost_price = Number(updates.cost_price);
+        if (updates.is_active !== undefined) payload.is_active = updates.is_active;
+
+        const { data, error } = await supabaseAdmin
+          .from("products")
+          .update(payload)
+          .eq("id", id)
+          .select()
+          .single();
+        if (error) {
+          console.error("Supabase updateProduct error:", error);
+          throw new Error(error.message);
+        }
+        if (data) {
+          const updated = data as Product;
+          const idx = (globalStore.__bigj_products || []).findIndex((p) => p.id === id);
+          if (idx !== -1) globalStore.__bigj_products![idx] = updated;
+          return updated;
+        }
+      } catch (err: any) {
+        console.error("Supabase updateProduct exception:", err?.message || err);
+        throw err;
       }
     }
 
-    const index = globalStore.__bigj_products!.findIndex((p) => p.id === id);
+    const index = (globalStore.__bigj_products || []).findIndex((p) => p.id === id);
     if (index === -1) return null;
     globalStore.__bigj_products![index] = { ...globalStore.__bigj_products![index], ...updates };
     return globalStore.__bigj_products![index];
@@ -230,13 +272,19 @@ export const db = {
     if (isSupabaseConfigured && supabaseAdmin) {
       try {
         const { error } = await supabaseAdmin.from("products").delete().eq("id", id);
-        if (!error) return true;
-      } catch (err) {
-        console.error("Supabase deleteProduct error:", err);
+        if (error) {
+          console.error("Supabase deleteProduct error:", error);
+          throw new Error(error.message);
+        }
+        globalStore.__bigj_products = (globalStore.__bigj_products || []).filter((p) => p.id !== id);
+        return true;
+      } catch (err: any) {
+        console.error("Supabase deleteProduct exception:", err?.message || err);
+        throw err;
       }
     }
 
-    const index = globalStore.__bigj_products!.findIndex((p) => p.id === id);
+    const index = (globalStore.__bigj_products || []).findIndex((p) => p.id === id);
     if (index === -1) return false;
     globalStore.__bigj_products!.splice(index, 1);
     return true;
@@ -328,20 +376,44 @@ export const db = {
   },
 
   async createOrder(orderData: Omit<Order, "id" | "created_at">): Promise<Order> {
-    const newOrder: Order = {
-      ...orderData,
-      id: "ord-" + Math.random().toString(36).substring(2, 9),
-      created_at: new Date().toISOString(),
-    };
-
     if (isSupabaseConfigured && supabaseAdmin) {
       try {
-        const { data, error } = await supabaseAdmin.from("orders").insert([newOrder]).select().single();
-        if (!error && data) return data as Order;
-      } catch (err) {
-        console.error("Supabase createOrder error:", err);
+        const { data, error } = await supabaseAdmin
+          .from("orders")
+          .insert([
+            {
+              reference: orderData.reference,
+              network: orderData.network.toLowerCase().trim(),
+              package_size: orderData.package_size.trim(),
+              phone: orderData.phone.trim(),
+              amount: Number(orderData.amount),
+              paystack_ref: orderData.paystack_ref || null,
+              status: orderData.status || "pending",
+              datamart_response: orderData.datamart_response || {},
+            },
+          ])
+          .select()
+          .single();
+        if (error) {
+          console.error("Supabase createOrder error:", error);
+          throw new Error(error.message);
+        }
+        if (data) {
+          const ord = data as Order;
+          globalStore.__bigj_orders = [ord, ...(globalStore.__bigj_orders || [])];
+          return ord;
+        }
+      } catch (err: any) {
+        console.error("Supabase createOrder exception:", err?.message || err);
+        throw err;
       }
     }
+
+    const newOrder: Order = {
+      ...orderData,
+      id: crypto.randomUUID(),
+      created_at: new Date().toISOString(),
+    };
 
     globalStore.__bigj_orders!.unshift(newOrder);
     return newOrder;

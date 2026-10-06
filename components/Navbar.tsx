@@ -25,11 +25,8 @@ export default function Navbar({
               <Signal className="w-5 h-5 text-white" />
             </div>
             <div className="flex flex-col">
-              <span className="font-extrabold text-lg sm:text-xl tracking-tight text-slate-900 dark:text-white flex items-center gap-1.5">
+              <span className="font-extrabold text-lg sm:text-xl tracking-tight text-slate-900 dark:text-white">
                 {storeName}
-                <span className="text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300">
-                  DATA1GH
-                </span>
               </span>
               <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium tracking-wide">
                 Ghana's #1 Automated Data Hub

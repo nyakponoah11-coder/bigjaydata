@@ -109,16 +109,19 @@ export default function AdminProductsPage() {
             network: finalNetwork,
             size: size.trim(),
             price: Number(price),
-            cost_price: Number(costPrice || 0),
+            cost_price: 0,
             is_active: isActive,
           }),
         });
         const data = await res.json();
-        if (data.success) {
-          setNotice(`Updated ${size} ${finalNetwork.toUpperCase()} bundle`);
-          setIsModalOpen(false);
-          fetchProducts();
+        if (!res.ok || !data.success) {
+          alert(`Error updating product: ${data.message || "Unknown error"}`);
+          setSubmitting(false);
+          return;
         }
+        setNotice(`Updated ${size} ${finalNetwork.toUpperCase()} bundle`);
+        setIsModalOpen(false);
+        await fetchProducts();
       } else {
         // POST
         const res = await fetch("/api/admin/products", {
@@ -128,20 +131,24 @@ export default function AdminProductsPage() {
             network: finalNetwork,
             size: size.trim(),
             price: Number(price),
-            cost_price: Number(costPrice || 0),
+            cost_price: 0,
             is_active: isActive,
           }),
         });
         const data = await res.json();
-        if (data.success) {
-          setNotice(`Added new ${size} ${finalNetwork.toUpperCase()} bundle`);
-          setIsModalOpen(false);
-          fetchProducts();
+        if (!res.ok || !data.success) {
+          alert(`Error adding product: ${data.message || "Unknown error"}`);
+          setSubmitting(false);
+          return;
         }
+        setNotice(`Added new ${size} ${finalNetwork.toUpperCase()} bundle`);
+        setIsModalOpen(false);
+        await fetchProducts();
       }
       setTimeout(() => setNotice(""), 3000);
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
+      alert(`Network error: ${e?.message || "Failed to save product"}`);
     } finally {
       setSubmitting(false);
     }
@@ -273,8 +280,6 @@ export default function AdminProductsPage() {
                   <th className="py-3.5 pl-4">Network</th>
                   <th className="py-3.5">Size</th>
                   <th className="py-3.5">Selling Price</th>
-                  <th className="py-3.5">Cost (DataMart)</th>
-                  <th className="py-3.5">Est. Profit</th>
                   <th className="py-3.5">Status</th>
                   <th className="py-3.5 text-right pr-4">Actions</th>
                 </tr>
@@ -282,14 +287,12 @@ export default function AdminProductsPage() {
               <tbody className="divide-y divide-slate-800/60">
                 {filteredProducts.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="py-8 text-center text-slate-500">
+                    <td colSpan={5} className="py-8 text-center text-slate-500">
                       No packages found for this network.
                     </td>
                   </tr>
                 ) : (
                   filteredProducts.map((p) => {
-                    const profit = Number(p.price) - Number(p.cost_price || 0);
-
                     return (
                       <tr key={p.id} className="hover:bg-slate-800/40 transition-colors">
                         <td className="py-3.5 pl-4 font-bold uppercase text-white">
@@ -313,12 +316,6 @@ export default function AdminProductsPage() {
                         </td>
                         <td className="py-3.5 font-bold text-emerald-400 text-sm">
                           GHS {Number(p.price).toFixed(2)}
-                        </td>
-                        <td className="py-3.5 text-slate-400 font-medium">
-                          GHS {Number(p.cost_price).toFixed(2)}
-                        </td>
-                        <td className="py-3.5 text-amber-400 font-semibold">
-                          +GHS {profit.toFixed(2)}
                         </td>
                         <td className="py-3.5">
                           <button
@@ -451,26 +448,6 @@ export default function AdminProductsPage() {
                     onChange={(e) => setPrice(e.target.value)}
                     className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
                   />
-                </div>
-
-                {/* Cost Price */}
-                <div>
-                  <label className="block text-xs font-semibold text-slate-400 mb-1">
-                    DataMart Cost Price (GHS)
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    placeholder="24.00"
-                    value={costPrice}
-                    onChange={(e) => setCostPrice(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  />
-                  {price && costPrice && (
-                    <span className="text-[11px] text-emerald-400 mt-1 block">
-                      Estimated profit per sale: +GHS {(Number(price) - Number(costPrice)).toFixed(2)}
-                    </span>
-                  )}
                 </div>
 
                 {/* Active Toggle */}

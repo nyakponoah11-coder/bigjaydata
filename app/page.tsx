@@ -316,7 +316,7 @@ export default async function HomePage() {
               </div>
               <h3 className="text-xl font-bold text-slate-900 mb-2">Automated Fast Delivery</h3>
               <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">
-                Our server integrates directly with high-speed telco gateways via DataMart API. As soon as your Paystack payment clears, your data is pushed instantly to your phone.
+                Our server integrates directly with high-speed telco gateways. As soon as your Paystack payment clears, your data is pushed instantly to your phone.
               </p>
             </div>
 

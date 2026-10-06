@@ -300,7 +300,7 @@ export default function CheckoutModal({ product, isOpen, onClose, settings }: Pr
           {/* Trust badges */}
           <div className="mt-4 flex items-center justify-center gap-2 text-[11px] text-slate-400 text-center">
             <ShieldCheck className="w-4 h-4 text-emerald-500" />
-            <span>256-bit SSL Encrypted • Powered by Paystack & DataMart</span>
+            <span>256-bit SSL Encrypted • Powered by Paystack • Instant Delivery</span>
           </div>
         </div>
       </div>
