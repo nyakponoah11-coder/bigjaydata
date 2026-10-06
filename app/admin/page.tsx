@@ -1,0 +1,274 @@
+"use client";
+
+import React, { useState, useEffect } from "react";
+import AdminLayout from "@/components/AdminLayout";
+import Link from "next/link";
+import {
+  TrendingUp,
+  ShoppingCart,
+  Clock,
+  AlertTriangle,
+  Calendar,
+  ArrowRight,
+  RefreshCw,
+  Eye,
+  CheckCircle2,
+  Package,
+  Bot,
+} from "lucide-react";
+
+export default function AdminDashboardPage() {
+  const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [stats, setStats] = useState({
+    totalOrdersToday: 0,
+    totalSalesToday: 0,
+    pendingOrdersCount: 0,
+    failedOrdersCount: 0,
+  });
+  const [recentOrders, setRecentOrders] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchStats = async (date: string) => {
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/admin/stats?date=${date}`);
+      const data = await res.json();
+      if (data.success) {
+        setStats(data.stats);
+        setRecentOrders(data.recentOrders || []);
+      }
+    } catch (e) {
+      console.error("Failed to load dashboard metrics:", e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchStats(selectedDate);
+  }, [selectedDate]);
+
+  return (
+    <AdminLayout>
+      <div className="space-y-8 max-w-7xl mx-auto">
+        {/* Top Header & Calendar Date Picker */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
+              Merchant Overview
+            </h1>
+            <p className="text-xs text-slate-400 mt-1">
+              Live automated data dispatch analytics & metrics
+            </p>
+          </div>
+
+          <div className="flex items-center gap-3">
+            {/* Calendar Date Picker */}
+            <div className="flex items-center gap-2 bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs">
+              <Calendar className="w-4 h-4 text-emerald-400 shrink-0" />
+              <input
+                type="date"
+                value={selectedDate}
+                onChange={(e) => setSelectedDate(e.target.value)}
+                className="bg-transparent text-white font-medium focus:outline-none cursor-pointer"
+              />
+            </div>
+
+            <button
+              onClick={() => fetchStats(selectedDate)}
+              className="p-2.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded-xl text-slate-400 hover:text-white transition-colors"
+              title="Refresh Stats"
+            >
+              <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+            </button>
+          </div>
+        </div>
+
+        {/* 4 Metric Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
+          {/* Total Orders Today */}
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-lg">
+            <div className="flex items-center justify-between mb-4">
+              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                Orders on Date
+              </span>
+              <div className="w-10 h-10 rounded-2xl bg-blue-950/60 text-blue-400 flex items-center justify-center">
+                <ShoppingCart className="w-5 h-5" />
+              </div>
+            </div>
+            <div className="text-3xl font-black text-white">
+              {stats.totalOrdersToday}
+            </div>
+            <p className="text-[11px] text-slate-500 mt-2">
+              For {selectedDate}
+            </p>
+          </div>
+
+          {/* Total Sales Today */}
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-lg">
+            <div className="flex items-center justify-between mb-4">
+              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                Sales on Date
+              </span>
+              <div className="w-10 h-10 rounded-2xl bg-emerald-950/60 text-emerald-400 flex items-center justify-center">
+                <TrendingUp className="w-5 h-5" />
+              </div>
+            </div>
+            <div className="text-3xl font-black text-emerald-400">
+              GHS {stats.totalSalesToday.toFixed(2)}
+            </div>
+            <p className="text-[11px] text-slate-500 mt-2">
+              Total transaction volume
+            </p>
+          </div>
+
+          {/* Pending Orders */}
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-lg">
+            <div className="flex items-center justify-between mb-4">
+              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                Pending Orders
+              </span>
+              <div className="w-10 h-10 rounded-2xl bg-amber-950/60 text-amber-400 flex items-center justify-center">
+                <Clock className="w-5 h-5" />
+              </div>
+            </div>
+            <div className="text-3xl font-black text-amber-400">
+              {stats.pendingOrdersCount}
+            </div>
+            <p className="text-[11px] text-slate-500 mt-2">
+              Awaiting telco confirmation
+            </p>
+          </div>
+
+          {/* Failed Orders */}
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-lg">
+            <div className="flex items-center justify-between mb-4">
+              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                Failed Orders
+              </span>
+              <div className="w-10 h-10 rounded-2xl bg-red-950/60 text-red-400 flex items-center justify-center">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+            </div>
+            <div className="text-3xl font-black text-red-400">
+              {stats.failedOrdersCount}
+            </div>
+            <p className="text-[11px] text-slate-500 mt-2">
+              Requires manual review or resend
+            </p>
+          </div>
+        </div>
+
+        {/* AI Agent Quick Bar */}
+        <div className="bg-gradient-to-r from-emerald-950/40 via-slate-900 to-slate-900 border border-emerald-900/40 rounded-3xl p-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-emerald-600 text-white flex items-center justify-center">
+              <Bot className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="font-bold text-white text-sm">AI Agent Command Center</h3>
+              <p className="text-xs text-slate-400">
+                Execute actions with natural language: "mark order BIGJ-XXXX as delivered"
+              </p>
+            </div>
+          </div>
+          <Link
+            href="/admin/ai-agent"
+            className="py-2.5 px-4 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs flex items-center gap-2 transition-colors shrink-0"
+          >
+            Launch AI Terminal
+            <ArrowRight className="w-4 h-4" />
+          </Link>
+        </div>
+
+        {/* Recent 5 Orders Table */}
+        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-lg space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-base font-extrabold text-white tracking-tight">
+              Recent 5 Orders
+            </h2>
+            <Link
+              href="/admin/orders"
+              className="text-xs font-semibold text-emerald-400 hover:text-emerald-300 flex items-center gap-1"
+            >
+              View All Orders
+              <ArrowRight className="w-3.5 h-3.5" />
+            </Link>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead>
+                <tr className="border-b border-slate-800 text-slate-400 font-semibold uppercase tracking-wider">
+                  <th className="pb-3 pl-2">Reference</th>
+                  <th className="pb-3">Network</th>
+                  <th className="pb-3">Package</th>
+                  <th className="pb-3">Phone</th>
+                  <th className="pb-3">Amount</th>
+                  <th className="pb-3">Status</th>
+                  <th className="pb-3">Date</th>
+                  <th className="pb-3 text-right pr-2">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/60">
+                {recentOrders.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="py-6 text-center text-slate-500">
+                      No orders recorded yet.
+                    </td>
+                  </tr>
+                ) : (
+                  recentOrders.map((o) => (
+                    <tr key={o.id} className="hover:bg-slate-800/40 transition-colors">
+                      <td className="py-3.5 pl-2 font-mono font-bold text-white">
+                        {o.reference}
+                      </td>
+                      <td className="py-3.5 font-bold uppercase text-slate-300">
+                        {o.network}
+                      </td>
+                      <td className="py-3.5 font-semibold text-emerald-400">
+                        {o.package_size}
+                      </td>
+                      <td className="py-3.5 font-mono text-slate-300">
+                        {o.phone}
+                      </td>
+                      <td className="py-3.5 font-bold text-white">
+                        GHS {Number(o.amount).toFixed(2)}
+                      </td>
+                      <td className="py-3.5">
+                        <span
+                          className={`px-2 py-0.5 rounded-full font-bold uppercase text-[10px] ${
+                            o.status === "delivered"
+                              ? "bg-emerald-950 text-emerald-400 border border-emerald-800"
+                              : o.status === "pending"
+                              ? "bg-amber-950 text-amber-400 border border-amber-800"
+                              : "bg-red-950 text-red-400 border border-red-800"
+                          }`}
+                        >
+                          {o.status}
+                        </span>
+                      </td>
+                      <td className="py-3.5 text-slate-400">
+                        {new Date(o.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </td>
+                      <td className="py-3.5 text-right pr-2">
+                        <Link
+                          href={`/receipt/${o.reference}`}
+                          target="_blank"
+                          className="inline-flex items-center gap-1 text-[11px] text-emerald-400 hover:text-emerald-300 font-medium"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                          Receipt
+                        </Link>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </AdminLayout>
+  );
+}

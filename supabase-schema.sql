@@ -1,0 +1,114 @@
+-- ========================================================================
+-- BIGJ DATA (DATA1GH) - Supabase Database Schema
+-- Clean script without pre-seeded products (Add products from /admin/products)
+-- ========================================================================
+
+-- 1. PRODUCTS TABLE
+CREATE TABLE IF NOT EXISTS public.products (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    network TEXT NOT NULL,
+    size TEXT NOT NULL,
+    price NUMERIC(10, 2) NOT NULL,
+    cost_price NUMERIC(10, 2) NOT NULL DEFAULT 0.00,
+    is_active BOOLEAN NOT NULL DEFAULT true,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
+);
+
+-- 2. ORDERS TABLE
+CREATE TABLE IF NOT EXISTS public.orders (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    reference TEXT UNIQUE NOT NULL,
+    network TEXT NOT NULL,
+    package_size TEXT NOT NULL,
+    phone TEXT NOT NULL,
+    amount NUMERIC(10, 2) NOT NULL,
+    paystack_ref TEXT,
+    status TEXT NOT NULL DEFAULT 'pending',
+    datamart_response JSONB DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
+);
+
+-- 3. SETTINGS TABLE
+CREATE TABLE IF NOT EXISTS public.settings (
+    id TEXT PRIMARY KEY DEFAULT 'default',
+    store_name TEXT NOT NULL DEFAULT 'BIGJ DATA',
+    support_phone TEXT NOT NULL DEFAULT '+233 55 123 4567',
+    whatsapp_number TEXT NOT NULL DEFAULT '233551234567',
+    email TEXT NOT NULL DEFAULT 'support@bigjdata.com',
+    paystack_public_key TEXT DEFAULT '',
+    paystack_secret_key TEXT DEFAULT '',
+    datamart_api_key TEXT DEFAULT '',
+    datamart_api_url TEXT DEFAULT 'https://api.datamartgh.com/v1',
+    announcement_text TEXT DEFAULT '⚡ Instant Delivery Guarantee: MTN, Telecel & AT packages delivered in under 60 seconds! 24/7 Automated.',
+    announcement_active BOOLEAN NOT NULL DEFAULT true,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
+);
+
+-- 4. MESSAGES TABLE
+CREATE TABLE IF NOT EXISTS public.messages (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name TEXT,
+    phone TEXT,
+    message TEXT NOT NULL,
+    is_read BOOLEAN NOT NULL DEFAULT false,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
+);
+
+-- ENABLE ROW LEVEL SECURITY
+ALTER TABLE public.products ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.orders ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.settings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.messages ENABLE ROW LEVEL SECURITY;
+
+-- CLEAN UP EXISTING POLICIES
+DROP POLICY IF EXISTS "Public read active products" ON public.products;
+DROP POLICY IF EXISTS "Public read settings" ON public.settings;
+DROP POLICY IF EXISTS "Public can insert orders" ON public.orders;
+DROP POLICY IF EXISTS "Public can view own order by reference" ON public.orders;
+DROP POLICY IF EXISTS "Public can insert messages" ON public.messages;
+DROP POLICY IF EXISTS "Service role full access products" ON public.products;
+DROP POLICY IF EXISTS "Service role full access orders" ON public.orders;
+DROP POLICY IF EXISTS "Service role full access settings" ON public.settings;
+DROP POLICY IF EXISTS "Service role full access messages" ON public.messages;
+
+-- CREATE POLICIES (Allow public read, service role full control, and admin inserts)
+CREATE POLICY "Public read active products" ON public.products FOR SELECT USING (true);
+CREATE POLICY "Public read settings" ON public.settings FOR SELECT USING (true);
+CREATE POLICY "Public can insert orders" ON public.orders FOR INSERT WITH CHECK (true);
+CREATE POLICY "Public can view own order by reference" ON public.orders FOR SELECT USING (true);
+CREATE POLICY "Public can insert messages" ON public.messages FOR INSERT WITH CHECK (true);
+
+-- Allow full management (Insert, Update, Delete) on products, orders, settings, messages
+CREATE POLICY "Allow all on products" ON public.products FOR ALL USING (true);
+CREATE POLICY "Allow all on orders" ON public.orders FOR ALL USING (true);
+CREATE POLICY "Allow all on settings" ON public.settings FOR ALL USING (true);
+CREATE POLICY "Allow all on messages" ON public.messages FOR ALL USING (true);
+
+-- INITIAL SETTINGS (Only default store settings, NO pre-seeded products)
+INSERT INTO public.settings (
+    id, store_name, support_phone, whatsapp_number, email, 
+    paystack_public_key, paystack_secret_key, datamart_api_key, datamart_api_url, 
+    announcement_text, announcement_active
+) VALUES (
+    'default',
+    'BIGJ DATA',
+    '+233 55 123 4567',
+    '233551234567',
+    'support@bigjdata.com',
+    '',
+    '',
+    '',
+    'https://api.datamartgh.com/v1',
+    '⚡ Instant automated delivery active! MTN, Telecel & AT packages arrive in under 60 seconds.',
+    true
+) ON CONFLICT (id) DO UPDATE SET
+    store_name = EXCLUDED.store_name,
+    announcement_text = EXCLUDED.announcement_text;
+
+-- INDEXES FOR FAST QUERYING
+CREATE INDEX IF NOT EXISTS idx_products_network ON public.products(network);
+CREATE INDEX IF NOT EXISTS idx_orders_reference ON public.orders(reference);
+CREATE INDEX IF NOT EXISTS idx_orders_phone ON public.orders(phone);
+CREATE INDEX IF NOT EXISTS idx_orders_created_at ON public.orders(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_messages_is_read ON public.messages(is_read);
