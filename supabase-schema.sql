@@ -3,8 +3,14 @@
 -- Clean script without pre-seeded products (Add products from /admin/products)
 -- ========================================================================
 
+-- Drop old or conflicting tables if they already exist
+DROP TABLE IF EXISTS public.settings CASCADE;
+DROP TABLE IF EXISTS public.products CASCADE;
+DROP TABLE IF EXISTS public.orders CASCADE;
+DROP TABLE IF EXISTS public.messages CASCADE;
+
 -- 1. PRODUCTS TABLE
-CREATE TABLE IF NOT EXISTS public.products (
+CREATE TABLE public.products (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     network TEXT NOT NULL,
     size TEXT NOT NULL,
@@ -15,7 +21,7 @@ CREATE TABLE IF NOT EXISTS public.products (
 );
 
 -- 2. ORDERS TABLE
-CREATE TABLE IF NOT EXISTS public.orders (
+CREATE TABLE public.orders (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     reference TEXT UNIQUE NOT NULL,
     network TEXT NOT NULL,
@@ -29,7 +35,7 @@ CREATE TABLE IF NOT EXISTS public.orders (
 );
 
 -- 3. SETTINGS TABLE
-CREATE TABLE IF NOT EXISTS public.settings (
+CREATE TABLE public.settings (
     id TEXT PRIMARY KEY DEFAULT 'default',
     store_name TEXT NOT NULL DEFAULT 'BIGJ DATA',
     support_phone TEXT NOT NULL DEFAULT '+233 55 123 4567',
@@ -46,7 +52,7 @@ CREATE TABLE IF NOT EXISTS public.settings (
 );
 
 -- 4. MESSAGES TABLE
-CREATE TABLE IF NOT EXISTS public.messages (
+CREATE TABLE public.messages (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name TEXT,
     phone TEXT,
