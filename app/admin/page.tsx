@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import AdminLayout from "@/components/AdminLayout";
+import DeliveryTrackerCard from "@/components/DeliveryTrackerCard";
 import Link from "next/link";
 import {
   TrendingUp,
@@ -50,7 +51,10 @@ export default function AdminDashboardPage() {
 
   return (
     <AdminLayout>
-      <div className="space-y-8 max-w-7xl mx-auto">
+      <div className="space-y-6 max-w-7xl mx-auto">
+        {/* Live Delivery Tracker at the very top */}
+        <DeliveryTrackerCard variant="admin" />
+
         {/* Top Header & Calendar Date Picker */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>

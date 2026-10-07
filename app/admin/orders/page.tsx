@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import AdminLayout from "@/components/AdminLayout";
+import DeliveryTrackerCard from "@/components/DeliveryTrackerCard";
 import { Order } from "@/lib/db";
 import {
   Search,
@@ -163,6 +164,9 @@ export default function AdminOrdersPage() {
   return (
     <AdminLayout>
       <div className="space-y-6 max-w-7xl mx-auto">
+        {/* Live Delivery Tracker at the very top */}
+        <DeliveryTrackerCard variant="admin" />
+
         {/* Top Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>

@@ -3,6 +3,7 @@ import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import WhatsAppButton from "@/components/WhatsAppButton";
 import ReceiptClientView from "./ReceiptClientView";
+import DeliveryTrackerCard from "@/components/DeliveryTrackerCard";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 
@@ -26,8 +27,11 @@ export default async function ReceiptPage({
         whatsappNumber={settings.whatsapp_number}
       />
 
-      <main className="flex-1 max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-10 w-full">
-        <div className="mb-6">
+      <main className="flex-1 max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full space-y-6">
+        {/* Live Delivery Tracker at top */}
+        <DeliveryTrackerCard />
+
+        <div className="mb-2">
           <Link
             href="/"
             className="inline-flex items-center gap-2 text-xs font-semibold text-slate-500 hover:text-slate-900 transition-colors"

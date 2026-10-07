@@ -3,6 +3,7 @@ import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import WhatsAppButton from "@/components/WhatsAppButton";
 import TrackClientView from "./TrackClientView";
+import DeliveryTrackerCard from "@/components/DeliveryTrackerCard";
 
 export const revalidate = 0;
 
@@ -16,7 +17,10 @@ export default async function TrackPage() {
         whatsappNumber={settings.whatsapp_number}
       />
 
-      <main className="flex-1 max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12 w-full">
+      <main className="flex-1 max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full space-y-6">
+        {/* Live Delivery Tracker at the top */}
+        <DeliveryTrackerCard />
+
         <TrackClientView storeName={settings.store_name} />
       </main>
 
