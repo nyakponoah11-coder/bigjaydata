@@ -21,7 +21,7 @@ export async function GET() {
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { code, network, package_size, tagline, max_claims } = body;
+    const { code, network, package_size, tagline, max_claims, expires_at } = body;
 
     if (!code || !network || !package_size) {
       return NextResponse.json(
@@ -43,6 +43,7 @@ export async function POST(req: Request) {
       tagline: cleanTagline,
       max_claims: numMaxClaims,
       is_active: true,
+      expires_at: expires_at ? new Date(expires_at).toISOString() : null,
     });
 
     return NextResponse.json({ success: true, voucher });
@@ -58,7 +59,12 @@ export async function POST(req: Request) {
 export async function PATCH(req: Request) {
   try {
     const body = await req.json();
-    const { id, is_active } = body;
+    const { id, is_active, all, expires_at } = body;
+
+    if (all && typeof is_active === "boolean") {
+      await db.toggleAllVouchers(is_active);
+      return NextResponse.json({ success: true, all: true, is_active });
+    }
 
     if (!id || typeof is_active !== "boolean") {
       return NextResponse.json(

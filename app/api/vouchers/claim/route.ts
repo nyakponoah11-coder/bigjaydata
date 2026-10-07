@@ -34,12 +34,14 @@ export async function POST(req: Request) {
     }
 
     // 2. Validate voucher code and availability
+    const now = new Date();
     const vouchers = await db.getVouchers();
     const voucher = vouchers.find(
       (v) =>
         v.is_active &&
         v.code.toUpperCase() === cleanCode &&
-        v.claimed_count < v.max_claims
+        v.claimed_count < v.max_claims &&
+        (!v.expires_at || new Date(v.expires_at) > now)
     );
 
     if (!voucher) {

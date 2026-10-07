@@ -135,8 +135,10 @@ CREATE TABLE IF NOT EXISTS public.vouchers (
     max_claims INTEGER NOT NULL DEFAULT 1,
     claimed_count INTEGER NOT NULL DEFAULT 0,
     is_active BOOLEAN NOT NULL DEFAULT true,
+    expires_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
 );
+ALTER TABLE public.vouchers ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ;
 
 -- 6. VOUCHER CLAIMS TABLE (Enforces: One phone number can only claim one voucher)
 CREATE TABLE IF NOT EXISTS public.voucher_claims (

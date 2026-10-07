@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Gift, Sparkles, ChevronRight } from "lucide-react";
+import { Gift, Clock, Sparkles } from "lucide-react";
 import FreeDataClaimModal from "./FreeDataClaimModal";
 
 interface VoucherInfo {
@@ -10,12 +10,14 @@ interface VoucherInfo {
   network: string;
   package_size: string;
   remaining_claims: number;
+  expires_at?: string | null;
 }
 
 export default function FreeDataBanner() {
   const [voucher, setVoucher] = useState<VoucherInfo | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [timeLeft, setTimeLeft] = useState<string | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -36,63 +38,83 @@ export default function FreeDataBanner() {
     };
 
     fetchActive();
-    // Poll every 30 seconds to stay updated
-    const interval = setInterval(fetchActive, 30000);
+    const interval = setInterval(fetchActive, 20000);
     return () => {
       isMounted = false;
       clearInterval(interval);
     };
   }, []);
 
+  // Countdown Timer Logic
+  useEffect(() => {
+    if (!voucher?.expires_at) {
+      setTimeLeft(null);
+      return;
+    }
+
+    const updateCountdown = () => {
+      const now = new Date().getTime();
+      const expiry = new Date(voucher.expires_at!).getTime();
+      const diff = expiry - now;
+
+      if (diff <= 0) {
+        setTimeLeft("Expired");
+        setVoucher(null); // Auto-hide when time expires
+        return;
+      }
+
+      const hours = Math.floor(diff / (1000 * 60 * 60));
+      const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+      const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+
+      const hStr = hours > 0 ? `${hours}h ` : "";
+      const mStr = `${minutes.toString().padStart(2, "0")}m `;
+      const sStr = `${seconds.toString().padStart(2, "0")}s`;
+      setTimeLeft(`${hStr}${mStr}${sStr}`);
+    };
+
+    updateCountdown();
+    const timerInterval = setInterval(updateCountdown, 1000);
+    return () => clearInterval(timerInterval);
+  }, [voucher?.expires_at]);
+
   if (loading || !voucher) return null;
 
   return (
     <>
-      {/* Top Tagline Bar */}
-      <div className="relative z-30 bg-gradient-to-r from-emerald-600 via-teal-600 to-indigo-700 text-white text-xs sm:text-sm font-semibold shadow-inner transition-all py-2.5 px-4 sm:px-6">
-        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2 text-center sm:text-left">
-          {/* Middle / Tagline Text */}
-          <div className="flex items-center justify-center gap-2 flex-1">
-            <span className="flex h-2 w-2 relative shrink-0">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-300"></span>
-            </span>
-            <Sparkles className="w-4 h-4 text-amber-300 shrink-0" />
-            <span className="tracking-wide font-bold drop-shadow-sm text-emerald-50">
-              {voucher.tagline}
-            </span>
-            <span className="hidden md:inline-block px-2 py-0.5 rounded-full bg-white/20 text-[11px] font-black uppercase tracking-wider text-emerald-100">
-              {voucher.package_size} {voucher.network.toUpperCase()}
-            </span>
-          </div>
-
-          {/* Right Side: Claim Button */}
-          <button
-            onClick={() => setIsModalOpen(true)}
-            className="group shrink-0 inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs tracking-wider uppercase shadow-md hover:scale-105 active:scale-95 transition-all"
-          >
-            <Gift className="w-3.5 h-3.5 text-slate-950 group-hover:rotate-12 transition-transform" />
-            <span>Free Data</span>
-            <ChevronRight className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      </div>
-
-      {/* Floating Free Data Badge on Mobile/Desktop */}
-      <div className="fixed bottom-24 right-5 z-40 sm:bottom-6 sm:right-6">
+      {/* Middle of Left Side Floating Docked Badge */}
+      <div className="fixed top-1/2 -translate-y-1/2 left-0 z-40 pointer-events-auto">
         <button
           onClick={() => setIsModalOpen(true)}
-          className="group flex items-center gap-2.5 px-4 py-3 rounded-full bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-extrabold text-xs sm:text-sm shadow-xl shadow-emerald-600/30 hover:shadow-emerald-600/50 hover:scale-105 active:scale-95 transition-all border border-emerald-400/30"
-          title="Claim Free Data Voucher"
+          className="group flex flex-col sm:flex-row items-center gap-1.5 sm:gap-2 pl-2.5 pr-3.5 py-3 rounded-r-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-indigo-700 text-white font-extrabold shadow-2xl shadow-emerald-950/60 hover:scale-105 active:scale-95 transition-all border-y border-r border-emerald-400/40 hover:border-emerald-300"
+          title={voucher.tagline || "Claim Free Data Voucher"}
         >
-          <div className="relative">
-            <Gift className="w-5 h-5 text-amber-300 animate-bounce" />
+          <div className="relative flex items-center justify-center">
+            <Gift className="w-5 h-5 text-amber-300 group-hover:rotate-12 transition-transform drop-shadow" />
             <span className="absolute -top-1 -right-1 flex h-2 w-2">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
               <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-300"></span>
             </span>
           </div>
-          <span className="tracking-wide">Claim Free Data</span>
+
+          <div className="flex flex-col items-start leading-tight">
+            <div className="flex items-center gap-1">
+              <span className="text-xs sm:text-sm font-black tracking-tight text-white uppercase drop-shadow-sm">
+                Free Data
+              </span>
+              <span className="hidden sm:inline-block text-[10px] bg-amber-400 text-slate-950 font-black px-1.5 py-0.2 rounded-md uppercase">
+                {voucher.package_size}
+              </span>
+            </div>
+
+            {/* Countdown Timer Display (if set) */}
+            {timeLeft && (
+              <div className="flex items-center gap-1 text-[10px] font-mono font-bold text-amber-200 mt-0.5">
+                <Clock className="w-2.5 h-2.5 animate-pulse" />
+                <span>{timeLeft}</span>
+              </div>
+            )}
+          </div>
         </button>
       </div>
 

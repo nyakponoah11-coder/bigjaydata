@@ -16,6 +16,9 @@ import {
   Tag,
   ShieldCheck,
   AlertCircle,
+  Power,
+  Clock,
+  Calendar,
 } from "lucide-react";
 
 interface Voucher {
@@ -27,6 +30,7 @@ interface Voucher {
   max_claims: number;
   claimed_count: number;
   is_active: boolean;
+  expires_at?: string | null;
   created_at: string;
 }
 
@@ -52,8 +56,12 @@ export default function AdminVouchersPage() {
   const [code, setCode] = useState("");
   const [network, setNetwork] = useState("mtn");
   const [packageSize, setPackageSize] = useState("1GB");
-  const [tagline, setTagline] = useState("🎉 Special Free Data Giveaway! Enter code to receive data.");
+  const [tagline, setTagline] = useState("🎁 Special Free Data Drop! Enter code to receive data.");
   const [maxClaims, setMaxClaims] = useState("10");
+
+  // Timer State
+  const [timerPreset, setTimerPreset] = useState<string>("none"); // 'none' | '30m' | '1h' | '2h' | '6h' | '24h' | 'custom'
+  const [customExpiresAt, setCustomExpiresAt] = useState<string>("");
 
   const generateRandomCode = () => {
     const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -85,12 +93,59 @@ export default function AdminVouchersPage() {
     generateRandomCode();
   }, []);
 
+  // Determine if any voucher is currently active and not expired
+  const isGiveawayOn = vouchers.some((v) => {
+    if (!v.is_active || v.claimed_count >= v.max_claims) return false;
+    if (v.expires_at && new Date(v.expires_at) < new Date()) return false;
+    return true;
+  });
+
+  const handleMasterToggle = async () => {
+    const nextState = !isGiveawayOn;
+    try {
+      const res = await fetch("/api/admin/vouchers", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ all: true, is_active: nextState }),
+      });
+      if (res.ok) {
+        setVouchers((prev) => prev.map((v) => ({ ...v, is_active: nextState })));
+        setMsg({
+          type: "success",
+          text: nextState
+            ? "Free Data Giveaway turned ON! Button is live on the middle-left of the customer website."
+            : "Free Data Giveaway turned OFF! Button hidden from all customer pages.",
+        });
+      }
+    } catch (err) {
+      console.error("Master toggle error:", err);
+    }
+  };
+
+  const calculateExpiresAt = (): string | null => {
+    if (timerPreset === "none") return null;
+    if (timerPreset === "custom") {
+      return customExpiresAt ? new Date(customExpiresAt).toISOString() : null;
+    }
+
+    const now = new Date();
+    if (timerPreset === "30m") now.setMinutes(now.getMinutes() + 30);
+    else if (timerPreset === "1h") now.setHours(now.getHours() + 1);
+    else if (timerPreset === "2h") now.setHours(now.getHours() + 2);
+    else if (timerPreset === "6h") now.setHours(now.getHours() + 6);
+    else if (timerPreset === "24h") now.setHours(now.getHours() + 24);
+
+    return now.toISOString();
+  };
+
   const handleCreateVoucher = async (e: React.FormEvent) => {
     e.preventDefault();
     setMsg(null);
     setSubmitting(true);
 
     try {
+      const expiresAtIso = calculateExpiresAt();
+
       const res = await fetch("/api/admin/vouchers", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -100,6 +155,7 @@ export default function AdminVouchersPage() {
           package_size: packageSize.trim().toUpperCase(),
           tagline: tagline.trim(),
           max_claims: Number(maxClaims) || 10,
+          expires_at: expiresAtIso,
         }),
       });
 
@@ -108,8 +164,13 @@ export default function AdminVouchersPage() {
         throw new Error(data.error || "Failed to create voucher.");
       }
 
-      setMsg({ type: "success", text: `Voucher ${code.toUpperCase()} created successfully and set live on the site!` });
+      setMsg({
+        type: "success",
+        text: `Voucher ${code.toUpperCase()} created successfully and activated with promo timer!`,
+      });
       generateRandomCode();
+      setTimerPreset("none");
+      setCustomExpiresAt("");
       loadData();
     } catch (err: any) {
       setMsg({ type: "error", text: err?.message || "Failed to create voucher." });
@@ -157,13 +218,13 @@ export default function AdminVouchersPage() {
           <div>
             <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-emerald-400 mb-1">
               <Gift className="w-4 h-4" />
-              Promotion & Marketing
+              Promotion & Giveaway Engine
             </div>
             <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
-              Free Data Vouchers
+              Free Data Vouchers & Countdown Timer
             </h1>
             <p className="text-xs sm:text-sm text-slate-400 mt-1">
-              Generate promo vouchers with custom tagline bars displayed on the front-end. Beneficiaries must type their codes directly.
+              Turn promo on/off, set countdown timers, and manage automated giveaway dispatches.
             </p>
           </div>
 
@@ -174,6 +235,52 @@ export default function AdminVouchersPage() {
           >
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
             Refresh
+          </button>
+        </div>
+
+        {/* Master ON / OFF Control Card */}
+        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 flex flex-col md:flex-row items-center justify-between gap-6 shadow-2xl relative overflow-hidden">
+          <div className="flex items-center gap-4">
+            <div
+              className={`w-14 h-14 rounded-2xl flex items-center justify-center transition-colors shadow-lg ${
+                isGiveawayOn
+                  ? "bg-emerald-950 border border-emerald-500/40 text-emerald-400 shadow-emerald-500/20"
+                  : "bg-rose-950 border border-rose-500/40 text-rose-400 shadow-rose-500/20"
+              }`}
+            >
+              <Power className="w-7 h-7" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2.5">
+                <h3 className="text-lg font-black text-white">Free Data Giveaway Status</h3>
+                <span
+                  className={`px-3 py-0.5 rounded-full text-xs font-black uppercase tracking-wider ${
+                    isGiveawayOn
+                      ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
+                      : "bg-rose-500/20 text-rose-400 border border-rose-500/30"
+                  }`}
+                >
+                  {isGiveawayOn ? "● ACTIVE & LIVE (ON)" : "○ TURNED OFF (OFF)"}
+                </span>
+              </div>
+              <p className="text-xs text-slate-400 mt-1">
+                {isGiveawayOn
+                  ? "Active: The Free Data button is visible on the middle-left of customer pages with your countdown timer."
+                  : "Inactive: The Free Data button is hidden from customer view. Click Turn ON to activate."}
+              </p>
+            </div>
+          </div>
+
+          <button
+            onClick={handleMasterToggle}
+            className={`w-full md:w-auto px-7 py-3.5 rounded-2xl font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all shadow-xl hover:scale-105 active:scale-95 ${
+              isGiveawayOn
+                ? "bg-rose-600 hover:bg-rose-500 text-white shadow-rose-600/30"
+                : "bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white shadow-emerald-600/30"
+            }`}
+          >
+            <Power className="w-4 h-4" />
+            <span>Turn {isGiveawayOn ? "OFF" : "ON"} Free Data Promo</span>
           </button>
         </div>
 
@@ -281,28 +388,77 @@ export default function AdminVouchersPage() {
                 </div>
               </div>
 
-              {/* Tagline Bar */}
+              {/* Tagline / Subtitle */}
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-300 mb-1.5">
-                  Tagline Bar Text (Displayed on Site Banner)
+                  Giveaway Headline / Tagline
                 </label>
                 <input
                   type="text"
                   required
                   value={tagline}
                   onChange={(e) => setTagline(e.target.value)}
-                  placeholder="e.g. 🎉 Free Data Giveaway! Enter voucher code to get 1GB instant."
+                  placeholder="e.g. 🎁 Special Free Data Drop! Enter code to receive data."
                   className="w-full px-4 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
                 />
-                <p className="text-[11px] text-slate-400 mt-1">
-                  This text appears on the top header announcement bar on the front-end with the &quot;Free Data&quot; claim button.
+              </div>
+
+              {/* TIMER / EXPIRATION CONTROLS */}
+              <div className="p-4 rounded-2xl bg-slate-800/60 border border-slate-700/60 space-y-3">
+                <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-amber-400">
+                  <Clock className="w-4 h-4" />
+                  Set Promo Expiration Timer
+                </div>
+
+                <div className="grid grid-cols-3 sm:grid-cols-7 gap-2">
+                  {[
+                    { id: "none", label: "No Timer" },
+                    { id: "30m", label: "30 Mins" },
+                    { id: "1h", label: "1 Hour" },
+                    { id: "2h", label: "2 Hours" },
+                    { id: "6h", label: "6 Hours" },
+                    { id: "24h", label: "24 Hours" },
+                    { id: "custom", label: "Custom" },
+                  ].map((preset) => (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      onClick={() => setTimerPreset(preset.id)}
+                      className={`py-2 px-2 text-center rounded-xl text-xs font-bold transition-all border ${
+                        timerPreset === preset.id
+                          ? "bg-amber-500 text-slate-950 border-amber-400 shadow-md font-black"
+                          : "bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700"
+                      }`}
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                </div>
+
+                {timerPreset === "custom" && (
+                  <div className="pt-2">
+                    <label className="block text-[11px] text-slate-400 mb-1">
+                      Pick Custom Expiry Date & Time:
+                    </label>
+                    <input
+                      type="datetime-local"
+                      required
+                      value={customExpiresAt}
+                      onChange={(e) => setCustomExpiresAt(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-white text-xs focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    />
+                  </div>
+                )}
+
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  When a timer is set, the website badge shows a live countdown clock and automatically expires once the time finishes.
                 </p>
               </div>
 
               <button
                 type="submit"
                 disabled={submitting}
-                className="w-full py-3 px-6 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-sm shadow-lg shadow-emerald-600/25 flex items-center justify-center gap-2 transition-all disabled:opacity-50"
+                className="w-full py-3.5 px-6 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-sm shadow-lg shadow-emerald-600/25 flex items-center justify-center gap-2 transition-all disabled:opacity-50"
               >
                 {submitting ? (
                   <>
@@ -312,7 +468,7 @@ export default function AdminVouchersPage() {
                 ) : (
                   <>
                     <Sparkles className="w-4 h-4" />
-                    <span>Create & Activate Voucher</span>
+                    <span>Create & Activate Giveaway</span>
                   </>
                 )}
               </button>
@@ -331,15 +487,19 @@ export default function AdminVouchersPage() {
               <ul className="space-y-3 text-xs text-slate-300 leading-relaxed">
                 <li className="flex items-start gap-2">
                   <span className="text-emerald-400 font-bold">•</span>
-                  <span><strong>1 Claim Per Phone:</strong> A single customer phone number cannot claim two vouchers. Duplicate claims are prevented automatically.</span>
+                  <span><strong>Middle-Left Position:</strong> The Free Data badge is docked to the middle of the left side of the customer screen.</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-emerald-400 font-bold">•</span>
-                  <span><strong>Anti-Paste Protection:</strong> Clipboard copy-paste is strictly disabled on the voucher input fields so users must type the code directly.</span>
+                  <span><strong>1 Claim Per Phone:</strong> Duplicate claims across all vouchers are strictly blocked.</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-emerald-400 font-bold">•</span>
-                  <span><strong>Instant Dispatch:</strong> Valid redemptions automatically trigger DataMart delivery from your wallet without any Paystack checkout.</span>
+                  <span><strong>Anti-Paste Enabled:</strong> Copy and paste is disabled on customer input without any alert text.</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-emerald-400 font-bold">•</span>
+                  <span><strong>Live Countdown:</strong> When a timer is configured, the badge updates every second.</span>
                 </li>
               </ul>
             </div>
@@ -370,63 +530,80 @@ export default function AdminVouchersPage() {
                   <tr className="border-b border-slate-800 text-slate-400 uppercase text-[10px] tracking-wider font-bold">
                     <th className="pb-3">Code</th>
                     <th className="pb-3">Network & Bundle</th>
-                    <th className="pb-3">Tagline Preview</th>
+                    <th className="pb-3">Timer / Expiration</th>
                     <th className="pb-3">Progress</th>
                     <th className="pb-3">Status</th>
                     <th className="pb-3 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/60">
-                  {vouchers.map((v) => (
-                    <tr key={v.id} className="hover:bg-slate-800/30 transition-colors">
-                      <td className="py-4">
-                        <span className="px-3 py-1 rounded-lg bg-slate-800 border border-slate-700 text-emerald-400 font-mono font-bold text-xs">
-                          {v.code}
-                        </span>
-                      </td>
-                      <td className="py-4 font-semibold text-slate-200">
-                        <span className="uppercase text-white font-bold">{v.package_size}</span>{" "}
-                        <span className="text-slate-400 text-xs uppercase">({v.network})</span>
-                      </td>
-                      <td className="py-4 text-slate-300 max-w-xs truncate" title={v.tagline}>
-                        {v.tagline}
-                      </td>
-                      <td className="py-4 text-slate-300">
-                        <span className="font-bold text-white">{v.claimed_count}</span> / {v.max_claims} claimed
-                      </td>
-                      <td className="py-4">
-                        <button
-                          onClick={() => handleToggle(v.id, v.is_active)}
-                          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wider transition-colors ${
-                            v.is_active
-                              ? "bg-emerald-950 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-900"
-                              : "bg-slate-800 text-slate-400 border border-slate-700 hover:bg-slate-700"
-                          }`}
-                        >
-                          {v.is_active ? (
-                            <>
-                              <CheckCircle2 className="w-3 h-3 text-emerald-400" />
-                              Active (Showing)
-                            </>
+                  {vouchers.map((v) => {
+                    const isExpired = v.expires_at && new Date(v.expires_at) < new Date();
+                    return (
+                      <tr key={v.id} className="hover:bg-slate-800/30 transition-colors">
+                        <td className="py-4">
+                          <span className="px-3 py-1 rounded-lg bg-slate-800 border border-slate-700 text-emerald-400 font-mono font-bold text-xs">
+                            {v.code}
+                          </span>
+                        </td>
+                        <td className="py-4 font-semibold text-slate-200">
+                          <span className="uppercase text-white font-bold">{v.package_size}</span>{" "}
+                          <span className="text-slate-400 text-xs uppercase">({v.network})</span>
+                        </td>
+                        <td className="py-4 text-xs font-mono">
+                          {v.expires_at ? (
+                            isExpired ? (
+                              <span className="text-rose-400 font-bold flex items-center gap-1">
+                                <Clock className="w-3.5 h-3.5" />
+                                Expired ({new Date(v.expires_at).toLocaleTimeString()})
+                              </span>
+                            ) : (
+                              <span className="text-amber-300 font-bold flex items-center gap-1">
+                                <Clock className="w-3.5 h-3.5 animate-pulse" />
+                                {new Date(v.expires_at).toLocaleString()}
+                              </span>
+                            )
                           ) : (
-                            <>
-                              <XCircle className="w-3 h-3 text-slate-400" />
-                              Inactive
-                            </>
+                            <span className="text-slate-500">No Timer</span>
                           )}
-                        </button>
-                      </td>
-                      <td className="py-4 text-right">
-                        <button
-                          onClick={() => handleDelete(v.id)}
-                          className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-950/30 transition-colors"
-                          title="Delete Voucher"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
+                        </td>
+                        <td className="py-4 text-slate-300">
+                          <span className="font-bold text-white">{v.claimed_count}</span> / {v.max_claims} claimed
+                        </td>
+                        <td className="py-4">
+                          <button
+                            onClick={() => handleToggle(v.id, v.is_active)}
+                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wider transition-colors ${
+                              v.is_active && !isExpired
+                                ? "bg-emerald-950 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-900"
+                                : "bg-slate-800 text-slate-400 border border-slate-700 hover:bg-slate-700"
+                            }`}
+                          >
+                            {v.is_active && !isExpired ? (
+                              <>
+                                <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                                Active (ON)
+                              </>
+                            ) : (
+                              <>
+                                <XCircle className="w-3 h-3 text-slate-400" />
+                                {isExpired ? "Expired" : "OFF"}
+                              </>
+                            )}
+                          </button>
+                        </td>
+                        <td className="py-4 text-right">
+                          <button
+                            onClick={() => handleDelete(v.id)}
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-950/30 transition-colors"
+                            title="Delete Voucher"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

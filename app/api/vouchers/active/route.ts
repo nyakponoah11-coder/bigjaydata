@@ -19,6 +19,7 @@ export async function GET() {
         network: voucher.network,
         package_size: voucher.package_size,
         remaining_claims: Math.max(0, voucher.max_claims - voucher.claimed_count),
+        expires_at: voucher.expires_at || null,
       },
     });
   } catch (error: any) {

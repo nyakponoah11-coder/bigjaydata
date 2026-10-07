@@ -144,13 +144,6 @@ export default function AdminDashboardPage() {
                 Top up →
               </Link>
             </div>
-            <button
-              onClick={() => setIsDirectBuyOpen(true)}
-              className="mt-3 w-full py-1.5 px-3 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-400 font-bold text-[11px] flex items-center justify-center gap-1.5 transition-colors"
-            >
-              <Zap className="w-3 h-3 text-amber-400" />
-              <span>Direct Buy from Balance</span>
-            </button>
           </div>
 
           {/* Total Orders Today */}

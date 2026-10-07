@@ -85,6 +85,7 @@ export interface Voucher {
   max_claims: number;
   claimed_count: number;
   is_active: boolean;
+  expires_at?: string | null;
   created_at: string;
 }
 
@@ -678,21 +679,33 @@ export const db = {
   },
 
   async getActiveVoucher(): Promise<Voucher | null> {
+    const now = new Date();
     if (isSupabaseConfigured && supabaseAdmin) {
       try {
         const { data, error } = await supabaseAdmin
           .from("vouchers")
           .select("*")
           .eq("is_active", true)
-          .order("created_at", { ascending: false })
-          .limit(1)
-          .maybeSingle();
-        if (!error && data) return data as Voucher;
+          .order("created_at", { ascending: false });
+        if (!error && data) {
+          const valid = (data as Voucher[]).find((v) => {
+            if (!v.is_active || v.claimed_count >= v.max_claims) return false;
+            if (v.expires_at && new Date(v.expires_at) < now) return false;
+            return true;
+          });
+          if (valid) return valid;
+        }
       } catch (err) {
         console.error("Supabase getActiveVoucher error:", err);
       }
     }
-    return (globalStore.__bmgh_vouchers || []).find((v) => v.is_active && v.claimed_count < v.max_claims) || null;
+    return (
+      (globalStore.__bmgh_vouchers || []).find((v) => {
+        if (!v.is_active || v.claimed_count >= v.max_claims) return false;
+        if (v.expires_at && new Date(v.expires_at) < now) return false;
+        return true;
+      }) || null
+    );
   },
 
   async createVoucher(voucher: Omit<Voucher, "id" | "claimed_count" | "created_at">): Promise<Voucher> {
@@ -701,6 +714,7 @@ export const db = {
       id: crypto.randomUUID(),
       code: voucher.code.trim().toUpperCase(),
       claimed_count: 0,
+      expires_at: voucher.expires_at || null,
       created_at: new Date().toISOString(),
     };
 
@@ -728,6 +742,20 @@ export const db = {
     }
     const v = (globalStore.__bmgh_vouchers || []).find((x) => x.id === id);
     if (v) v.is_active = is_active;
+    return true;
+  },
+
+  async toggleAllVouchers(is_active: boolean): Promise<boolean> {
+    if (isSupabaseConfigured && supabaseAdmin) {
+      try {
+        await supabaseAdmin.from("vouchers").update({ is_active });
+      } catch (err) {
+        console.error("Supabase toggleAllVouchers error:", err);
+      }
+    }
+    (globalStore.__bmgh_vouchers || []).forEach((v) => {
+      v.is_active = is_active;
+    });
     return true;
   },
 
