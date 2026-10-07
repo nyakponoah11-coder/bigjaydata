@@ -404,14 +404,44 @@ export default function AdminAIAgentPage() {
                     Gemini Model
                   </label>
                   <select
-                    value={geminiModel}
-                    onChange={(e) => setGeminiModel(e.target.value)}
+                    value={[
+                      "gemini-2.0-flash",
+                      "gemini-2.0-flash-lite",
+                      "gemini-1.5-flash",
+                      "gemini-1.5-flash-8b",
+                      "gemini-1.5-pro",
+                      "gemini-2.5-flash",
+                      "gemini-2.5-pro",
+                    ].includes(geminiModel) ? geminiModel : "custom"}
+                    onChange={(e) => {
+                      if (e.target.value !== "custom") {
+                        setGeminiModel(e.target.value);
+                      }
+                    }}
                     className="w-full px-3.5 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white font-medium focus:outline-none focus:ring-2 focus:ring-amber-400"
                   >
-                    <option value="gemini-2.5-flash">gemini-2.5-flash (Fast & Accurate)</option>
-                    <option value="gemini-1.5-flash">gemini-1.5-flash (High Quota)</option>
-                    <option value="gemini-2.0-flash">gemini-2.0-flash</option>
+                    <option value="gemini-2.0-flash">gemini-2.0-flash (Recommended • Ultra Fast)</option>
+                    <option value="gemini-2.0-flash-lite">gemini-2.0-flash-lite (Flash Lite • High Quota)</option>
+                    <option value="gemini-1.5-flash">gemini-1.5-flash (High Volume)</option>
+                    <option value="gemini-1.5-flash-8b">gemini-1.5-flash-8b (Flash 8B • Super Low Latency)</option>
+                    <option value="gemini-1.5-pro">gemini-1.5-pro (Pro Deep Reasoning)</option>
+                    <option value="gemini-2.5-flash">gemini-2.5-flash (Preview)</option>
+                    <option value="gemini-2.5-pro">gemini-2.5-pro (Preview)</option>
+                    <option value="custom">✏️ Enter Custom Model Name...</option>
                   </select>
+
+                  {/* Custom Model Input if typed or chosen */}
+                  <input
+                    type="text"
+                    value={geminiModel}
+                    onChange={(e) => setGeminiModel(e.target.value)}
+                    placeholder="e.g. gemini-2.0-flash-lite or gemini-1.5-flash-8b"
+                    className="mt-2 w-full px-3 py-1.5 bg-slate-800/80 border border-slate-700/80 rounded-lg text-amber-300 font-mono text-[11px] focus:outline-none focus:ring-1 focus:ring-amber-400"
+                    title="Active model string sent to Google API"
+                  />
+                  <span className="text-[10px] text-slate-500 mt-0.5 block">
+                    Active API Model: <span className="text-amber-400 font-mono font-bold">{geminiModel}</span>
+                  </span>
                 </div>
               </div>
 
@@ -498,13 +528,32 @@ export default function AdminAIAgentPage() {
                     Grok Model
                   </label>
                   <select
-                    value={grokModel}
-                    onChange={(e) => setGrokModel(e.target.value)}
+                    value={["grok-2-latest", "grok-2", "grok-beta", "grok-vision-beta"].includes(grokModel) ? grokModel : "custom"}
+                    onChange={(e) => {
+                      if (e.target.value !== "custom") {
+                        setGrokModel(e.target.value);
+                      }
+                    }}
                     className="w-full px-3.5 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white font-medium focus:outline-none focus:ring-2 focus:ring-blue-400"
                   >
                     <option value="grok-2-latest">grok-2-latest (Recommended)</option>
+                    <option value="grok-2">grok-2</option>
                     <option value="grok-beta">grok-beta</option>
+                    <option value="grok-vision-beta">grok-vision-beta</option>
+                    <option value="custom">✏️ Enter Custom Model Name...</option>
                   </select>
+
+                  <input
+                    type="text"
+                    value={grokModel}
+                    onChange={(e) => setGrokModel(e.target.value)}
+                    placeholder="e.g. grok-2-latest"
+                    className="mt-2 w-full px-3 py-1.5 bg-slate-800/80 border border-slate-700/80 rounded-lg text-blue-300 font-mono text-[11px] focus:outline-none focus:ring-1 focus:ring-blue-400"
+                    title="Active model string sent to xAI API"
+                  />
+                  <span className="text-[10px] text-slate-500 mt-0.5 block">
+                    Active API Model: <span className="text-blue-400 font-mono font-bold">{grokModel}</span>
+                  </span>
                 </div>
               </div>
 
@@ -591,14 +640,33 @@ export default function AdminAIAgentPage() {
                     OpenAI Model
                   </label>
                   <select
-                    value={openaiModel}
-                    onChange={(e) => setOpenaiModel(e.target.value)}
+                    value={["gpt-4o-mini", "gpt-4o", "o3-mini", "o1-mini", "gpt-3.5-turbo"].includes(openaiModel) ? openaiModel : "custom"}
+                    onChange={(e) => {
+                      if (e.target.value !== "custom") {
+                        setOpenaiModel(e.target.value);
+                      }
+                    }}
                     className="w-full px-3.5 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white font-medium focus:outline-none focus:ring-2 focus:ring-emerald-400"
                   >
                     <option value="gpt-4o-mini">gpt-4o-mini (Cost-effective & High Speed)</option>
                     <option value="gpt-4o">gpt-4o (Most Intelligent)</option>
+                    <option value="o3-mini">o3-mini (Advanced Reasoning)</option>
+                    <option value="o1-mini">o1-mini</option>
                     <option value="gpt-3.5-turbo">gpt-3.5-turbo</option>
+                    <option value="custom">✏️ Enter Custom Model Name...</option>
                   </select>
+
+                  <input
+                    type="text"
+                    value={openaiModel}
+                    onChange={(e) => setOpenaiModel(e.target.value)}
+                    placeholder="e.g. gpt-4o-mini or gpt-4o"
+                    className="mt-2 w-full px-3 py-1.5 bg-slate-800/80 border border-slate-700/80 rounded-lg text-emerald-300 font-mono text-[11px] focus:outline-none focus:ring-1 focus:ring-emerald-400"
+                    title="Active model string sent to OpenAI API"
+                  />
+                  <span className="text-[10px] text-slate-500 mt-0.5 block">
+                    Active API Model: <span className="text-emerald-400 font-mono font-bold">{openaiModel}</span>
+                  </span>
                 </div>
               </div>
 

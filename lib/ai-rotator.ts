@@ -74,9 +74,20 @@ async function callGemini(
   userMessage: string,
   history: ChatMessageParam[],
   apiKey: string,
-  model = "gemini-2.5-flash"
+  model = "gemini-2.0-flash"
 ): Promise<{ reply: string; model: string }> {
-  const modelsToTry = [model, "gemini-1.5-flash", "gemini-2.0-flash"];
+  // Cascades starting with the selected model, rotating through all Gemini variants
+  const modelsToTry = Array.from(
+    new Set([
+      model,
+      "gemini-2.0-flash",
+      "gemini-2.0-flash-lite",
+      "gemini-1.5-flash",
+      "gemini-1.5-flash-8b",
+      "gemini-2.5-flash",
+      "gemini-1.5-pro",
+    ])
+  );
 
   let lastError = "";
 
