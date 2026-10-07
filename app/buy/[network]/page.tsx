@@ -21,6 +21,13 @@ export default async function BuyNetworkPage({
   const settings = await db.getSettings();
   const products = await db.getProducts(decodedNetwork);
 
+  const safeSettings: typeof settings = {
+    ...settings,
+    datamart_api_key: "",
+    datamart_api_url: "",
+    paystack_secret_key: "",
+  };
+
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900">
       <Navbar
@@ -47,7 +54,7 @@ export default async function BuyNetworkPage({
         <BuyClientView
           network={decodedNetwork}
           products={products}
-          settings={settings}
+          settings={safeSettings}
         />
       </main>
 

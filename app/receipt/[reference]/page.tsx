@@ -20,6 +20,13 @@ export default async function ReceiptPage({
   const settings = await db.getSettings();
   const order = await db.getOrderByReference(decodedRef);
 
+  const safeSettings: typeof settings = {
+    ...settings,
+    datamart_api_key: "",
+    datamart_api_url: "",
+    paystack_secret_key: "",
+  };
+
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900">
       <Navbar
@@ -44,7 +51,7 @@ export default async function ReceiptPage({
         <ReceiptClientView
           initialOrder={order}
           reference={decodedRef}
-          settings={settings}
+          settings={safeSettings}
         />
       </main>
 
