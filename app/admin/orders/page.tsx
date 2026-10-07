@@ -338,7 +338,7 @@ export default function AdminOrdersPage() {
                           onClick={() => {
                             setSmsModalOrder(o);
                             setSmsText(
-                              `Hello, your ${o.network.toUpperCase()} ${o.package_size} bundle from BIGJ DATA (${o.reference}) is now ${o.status}. Thank you!`
+                              `Hello, your ${o.network.toUpperCase()} ${o.package_size} bundle from BundleMartGh (${o.reference}) is now ${o.status}. Thank you!`
                             );
                           }}
                           className="p-1.5 bg-slate-800 hover:bg-slate-700 text-blue-300 border border-slate-700 rounded-lg transition-colors"

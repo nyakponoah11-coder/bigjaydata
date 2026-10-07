@@ -1,5 +1,5 @@
 -- ========================================================================
--- BIGJ DATA (DATA1GH) - Supabase Database Schema
+-- BundleMartGh - Supabase Database Schema
 -- Clean script without pre-seeded products (Add products from /admin/products)
 -- ========================================================================
 
@@ -37,10 +37,10 @@ CREATE TABLE public.orders (
 -- 3. SETTINGS TABLE
 CREATE TABLE public.settings (
     id TEXT PRIMARY KEY DEFAULT 'default',
-    store_name TEXT NOT NULL DEFAULT 'BIGJ DATA',
+    store_name TEXT NOT NULL DEFAULT 'BundleMartGh',
     support_phone TEXT NOT NULL DEFAULT '+233 55 123 4567',
     whatsapp_number TEXT NOT NULL DEFAULT '233551234567',
-    email TEXT NOT NULL DEFAULT 'support@bigjdata.com',
+    email TEXT NOT NULL DEFAULT 'support@bundlemartgh.com',
     paystack_public_key TEXT DEFAULT '',
     paystack_secret_key TEXT DEFAULT '',
     datamart_api_key TEXT DEFAULT '',
@@ -98,10 +98,10 @@ INSERT INTO public.settings (
     announcement_text, announcement_active
 ) VALUES (
     'default',
-    'BIGJ DATA',
+    'BundleMartGh',
     '+233 55 123 4567',
     '233551234567',
-    'support@bigjdata.com',
+    'support@bundlemartgh.com',
     '',
     '',
     '',

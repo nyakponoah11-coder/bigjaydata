@@ -11,7 +11,7 @@ interface Props {
 
 export default function WhatsAppButton({
   whatsappNumber = "233551234567",
-  storeName = "BIGJ DATA",
+  storeName = "BundleMartGh",
 }: Props) {
   const [isChatOpen, setIsChatOpen] = useState(false);
 

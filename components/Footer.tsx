@@ -12,10 +12,10 @@ interface Props {
 }
 
 export default function Footer({
-  storeName = "BIGJ DATA",
+  storeName = "BundleMartGh",
   supportPhone = "+233 55 123 4567",
   whatsappNumber = "233551234567",
-  email = "support@bigjdata.com",
+  email = "support@bundlemartgh.com",
 }: Props) {
   const currentYear = new Date().getFullYear();
 
@@ -26,8 +26,12 @@ export default function Footer({
           {/* Brand Column */}
           <div className="space-y-4 md:col-span-1">
             <Link href="/" className="flex items-center gap-2.5">
-              <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-emerald-500 to-amber-400 flex items-center justify-center text-white shadow-md">
-                <Signal className="w-5 h-5 text-white" />
+              <div className="w-10 h-10 rounded-xl overflow-hidden shadow-md bg-black flex items-center justify-center p-0.5 border border-slate-800">
+                <img
+                  src="/logo.png"
+                  alt={storeName}
+                  className="w-full h-full object-contain"
+                />
               </div>
               <span className="font-extrabold text-xl text-white tracking-tight">
                 {storeName}

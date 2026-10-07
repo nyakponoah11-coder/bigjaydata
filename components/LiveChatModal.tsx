@@ -13,7 +13,7 @@ interface Props {
 export default function LiveChatModal({
   isOpen,
   onClose,
-  storeName = "BIGJ DATA",
+  storeName = "BundleMartGh",
   whatsappNumber = "233551234567",
 }: Props) {
   const [name, setName] = useState("");

@@ -60,7 +60,7 @@ export default function CheckoutModal({ product, isOpen, onClose, settings }: Pr
 
   const generateReference = () => {
     const random8 = Math.floor(10000000 + Math.random() * 90000000);
-    return `BIGJ-${random8}`;
+    return `BMGH-${random8}`;
   };
 
   const networkMismatch =
@@ -81,7 +81,7 @@ export default function CheckoutModal({ product, isOpen, onClose, settings }: Pr
     setLoading(true);
 
     const reference = generateReference();
-    const customerEmail = email.trim() || `${cleanPhone}@customer.bigjdata.com`;
+    const customerEmail = email.trim() || `${cleanPhone}@customer.bundlemartgh.com`;
     const amountInPesewas = Math.round(product.price * 100);
     const publicKey = settings.paystack_public_key || process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY || "";
 

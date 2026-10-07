@@ -79,8 +79,8 @@ export async function PATCH(request: Request) {
     if (send_sms && updatedOrder.phone) {
       const defaultMsg =
         status === "delivered"
-          ? `Hello, your ${updatedOrder.network.toUpperCase()} ${updatedOrder.package_size} data bundle from BIGJ DATA (${updatedOrder.reference}) has been delivered! Thank you for choosing us.`
-          : `Hello, update on your BIGJ DATA order (${updatedOrder.reference}): Status changed to ${status}. For questions, contact support.`;
+          ? `Hello, your ${updatedOrder.network.toUpperCase()} ${updatedOrder.package_size} data bundle from BundleMartGh (${updatedOrder.reference}) has been delivered! Thank you for choosing us.`
+          : `Hello, update on your BundleMartGh order (${updatedOrder.reference}): Status changed to ${status}. For questions, contact support.`;
 
       await sendCustomerSMS({
         phone: updatedOrder.phone,

@@ -168,7 +168,7 @@ export default function AdminDashboardPage() {
             <div>
               <h3 className="font-bold text-white text-sm">AI Agent Command Center</h3>
               <p className="text-xs text-slate-400">
-                Execute actions with natural language: "mark order BIGJ-XXXX as delivered"
+                Execute actions with natural language: "mark order BMGH-XXXX as delivered"
               </p>
             </div>
           </div>

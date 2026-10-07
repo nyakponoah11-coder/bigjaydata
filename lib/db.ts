@@ -54,10 +54,10 @@ let initialProducts: Product[] = [];
 
 let initialSettings: Settings = {
   id: "default",
-  store_name: "BIGJ DATA",
+  store_name: "BundleMartGh",
   support_phone: "+233 55 123 4567",
   whatsapp_number: "233551234567",
-  email: "support@bigjdata.com",
+  email: "support@bundlemartgh.com",
   paystack_public_key: process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY || "",
   paystack_secret_key: process.env.PAYSTACK_SECRET_KEY || "",
   datamart_api_key: process.env.DATAMART_API_KEY || "",
@@ -71,7 +71,7 @@ let initialSettings: Settings = {
 let initialOrders: Order[] = [
   {
     id: "ord-1",
-    reference: "BIGJ-98234120",
+    reference: "BMGH-98234120",
     network: "mtn",
     package_size: "5GB",
     phone: "0554128901",
@@ -83,7 +83,7 @@ let initialOrders: Order[] = [
   },
   {
     id: "ord-2",
-    reference: "BIGJ-77123984",
+    reference: "BMGH-77123984",
     network: "telecel",
     package_size: "10GB",
     phone: "0208192384",
@@ -95,7 +95,7 @@ let initialOrders: Order[] = [
   },
   {
     id: "ord-3",
-    reference: "BIGJ-55102941",
+    reference: "BMGH-55102941",
     network: "at",
     package_size: "2GB",
     phone: "0271109923",
@@ -112,7 +112,7 @@ let initialMessages: Message[] = [
     id: "msg-1",
     name: "Kofi Mensah",
     phone: "0559123456",
-    message: "Hello BIGJ DATA, how fast does MTN 10GB arrive?",
+    message: "Hello BundleMartGh, how fast does MTN 10GB arrive?",
     is_read: true,
     created_at: new Date(Date.now() - 1000 * 60 * 60).toISOString(),
   },
@@ -120,16 +120,16 @@ let initialMessages: Message[] = [
 
 // Persistent global cache in Node environment
 const globalStore = globalThis as unknown as {
-  __bigj_products?: Product[];
-  __bigj_settings?: Settings;
-  __bigj_orders?: Order[];
-  __bigj_messages?: Message[];
+  __bmgh_products?: Product[];
+  __bmgh_settings?: Settings;
+  __bmgh_orders?: Order[];
+  __bmgh_messages?: Message[];
 };
 
-if (!globalStore.__bigj_products) globalStore.__bigj_products = initialProducts;
-if (!globalStore.__bigj_settings) globalStore.__bigj_settings = initialSettings;
-if (!globalStore.__bigj_orders) globalStore.__bigj_orders = initialOrders;
-if (!globalStore.__bigj_messages) globalStore.__bigj_messages = initialMessages;
+if (!globalStore.__bmgh_products) globalStore.__bmgh_products = initialProducts;
+if (!globalStore.__bmgh_settings) globalStore.__bmgh_settings = initialSettings;
+if (!globalStore.__bmgh_orders) globalStore.__bmgh_orders = initialOrders;
+if (!globalStore.__bmgh_messages) globalStore.__bmgh_messages = initialMessages;
 
 export const db = {
   // SETTINGS
@@ -142,7 +142,7 @@ export const db = {
         console.error("Supabase getSettings error:", err);
       }
     }
-    return globalStore.__bigj_settings!;
+    return globalStore.__bmgh_settings!;
   },
 
   async updateSettings(updates: Partial<Settings>): Promise<Settings> {
@@ -154,19 +154,19 @@ export const db = {
           .select()
           .single();
         if (!error && data) {
-          globalStore.__bigj_settings = data as Settings;
+          globalStore.__bmgh_settings = data as Settings;
           return data as Settings;
         }
       } catch (err) {
         console.error("Supabase updateSettings error:", err);
       }
     }
-    globalStore.__bigj_settings = {
-      ...globalStore.__bigj_settings!,
+    globalStore.__bmgh_settings = {
+      ...globalStore.__bmgh_settings!,
       ...updates,
       updated_at: new Date().toISOString(),
     };
-    return globalStore.__bigj_settings;
+    return globalStore.__bmgh_settings;
   },
 
   // PRODUCTS
@@ -183,7 +183,7 @@ export const db = {
         console.error("Supabase getProducts error:", err);
       }
     }
-    let list = globalStore.__bigj_products!;
+    let list = globalStore.__bmgh_products!;
     if (network) {
       list = list.filter((p) => p.network.toLowerCase() === network.toLowerCase());
     }
@@ -212,7 +212,7 @@ export const db = {
         }
         if (data) {
           const created = data as Product;
-          globalStore.__bigj_products = [created, ...(globalStore.__bigj_products || [])];
+          globalStore.__bmgh_products = [created, ...(globalStore.__bmgh_products || [])];
           return created;
         }
       } catch (err: any) {
@@ -226,7 +226,7 @@ export const db = {
       id: crypto.randomUUID(),
       created_at: new Date().toISOString(),
     };
-    globalStore.__bigj_products = [newProduct, ...(globalStore.__bigj_products || [])];
+    globalStore.__bmgh_products = [newProduct, ...(globalStore.__bmgh_products || [])];
     return newProduct;
   },
 
@@ -252,8 +252,8 @@ export const db = {
         }
         if (data) {
           const updated = data as Product;
-          const idx = (globalStore.__bigj_products || []).findIndex((p) => p.id === id);
-          if (idx !== -1) globalStore.__bigj_products![idx] = updated;
+          const idx = (globalStore.__bmgh_products || []).findIndex((p) => p.id === id);
+          if (idx !== -1) globalStore.__bmgh_products![idx] = updated;
           return updated;
         }
       } catch (err: any) {
@@ -262,10 +262,10 @@ export const db = {
       }
     }
 
-    const index = (globalStore.__bigj_products || []).findIndex((p) => p.id === id);
+    const index = (globalStore.__bmgh_products || []).findIndex((p) => p.id === id);
     if (index === -1) return null;
-    globalStore.__bigj_products![index] = { ...globalStore.__bigj_products![index], ...updates };
-    return globalStore.__bigj_products![index];
+    globalStore.__bmgh_products![index] = { ...globalStore.__bmgh_products![index], ...updates };
+    return globalStore.__bmgh_products![index];
   },
 
   async deleteProduct(id: string): Promise<boolean> {
@@ -276,7 +276,7 @@ export const db = {
           console.error("Supabase deleteProduct error:", error);
           throw new Error(error.message);
         }
-        globalStore.__bigj_products = (globalStore.__bigj_products || []).filter((p) => p.id !== id);
+        globalStore.__bmgh_products = (globalStore.__bmgh_products || []).filter((p) => p.id !== id);
         return true;
       } catch (err: any) {
         console.error("Supabase deleteProduct exception:", err?.message || err);
@@ -284,9 +284,9 @@ export const db = {
       }
     }
 
-    const index = (globalStore.__bigj_products || []).findIndex((p) => p.id === id);
+    const index = (globalStore.__bmgh_products || []).findIndex((p) => p.id === id);
     if (index === -1) return false;
-    globalStore.__bigj_products!.splice(index, 1);
+    globalStore.__bmgh_products!.splice(index, 1);
     return true;
   },
 
@@ -318,7 +318,7 @@ export const db = {
       }
     }
 
-    let results = [...globalStore.__bigj_orders!].sort(
+    let results = [...globalStore.__bmgh_orders!].sort(
       (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
     );
 
@@ -353,7 +353,7 @@ export const db = {
     }
 
     return (
-      globalStore.__bigj_orders!.find((o) => o.reference.toLowerCase() === reference.trim().toLowerCase()) || null
+      globalStore.__bmgh_orders!.find((o) => o.reference.toLowerCase() === reference.trim().toLowerCase()) || null
     );
   },
 
@@ -372,7 +372,7 @@ export const db = {
       }
     }
 
-    return globalStore.__bigj_orders!.filter((o) => o.phone.includes(cleanPhone));
+    return globalStore.__bmgh_orders!.filter((o) => o.phone.includes(cleanPhone));
   },
 
   async createOrder(orderData: Omit<Order, "id" | "created_at">): Promise<Order> {
@@ -400,7 +400,7 @@ export const db = {
         }
         if (data) {
           const ord = data as Order;
-          globalStore.__bigj_orders = [ord, ...(globalStore.__bigj_orders || [])];
+          globalStore.__bmgh_orders = [ord, ...(globalStore.__bmgh_orders || [])];
           return ord;
         }
       } catch (err: any) {
@@ -415,7 +415,7 @@ export const db = {
       created_at: new Date().toISOString(),
     };
 
-    globalStore.__bigj_orders!.unshift(newOrder);
+    globalStore.__bmgh_orders!.unshift(newOrder);
     return newOrder;
   },
 
@@ -426,7 +426,7 @@ export const db = {
   ): Promise<Order | null> {
     if (isSupabaseConfigured && supabaseAdmin) {
       try {
-        const isRef = orderIdOrRef.startsWith("BIGJ-");
+        const isRef = orderIdOrRef.startsWith("BMGH-") || orderIdOrRef.startsWith("BIGJ-") || orderIdOrRef.includes("-");
         const query = supabaseAdmin.from("orders").update({
           status,
           ...(datamartResponse ? { datamart_response: datamartResponse } : {}),
@@ -440,7 +440,7 @@ export const db = {
       }
     }
 
-    const order = globalStore.__bigj_orders!.find(
+    const order = globalStore.__bmgh_orders!.find(
       (o) => o.id === orderIdOrRef || o.reference.toLowerCase() === orderIdOrRef.toLowerCase()
     );
     if (!order) return null;
@@ -459,7 +459,7 @@ export const db = {
         console.error("Supabase getMessages error:", err);
       }
     }
-    return globalStore.__bigj_messages!;
+    return globalStore.__bmgh_messages!;
   },
 
   async createMessage(msg: Omit<Message, "id" | "is_read" | "created_at">): Promise<Message> {
@@ -479,7 +479,7 @@ export const db = {
       }
     }
 
-    globalStore.__bigj_messages!.unshift(newMsg);
+    globalStore.__bmgh_messages!.unshift(newMsg);
     return newMsg;
   },
 
@@ -492,7 +492,7 @@ export const db = {
         console.error("Supabase markMessageRead error:", err);
       }
     }
-    const msg = globalStore.__bigj_messages!.find((m) => m.id === id);
+    const msg = globalStore.__bmgh_messages!.find((m) => m.id === id);
     if (msg) msg.is_read = true;
     return true;
   },

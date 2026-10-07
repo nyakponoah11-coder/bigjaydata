@@ -136,7 +136,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       success: true,
       actionTaken: "help",
-      reply: `Done bossu, I am your BIGJ DATA Action Agent. Here are actions you can command me to execute right now:\n\n1. "mark order BIGJ-98234120 as delivered"\n2. "mark order BIGJ-98234120 as failed"\n3. "refund order BIGJ-98234120"\n4. "send SMS to 0551234567 saying your 10GB MTN data is ready"\n5. "check order BIGJ-98234120"\n6. "give me sales summary"`,
+      reply: `Done bossu, I am your BundleMartGh Action Agent. Here are actions you can command me to execute right now:\n\n1. "mark order BMGH-98234120 as delivered"\n2. "mark order BMGH-98234120 as failed"\n3. "refund order BMGH-98234120"\n4. "send SMS to 0551234567 saying your 10GB MTN data is ready"\n5. "check order BMGH-98234120"\n6. "give me sales summary"`,
     });
   } catch (error: any) {
     console.error("[AI Agent Action] Error:", error);

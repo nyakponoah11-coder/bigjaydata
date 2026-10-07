@@ -45,7 +45,7 @@ export default function TrackClientView({ storeName }: { storeName: string }) {
           Track Your Data Order
         </h1>
         <p className="mt-2 text-sm text-slate-500">
-          Enter your order reference (e.g. <span className="font-mono font-semibold">BIGJ-87654321</span>) or recipient phone number to verify live status.
+          Enter your order reference (e.g. <span className="font-mono font-semibold">BMGH-87654321</span>) or recipient phone number to verify live status.
         </p>
       </div>
 
@@ -59,7 +59,7 @@ export default function TrackClientView({ storeName }: { storeName: string }) {
               required
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Enter BIGJ-XXXX or 055XXXXXXX"
+              placeholder="Enter BMGH-XXXX or 055XXXXXXX"
               className="w-full pl-11 pr-4 py-3 text-sm font-semibold border border-slate-300 rounded-2xl bg-slate-50 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
             />
           </div>

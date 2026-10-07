@@ -10,7 +10,7 @@ interface Props {
 }
 
 export default function Navbar({
-  storeName = "BIGJ DATA",
+  storeName = "BundleMartGh",
   whatsappNumber = "233551234567",
 }: Props) {
   const [isMobileOpen, setIsMobileOpen] = useState(false);
@@ -21,8 +21,12 @@ export default function Navbar({
         <div className="flex items-center justify-between h-16 sm:h-20">
           {/* Logo & Store Name */}
           <Link href="/" className="flex items-center gap-2.5 group">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-600 via-teal-500 to-amber-400 flex items-center justify-center text-white shadow-md shadow-emerald-500/20 group-hover:scale-105 transition-transform">
-              <Signal className="w-5 h-5 text-white" />
+            <div className="w-10 h-10 rounded-xl overflow-hidden shadow-md group-hover:scale-105 transition-transform bg-black flex items-center justify-center p-0.5 border border-slate-200/50 dark:border-slate-800">
+              <img
+                src="/logo.png"
+                alt={storeName}
+                className="w-full h-full object-contain"
+              />
             </div>
             <div className="flex flex-col">
               <span className="font-extrabold text-lg sm:text-xl tracking-tight text-slate-900 dark:text-white">

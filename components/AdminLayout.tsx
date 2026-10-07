@@ -30,7 +30,7 @@ export default function AdminLayout({ children }: Props) {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    const token = localStorage.getItem("bigj_admin_auth");
+    const token = localStorage.getItem("bundlemart_admin_auth") || localStorage.getItem("bigj_admin_auth");
     if (token) {
       setIsAuthenticated(true);
     } else {
@@ -55,16 +55,17 @@ export default function AdminLayout({ children }: Props) {
         throw new Error(data.message || "Invalid password");
       }
 
-      localStorage.setItem("bigj_admin_auth", data.token || "authenticated");
+      localStorage.setItem("bundlemart_admin_auth", data.token || "authenticated");
       setIsAuthenticated(true);
     } catch (err: any) {
-      setError(err?.message || "Invalid admin password. Default is bigj2026");
+      setError(err?.message || "Invalid admin password. Default is bundlemart2026");
     } finally {
       setLoading(false);
     }
   };
 
   const handleLogout = () => {
+    localStorage.removeItem("bundlemart_admin_auth");
     localStorage.removeItem("bigj_admin_auth");
     setIsAuthenticated(false);
   };
@@ -83,11 +84,11 @@ export default function AdminLayout({ children }: Props) {
       <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-emerald-950 flex items-center justify-center p-4">
         <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-8 max-w-md w-full shadow-2xl backdrop-blur-md">
           <div className="text-center mb-8">
-            <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center text-white mx-auto mb-4 shadow-lg shadow-emerald-500/20">
-              <Lock className="w-7 h-7" />
+            <div className="w-16 h-16 rounded-2xl bg-black border border-slate-800 flex items-center justify-center text-white mx-auto mb-4 shadow-lg shadow-emerald-500/20 overflow-hidden p-1">
+              <img src="/logo.png" alt="BundleMartGh" className="w-full h-full object-contain" />
             </div>
             <h1 className="text-2xl font-black text-white tracking-tight">
-              BIGJ DATA Admin Portal
+              BundleMartGh Admin Portal
             </h1>
             <p className="text-xs text-slate-400 mt-1">
               Enter merchant master password to manage bundles and orders
@@ -116,7 +117,7 @@ export default function AdminLayout({ children }: Props) {
                 className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
               />
               <p className="text-[11px] text-slate-500 mt-1">
-                Default password: <span className="font-mono text-emerald-400">bigj2026</span>
+                Default password: <span className="font-mono text-emerald-400">bundlemart2026</span>
               </p>
             </div>
 
@@ -156,12 +157,12 @@ export default function AdminLayout({ children }: Props) {
         {/* Brand */}
         <div className="p-6 border-b border-slate-800 flex items-center justify-between">
           <Link href="/admin" className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center text-white shadow-md">
-              <Signal className="w-5 h-5 text-white" />
+            <div className="w-10 h-10 rounded-xl overflow-hidden bg-black border border-slate-800 flex items-center justify-center p-0.5 shadow-md">
+              <img src="/logo.png" alt="BundleMartGh" className="w-full h-full object-contain" />
             </div>
             <div>
               <span className="font-extrabold text-base text-white tracking-tight block">
-                BIGJ DATA
+                BundleMartGh
               </span>
               <span className="text-[10px] text-emerald-400 font-semibold tracking-wider uppercase">
                 Merchant Admin

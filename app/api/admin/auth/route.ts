@@ -3,12 +3,15 @@ import { NextResponse } from "next/server";
 export async function POST(request: Request) {
   try {
     const { password } = await request.json();
-    const correctPassword = process.env.ADMIN_PASSWORD || "bigj2026";
+    const envPassword = process.env.ADMIN_PASSWORD;
+    const isMatch = envPassword
+      ? password && password.trim() === envPassword.trim()
+      : password && (password.trim() === "bundlemart2026" || password.trim() === "bigj2026");
 
-    if (password && password.trim() === correctPassword.trim()) {
+    if (isMatch) {
       return NextResponse.json({
         success: true,
-        token: "bigj_admin_token_" + Buffer.from(Date.now().toString()).toString("base64"),
+        token: "bundlemart_admin_token_" + Buffer.from(Date.now().toString()).toString("base64"),
       });
     }
 

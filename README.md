@@ -1,8 +1,8 @@
-# BIGJ DATA (DATA1GH) 🚀
+# BundleMartGh 🚀
 
 Full-Stack, automated mobile data bundle selling platform for Ghana.
 
-- **Frontend:** Next.js 14 App Router, Tailwind CSS, Lucide Icons, Canvas Confetti
+- **Frontend:** Next.js 16 App Router, Tailwind CSS, Lucide Icons, Canvas Confetti
 - **Backend:** Next.js API Routes (Node.js runtime)
 - **Database:** Supabase PostgreSQL with automated fallback
 - **Payment Gateway:** Paystack Inline Mobile Money & Card
@@ -25,7 +25,7 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 - Telecel Packages: [http://localhost:3000/buy/telecel](http://localhost:3000/buy/telecel)
 - AT Packages: [http://localhost:3000/buy/at](http://localhost:3000/buy/at)
 - Track Order: [http://localhost:3000/track](http://localhost:3000/track)
-- Admin Portal: [http://localhost:3000/admin](http://localhost:3000/admin) (Password: `bigj2026`)
+- Admin Portal: [http://localhost:3000/admin](http://localhost:3000/admin) (Password: `bundlemart2026`)
 
 ---
 
@@ -35,8 +35,8 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 2. Go to the **SQL Editor** tab in your Supabase dashboard.
 3. Open [`supabase-schema.sql`](./supabase-schema.sql), copy its entire contents, and run it.
 4. It will create:
-   - `products` (with seeded MTN, Telecel, and AT packages)
-   - `orders` (with unique reference IDs like `BIGJ-XXXXXXXX`)
+   - `products` (managed via `/admin/products`)
+   - `orders` (with unique reference IDs like `BMGH-XXXXXXXX`)
    - `settings` (store info, Paystack keys, DataMart API config, announcement toggle)
    - `messages` (customer contact inquiries)
    - Row Level Security (RLS) policies and performance indexes.
@@ -49,7 +49,7 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
    PAYSTACK_SECRET_KEY=sk_live_xxxx
    DATAMART_API_KEY=dm_live_xxxx
    DATAMART_API_URL=https://api.datamartgh.com/v1
-   ADMIN_PASSWORD=bigj2026
+   ADMIN_PASSWORD=bundlemart2026
    ```
 
 ---
@@ -59,14 +59,14 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 1. Customer selects package (e.g. MTN 5GB for GHS 28.50).
 2. Customer enters their Ghanaian mobile number (with telco prefix detection).
 3. Paystack inline payment verifies transaction.
-4. System automatically calls `/api/orders/create` with generated reference `BIGJ-XXXXXXXX`.
+4. System automatically calls `/api/orders/create` with generated reference `BMGH-XXXXXXXX`.
 5. Server instantly triggers DataMart API:
    ```json
    {
      "network": "mtn",
      "package": "5GB",
      "phone": "055XXXXXXX",
-     "reference": "BIGJ-87654321"
+     "reference": "BMGH-87654321"
    }
    ```
 6. On success, order marks `delivered` and customer is redirected to `/receipt/[reference]` with celebratory confetti.
@@ -82,10 +82,10 @@ The admin panel features an interactive **AI Copilot** that takes real actions:
 - `refundOrder(orderId)`
 
 When you type:
-> *"mark order BIGJ-98234120 as delivered"*
+> *"mark order BMGH-98234120 as delivered"*
 
 The AI executes the update and confirms:
-> **"Done bossu, marked order BIGJ-98234120 as delivered."**
+> **"Done bossu, marked order BMGH-98234120 as delivered."**
 
 ---
 
@@ -93,7 +93,7 @@ The AI executes the update and confirms:
 
 ```bash
 git add .
-git commit -m "BIGJ DATA production ready"
+git commit -m "BundleMartGh production ready"
 git push
 ```
 Connect your repository in [Vercel](https://vercel.com) and add the environment variables from [`.env.example`](./.env.example).

@@ -85,7 +85,7 @@ export default function AdminMessagesPage() {
               const waUrl = cleanPhone
                 ? `https://wa.me/${cleanPhone.startsWith("0") ? "233" + cleanPhone.slice(1) : cleanPhone}?text=Hello%20${encodeURIComponent(
                     m.name || "Customer"
-                  )},%20regarding%20your%20message%20to%20BIGJ%20DATA:`
+                  )},%20regarding%20your%20message%20to%20BundleMartGh:`
                 : null;
 
               return (

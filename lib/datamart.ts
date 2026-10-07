@@ -4,7 +4,7 @@ export interface DataMartDeliveryParams {
   network: string; // mtn, telecel, at
   package_size: string; // e.g. 5GB
   phone: string; // 055xxxxxxx
-  reference: string; // BIGJ-xxxx
+  reference: string; // BMGH-xxxx
 }
 
 export interface DataMartResult {

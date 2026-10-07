@@ -43,7 +43,7 @@ export default function AdminSettingsPage() {
       if (data.success && data.settings) {
         const s: Settings = data.settings;
         setSettings(s);
-        setStoreName(s.store_name || "BIGJ DATA");
+        setStoreName(s.store_name || "BundleMartGh");
         setSupportPhone(s.support_phone || "");
         setWhatsappNumber(s.whatsapp_number || "");
         setEmail(s.email || "");
@@ -173,7 +173,7 @@ export default function AdminSettingsPage() {
                   required
                   value={storeName}
                   onChange={(e) => setStoreName(e.target.value)}
-                  placeholder="BIGJ DATA"
+                  placeholder="BundleMartGh"
                   className="w-full px-3.5 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white font-medium focus:outline-none focus:ring-2 focus:ring-emerald-500"
                 />
                 <span className="text-[10px] text-slate-500 mt-1 block">
@@ -215,7 +215,7 @@ export default function AdminSettingsPage() {
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="support@bigjdata.com"
+                  placeholder="support@bundlemartgh.com"
                   className="w-full px-3.5 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white font-medium focus:outline-none focus:ring-2 focus:ring-emerald-500"
                 />
               </div>

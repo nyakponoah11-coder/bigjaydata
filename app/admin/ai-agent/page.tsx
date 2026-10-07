@@ -30,7 +30,7 @@ export default function AdminAIAgentPage() {
     {
       id: "intro-1",
       sender: "ai",
-      text: 'Done bossu, I am your BIGJ DATA AI Action Agent. You can give me direct instructions and I will execute them immediately on the database and send SMS notifications.\n\nTry commands like:\n• "mark order BIGJ-98234120 as delivered"\n• "send SMS to 0554128901 saying your 5GB MTN data is ready"\n• "check order BIGJ-98234120"\n• "refund order BIGJ-77123984"\n• "how many orders today?"',
+      text: 'Done bossu, I am your BundleMartGh AI Action Agent. You can give me direct instructions and I will execute them immediately on the database and send SMS notifications.\n\nTry commands like:\n• "mark order BMGH-98234120 as delivered"\n• "send SMS to 0554128901 saying your 5GB MTN data is ready"\n• "check order BMGH-98234120"\n• "refund order BMGH-77123984"\n• "how many orders today?"',
       timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
     },
   ]);
@@ -125,10 +125,10 @@ export default function AdminAIAgentPage() {
             Presets:
           </span>
           <button
-            onClick={() => handleSendCommand("mark order BIGJ-98234120 as delivered")}
+            onClick={() => handleSendCommand("mark order BMGH-98234120 as delivered")}
             className="px-3 py-1 bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-800 rounded-xl text-xs whitespace-nowrap transition-colors"
           >
-            "mark order BIGJ-98234120 as delivered"
+            "mark order BMGH-98234120 as delivered"
           </button>
           <button
             onClick={() => handleSendCommand("send SMS to 0554128901 saying your 5GB data has arrived")}
@@ -137,10 +137,10 @@ export default function AdminAIAgentPage() {
             "send SMS to 0554128901..."
           </button>
           <button
-            onClick={() => handleSendCommand("details of BIGJ-98234120")}
+            onClick={() => handleSendCommand("details of BMGH-98234120")}
             className="px-3 py-1 bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-800 rounded-xl text-xs whitespace-nowrap transition-colors"
           >
-            "details of BIGJ-98234120"
+            "details of BMGH-98234120"
           </button>
           <button
             onClick={() => handleSendCommand("how many orders today?")}
@@ -210,7 +210,7 @@ export default function AdminAIAgentPage() {
             {loading && (
               <div className="flex items-center gap-2 text-xs text-emerald-400 bg-slate-800/40 p-3 rounded-2xl w-fit">
                 <Loader2 className="w-4 h-4 animate-spin" />
-                <span>Executing action on BIGJ DATA database...</span>
+                <span>Executing action on BundleMartGh database...</span>
               </div>
             )}
 
@@ -228,7 +228,7 @@ export default function AdminAIAgentPage() {
               autoFocus
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder='Type action command (e.g. "mark order BIGJ-98234120 as delivered")...'
+              placeholder='Type action command (e.g. "mark order BMGH-98234120 as delivered")...'
               className="flex-1 px-4 py-3 bg-slate-800 border border-slate-700 rounded-2xl text-xs sm:text-sm text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 placeholder-slate-500"
             />
             <button
