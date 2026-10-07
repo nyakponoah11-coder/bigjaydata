@@ -23,8 +23,15 @@
     animation: marquee-seamless 45s linear infinite;
   }
 
+  .animate-marquee-slow {
+    display: flex;
+    width: max-content;
+    animation: marquee-seamless 70s linear infinite;
+  }
+
   .animate-marquee:hover,
-  .animate-marquee-seamless:hover {
+  .animate-marquee-seamless:hover,
+  .animate-marquee-slow:hover {
     animation-play-state: paused;
   }
 }

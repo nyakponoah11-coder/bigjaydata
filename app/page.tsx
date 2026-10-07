@@ -98,20 +98,20 @@ export default async function HomePage() {
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900">
-      {/* Top Announcement Marquee Banner (shows only if enabled in admin settings) */}
-      <AnnouncementBanner
-        text={settings.announcement_text}
-        isActive={settings.announcement_active}
-      />
-
       {/* Navigation */}
       <Navbar
         storeName={settings.store_name}
         whatsappNumber={settings.whatsapp_number}
       />
 
-      {/* Comments Bar (Circular Non-Stop Stream between Navbar and Hero Card) */}
+      {/* Customer Comments Cards with Avatars (Comes First) */}
       <CommentsMarquee />
+
+      {/* Top Announcement Marquee Banner (Comes Last) */}
+      <AnnouncementBanner
+        text={settings.announcement_text}
+        isActive={settings.announcement_active}
+      />
 
       {/* Hero Section */}
       <section className="relative overflow-hidden pt-8 pb-12 lg:pt-14 lg:pb-16 bg-gradient-to-b from-white via-slate-50 to-slate-100 border-b border-slate-200/60">
