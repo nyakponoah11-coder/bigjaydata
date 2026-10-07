@@ -131,7 +131,6 @@ export async function sendDataMartDelivery(params: DataMartDeliveryParams): Prom
     const baseHeaders: Record<string, string> = {
       "Content-Type": "application/json",
       "X-API-Key": apiKey,
-      "x-api-key": apiKey,
       "X-Idempotency-Key": idempotencyKey,
       "User-Agent": "BundleMartGh/1.0",
       "Accept": "application/json",
@@ -271,7 +270,6 @@ export async function testDataMartConnection(customApiKey?: string, customApiUrl
     const testHeaders = {
       "Content-Type": "application/json",
       "X-API-Key": apiKey,
-      "x-api-key": apiKey,
       "X-Idempotency-Key": crypto.randomUUID(),
       "User-Agent": "BundleMartGh/1.0",
       "Accept": "application/json",
@@ -395,7 +393,6 @@ export async function checkDataMartOrderStatus(orderReference: string): Promise<
       method: "GET",
       headers: {
         "X-API-Key": apiKey,
-        "x-api-key": apiKey,
         "Accept": "application/json",
       },
     });
@@ -485,7 +482,6 @@ export async function fetchDeliveryTracker(): Promise<DeliveryTrackerData> {
         method: "GET",
         headers: {
           "X-API-Key": apiKey,
-          "x-api-key": apiKey,
           "Accept": "application/json",
         },
         cache: "no-store",
