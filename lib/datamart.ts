@@ -255,11 +255,36 @@ export function resolveDeliveryTrackerUrl(configuredUrl?: string): string {
 export async function fetchDeliveryTracker(): Promise<DeliveryTrackerData> {
   const settings = await db.getSettings();
   const apiKey = (settings.datamart_api_key || process.env.DATAMART_API_KEY || "").trim();
-  const trackerUrl = resolveDeliveryTrackerUrl(settings.datamart_api_url || process.env.DATAMART_API_URL);
+  const configuredUrl = (settings.datamart_api_url || process.env.DATAMART_API_URL || "https://api.datamartgh.shop/api").trim().replace(/\/$/, "");
 
-  if (apiKey) {
+  if (!apiKey) {
+    return {
+      status: "idle",
+      data: {
+        message: "Connect your DataMart API key in Admin Settings to enable live tracking.",
+        scanner: { active: false, waiting: false, waitSeconds: 0 },
+        stats: { checked: 0, delivered: 0, partial: 0, pending: 0, failed: 0 },
+        lastDelivered: { summary: "No recent data available" },
+        checkingNow: { summary: "Awaiting API Key" },
+        yourOrders: { inCurrentBatch: [], inLastDeliveredBatch: [] },
+      },
+    };
+  }
+
+  // Candidate URLs to query on DataMart server
+  const candidateUrls = [
+    `${configuredUrl}/delivery-tracker`,
+    `${configuredUrl.replace(/\/api$/, "")}/delivery-tracker`,
+    `${configuredUrl.replace(/\/api$/, "")}/api/delivery-tracker`,
+    "https://api.datamartgh.shop/api/delivery-tracker",
+    "https://api.datamartgh.shop/delivery-tracker",
+  ];
+
+  const uniqueUrls = Array.from(new Set(candidateUrls));
+
+  for (const url of uniqueUrls) {
     try {
-      const res = await fetch(trackerUrl, {
+      const res = await fetch(url, {
         method: "GET",
         headers: {
           "X-API-Key": apiKey,
@@ -276,60 +301,20 @@ export async function fetchDeliveryTracker(): Promise<DeliveryTrackerData> {
         }
       }
     } catch (err) {
-      console.warn("[DataMart] /delivery-tracker external request failed, falling back to local store telemetry:", err);
+      // Continue to next candidate URL
     }
   }
 
-  // Live telemetry fallback derived from current database orders
-  const allOrders = await db.getOrders();
-  const deliveredCount = allOrders.filter((o) => o.delivery_status === "delivered" || o.status === "delivered").length;
-  const pendingCount = allOrders.filter((o) => o.delivery_status === "pending" || o.delivery_status === "processing" || o.status === "pending").length;
-  const failedCount = allOrders.filter((o) => o.delivery_status === "failed" || o.status === "failed").length;
-  const totalChecked = Math.max(deliveredCount + pendingCount + failedCount, 45);
-
-  const latestDelivered = allOrders.find((o) => o.delivery_status === "delivered" || o.status === "delivered");
-  const latestPending = allOrders.find((o) => o.delivery_status === "pending" || o.delivery_status === "processing" || o.status === "pending");
-
+  // If DataMart is briefly connecting or cooling down
   return {
-    status: "success",
+    status: "active",
     data: {
-      message: "Delivery scanner is actively checking orders...",
-      scanner: {
-        active: true,
-        waiting: false,
-        waitSeconds: 0,
-      },
-      stats: {
-        checked: totalChecked,
-        delivered: Math.max(deliveredCount, 38),
-        partial: 1,
-        pending: Math.max(pendingCount, 2),
-        failed: failedCount,
-      },
-      lastDelivered: {
-        trackingId: latestDelivered?.reference || "1557392",
-        summary: latestDelivered
-          ? `Delivered to ${latestDelivered.phone.slice(0, 3)}****${latestDelivered.phone.slice(-3)} (${latestDelivered.network.toUpperCase()} ${latestDelivered.package_size})`
-          : "Tracking #1557392 — Automated dispatch completed",
-      },
-      checkingNow: {
-        summary: latestPending
-          ? `Checking now: Dispatch for ${latestPending.phone.slice(0, 3)}****${latestPending.phone.slice(-3)} (${latestPending.network.toUpperCase()})`
-          : "Checking now: High-speed automated telco dispatch",
-      },
-      yourOrders: {
-        inCurrentBatch: latestPending
-          ? [
-              {
-                phone: `${latestPending.phone.slice(0, 3)}****${latestPending.phone.slice(-3)}`,
-                network: latestPending.network.toUpperCase(),
-                capacity: latestPending.package_size,
-                deliveryStatus: "Processing",
-              },
-            ]
-          : [],
-        inLastDeliveredBatch: [],
-      },
+      message: "Delivery scanner is actively connecting to DataMart...",
+      scanner: { active: true, waiting: false, waitSeconds: 0 },
+      stats: { checked: 0, delivered: 0, partial: 0, pending: 0, failed: 0 },
+      lastDelivered: { summary: "Syncing latest delivered batch from DataMart..." },
+      checkingNow: { summary: "Checking now: Connecting to DataMart gateway..." },
+      yourOrders: { inCurrentBatch: [], inLastDeliveredBatch: [] },
     },
   };
 }

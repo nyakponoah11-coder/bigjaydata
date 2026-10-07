@@ -71,31 +71,73 @@ export default function DeliveryTrackerCard({
     waitSeconds: 0,
   };
   const stats = tracker?.data?.stats || {
-    checked: 48,
-    delivered: 45,
-    partial: 1,
-    pending: 2,
+    checked: 0,
+    delivered: 0,
+    partial: 0,
+    pending: 0,
     failed: 0,
   };
 
-  // Estimated delivery calculation
+  /**
+   * Real Estimated Delivery Time calculation per user instruction:
+   * "last order placed at 3:35, delivered at 3:47. So you calculate the time range between them, then you take it to the estimated time."
+   */
   const getEstimatedDelivery = () => {
-    if (!scanner.active && !scanner.waiting) {
-      return { time: "3 - 5 Mins", badge: "Standard Queue", isTurbo: false };
+    const summary = tracker?.data?.lastDelivered?.summary || "";
+
+    // Regex to match: placed at [time], delivered at [time]
+    // Examples: "placed at Apr 03, 10:03 AM, delivered at Apr 03, 11:51 AM" or "placed at 3:35, delivered at 3:47"
+    const match = summary.match(/placed\s+at\s+([^,]+?),\s*delivered\s+at\s+([^,\s—]+(?:\s*(?:AM|PM))?)/i);
+
+    if (match) {
+      const placedStr = match[1].trim();
+      const deliveredStr = match[2].trim();
+
+      const parseTimeToMinutes = (str: string) => {
+        // Check "10:03 AM" or "3:35"
+        const timeMatch = str.match(/(\d+):(\d+)(?:\s*(AM|PM))?/i);
+        if (timeMatch) {
+          let hours = parseInt(timeMatch[1], 10);
+          const minutes = parseInt(timeMatch[2], 10);
+          const ampm = timeMatch[3]?.toUpperCase();
+          if (ampm === "PM" && hours < 12) hours += 12;
+          if (ampm === "AM" && hours === 12) hours = 0;
+          return hours * 60 + minutes;
+        }
+        return null;
+      };
+
+      const placedMins = parseTimeToMinutes(placedStr);
+      const deliveredMins = parseTimeToMinutes(deliveredStr);
+
+      if (placedMins !== null && deliveredMins !== null) {
+        let diff = deliveredMins - placedMins;
+        if (diff < 0) diff += 24 * 60; // Midnight rollover
+
+        if (diff <= 1) {
+          return { time: "Under 1 Min", badge: "⚡ Real Instant", isTurbo: true };
+        } else if (diff < 60) {
+          return { time: `${diff} Mins`, badge: diff <= 3 ? "⚡ Turbo" : "Direct Telco", isTurbo: diff <= 3 };
+        } else {
+          const h = Math.floor(diff / 60);
+          const m = diff % 60;
+          return { time: `${h}h ${m}m`, badge: "Batch Completed", isTurbo: false };
+        }
+      }
     }
+
     if (scanner.waiting) {
       return {
-        time: `~${Math.max(scanner.waitSeconds || 45, 30)}s - 2m`,
+        time: `~${Math.max(scanner.waitSeconds || 30, 15)}s`,
         badge: "Paused Briefly",
         isTurbo: false,
       };
     }
+
     if (stats.pending <= 3) {
-      return { time: "30 - 60 Seconds", badge: "⚡ Turbo Fast", isTurbo: true };
-    } else if (stats.pending <= 8) {
-      return { time: "1 - 2 Minutes", badge: "⚡ High Speed", isTurbo: true };
+      return { time: "30 - 60 Secs", badge: "⚡ High Speed", isTurbo: true };
     }
-    return { time: "2 - 4 Minutes", badge: "Queued", isTurbo: false };
+    return { time: "1 - 3 Mins", badge: "Live Dispatch", isTurbo: true };
   };
 
   const estimated = getEstimatedDelivery();
@@ -118,9 +160,9 @@ export default function DeliveryTrackerCard({
       <div className="absolute bottom-0 left-0 -ml-16 -mb-16 w-64 h-64 bg-teal-500/10 rounded-full blur-3xl pointer-events-none" />
 
       <div className="relative p-4 sm:p-5 z-10">
-        {/* TOP ROW: Scanner State & Estimated Delivery Time */}
+        {/* TOP ROW: Live Delivery Checker & Estimated Delivery Time */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-white/10">
-          {/* Scanner State Indicator */}
+          {/* Live Delivery Checker State Indicator */}
           <div className="flex items-center gap-3">
             {scanner.active ? (
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 text-xs font-bold tracking-wide">
@@ -128,22 +170,22 @@ export default function DeliveryTrackerCard({
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
                   <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
                 </span>
-                <span>Active Telco Scanner</span>
+                <span>Live Delivery Checker</span>
               </div>
             ) : scanner.waiting ? (
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-400 text-xs font-bold tracking-wide">
                 <Clock className="w-3.5 h-3.5 animate-spin text-amber-400" />
-                <span>Waiting ({scanner.waitSeconds}s)</span>
+                <span>Live Delivery Checker • Paused ({scanner.waitSeconds}s)</span>
               </div>
             ) : (
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-500/20 border border-slate-500/30 text-slate-400 text-xs font-bold tracking-wide">
                 <span className="h-2 w-2 rounded-full bg-slate-400" />
-                <span>Scanner Idle</span>
+                <span>Live Delivery Checker • Idle</span>
               </div>
             )}
 
             <span className="hidden md:inline-block text-xs text-slate-300 font-medium">
-              {tracker?.data?.message || "Delivery scanner actively dispatching orders to telco networks"}
+              {tracker?.data?.message || "DataMart automated live order delivery checker active"}
             </span>
           </div>
 

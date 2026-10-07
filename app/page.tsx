@@ -6,7 +6,6 @@ import AnnouncementBanner from "@/components/AnnouncementBanner";
 import WhatsAppButton from "@/components/WhatsAppButton";
 import CommentsMarquee from "@/components/CommentsMarquee";
 import NetworkSelectionSection from "@/components/NetworkSelectionSection";
-import DeliveryTrackerCard from "@/components/DeliveryTrackerCard";
 import {
   Zap,
   ShieldCheck,
@@ -114,11 +113,6 @@ export default async function HomePage() {
         text={settings.announcement_text}
         isActive={settings.announcement_active}
       />
-
-      {/* Live Telco Delivery Tracker at the very top */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4 pb-2 w-full">
-        <DeliveryTrackerCard />
-      </div>
 
       {/* Hero Section */}
       <section className="relative overflow-hidden pt-8 pb-12 lg:pt-14 lg:pb-16 bg-gradient-to-b from-white via-slate-50 to-slate-100 border-b border-slate-200/60">
