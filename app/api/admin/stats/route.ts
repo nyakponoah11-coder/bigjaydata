@@ -1,12 +1,21 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { fetchDataMartBalance } from "@/lib/datamart";
 
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const dateParam = searchParams.get("date") || new Date().toISOString().slice(0, 10);
 
-    const allOrders = await db.getOrders();
+    const [allOrders, datamartBalance] = await Promise.all([
+      db.getOrders(),
+      fetchDataMartBalance().catch((err) => ({
+        success: false,
+        balance: null,
+        currency: "GHS",
+        message: err?.message,
+      })),
+    ]);
 
     const ordersForDate = allOrders.filter((o) => o.created_at.startsWith(dateParam));
 
@@ -32,6 +41,7 @@ export async function GET(request: Request) {
         totalSalesToday,
         pendingOrdersCount,
         failedOrdersCount,
+        datamartBalance,
       },
       recentOrders,
     });

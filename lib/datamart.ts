@@ -244,6 +244,70 @@ export async function sendDataMartDelivery(params: DataMartDeliveryParams): Prom
   }
 }
 
+export interface DataMartBalanceResult {
+  success: boolean;
+  balance: number | null;
+  currency: string;
+  user?: {
+    id?: string;
+    name?: string;
+    email?: string;
+    phoneNumber?: string;
+  };
+  message?: string;
+}
+
+/**
+ * Fetches reseller wallet balance and account profile from DataMart developer API: GET /balance
+ */
+export async function fetchDataMartBalance(): Promise<DataMartBalanceResult> {
+  try {
+    const settings = await db.getSettings();
+    const apiKey = (settings.datamart_api_key || process.env.DATAMART_API_KEY || "").trim();
+    const devBaseUrl = resolveDeveloperBaseUrl(settings.datamart_api_url || process.env.DATAMART_API_URL);
+
+    if (!apiKey) {
+      return { success: false, balance: null, currency: "GHS", message: "API key not configured" };
+    }
+
+    const res = await fetch(`${devBaseUrl}/balance`, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        "X-API-Key": apiKey,
+        "User-Agent": "BundleMartGh/1.0",
+        "Accept": "application/json",
+      },
+      cache: "no-store",
+    });
+
+    const data = await res.json().catch(() => null);
+    if (res.ok && (data?.status === "success" || data?.data?.balance !== undefined || data?.balance !== undefined)) {
+      const bal = data?.data?.balance ?? data?.balance ?? 0;
+      return {
+        success: true,
+        balance: Number(bal),
+        currency: data?.data?.currency || "GHS",
+        user: data?.data?.user,
+      };
+    }
+
+    return {
+      success: false,
+      balance: null,
+      currency: "GHS",
+      message: data?.message || `HTTP ${res.status}`,
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      balance: null,
+      currency: "GHS",
+      message: err?.message || "Failed to reach DataMart",
+    };
+  }
+}
+
 /**
  * Diagnostic tool: Tests connectivity and API key validity against DataMart developer API
  */

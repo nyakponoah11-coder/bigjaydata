@@ -16,11 +16,24 @@ import {
   CheckCircle2,
   Package,
   Bot,
+  Wallet,
 } from "lucide-react";
 
 export default function AdminDashboardPage() {
   const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [stats, setStats] = useState({
+  const [stats, setStats] = useState<{
+    totalOrdersToday: number;
+    totalSalesToday: number;
+    pendingOrdersCount: number;
+    failedOrdersCount: number;
+    datamartBalance?: {
+      success: boolean;
+      balance: number | null;
+      currency: string;
+      user?: { name: string; email: string; phoneNumber: string };
+      message?: string;
+    };
+  }>({
     totalOrdersToday: 0,
     totalSalesToday: 0,
     pendingOrdersCount: 0,
@@ -88,8 +101,40 @@ export default function AdminDashboardPage() {
           </div>
         </div>
 
-        {/* 4 Metric Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
+        {/* 5 Metric Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 sm:gap-6">
+          {/* DataMart Reseller Wallet Balance */}
+          <div className="bg-slate-900 border border-emerald-500/30 rounded-3xl p-6 shadow-lg relative overflow-hidden group hover:border-emerald-500/60 transition-colors">
+            <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-500/5 rounded-full blur-2xl pointer-events-none" />
+            <div className="flex items-center justify-between mb-4">
+              <span className="text-xs font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                DataMart Balance
+              </span>
+              <div className="w-10 h-10 rounded-2xl bg-emerald-950/80 text-emerald-400 flex items-center justify-center border border-emerald-500/30">
+                <Wallet className="w-5 h-5" />
+              </div>
+            </div>
+            <div className="text-3xl font-black text-white font-mono tracking-tight">
+              {stats.datamartBalance?.balance !== null && stats.datamartBalance?.balance !== undefined
+                ? `GHS ${stats.datamartBalance.balance.toFixed(2)}`
+                : loading
+                ? "..."
+                : "Active"}
+            </div>
+            <div className="flex items-center justify-between mt-2 text-[11px] text-slate-400">
+              <span className="truncate">
+                {stats.datamartBalance?.user?.name ? stats.datamartBalance.user.name.trim() : "Reseller Wallet"}
+              </span>
+              <Link
+                href="/admin/settings"
+                className="text-emerald-400 hover:text-emerald-300 font-semibold text-[10px] uppercase hover:underline ml-1 shrink-0"
+              >
+                Top up →
+              </Link>
+            </div>
+          </div>
+
           {/* Total Orders Today */}
           <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-lg">
             <div className="flex items-center justify-between mb-4">
