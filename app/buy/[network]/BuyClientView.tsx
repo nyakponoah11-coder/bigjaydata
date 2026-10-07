@@ -79,20 +79,77 @@ export default function BuyClientView({ network, products, settings }: Props) {
             {theme.pill}
           </div>
           <h1 className="text-3xl sm:text-4xl lg:text-5xl font-black tracking-tight">
-            {theme.title}
+            {network.toLowerCase() === "mtn" ? "MTN Bundles" : theme.title}
           </h1>
-          <p className="mt-3 text-sm sm:text-base opacity-90 max-w-xl leading-relaxed">
-            Choose your preferred data package. All bundles feature instant automated delivery directly to your Ghanaian phone number.
-          </p>
 
-          <div className="mt-6 flex flex-wrap items-center gap-4 text-xs font-semibold">
-            <span className="flex items-center gap-1.5 bg-white/20 backdrop-blur-md px-3 py-1.5 rounded-xl">
-              <Zap className="w-3.5 h-3.5" /> Automated Line Crediting
-            </span>
-            <span className="flex items-center gap-1.5 bg-white/20 backdrop-blur-md px-3 py-1.5 rounded-xl">
-              <ShieldCheck className="w-3.5 h-3.5" /> No Expiry Guarantee
-            </span>
-          </div>
+          {network.toLowerCase() === "mtn" ? (
+            /* Crucial MTN Rules & Restrictions */
+            <div className="mt-5 space-y-3">
+              <div className="bg-black/10 backdrop-blur-md border border-black/15 rounded-2xl p-4 sm:p-5 text-slate-950 space-y-3 shadow-xs">
+                {/* Rule 1 */}
+                <div className="flex items-start gap-2.5 text-xs sm:text-sm font-extrabold">
+                  <span className="bg-slate-950 text-amber-400 font-black rounded-full w-5 h-5 flex items-center justify-center shrink-0 text-xs mt-0.5">
+                    1
+                  </span>
+                  <span>Wrong numbers cannot be refunded.</span>
+                </div>
+
+                {/* Rule 2 */}
+                <div className="flex items-start gap-2.5 text-xs sm:text-sm font-extrabold">
+                  <span className="bg-slate-950 text-amber-400 font-black rounded-full w-5 h-5 flex items-center justify-center shrink-0 text-xs mt-0.5">
+                    2
+                  </span>
+                  <div>
+                    <span>Avoid duplicate orders:</span>{" "}
+                    <span className="font-bold opacity-90">
+                      Wait 5 minutes after the first order is received before placing another order on the same number.
+                    </span>
+                  </div>
+                </div>
+
+                {/* Rule 3 */}
+                <div className="pt-2 border-t border-black/10">
+                  <div className="flex items-start gap-2.5 text-xs sm:text-sm font-extrabold mb-2">
+                    <span className="bg-slate-950 text-amber-400 font-black rounded-full w-5 h-5 flex items-center justify-center shrink-0 text-xs mt-0.5">
+                      3
+                    </span>
+                    <span>Order Rules – Do NOT place orders on:</span>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5 pl-7">
+                    {[
+                      "Turbonet SIMs",
+                      "Broadband SIMs",
+                      "Agent SIMs",
+                      "Invalid SIMs",
+                      "Ported numbers",
+                    ].map((item) => (
+                      <span
+                        key={item}
+                        className="bg-black/20 text-slate-950 font-black px-2.5 py-1 rounded-lg text-xs border border-black/15 shadow-2xs"
+                      >
+                        ✕ {item}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <>
+              <p className="mt-3 text-sm sm:text-base opacity-90 max-w-xl leading-relaxed">
+                Choose your preferred data package. All bundles feature instant automated delivery directly to your Ghanaian phone number.
+              </p>
+
+              <div className="mt-6 flex flex-wrap items-center gap-4 text-xs font-semibold">
+                <span className="flex items-center gap-1.5 bg-white/20 backdrop-blur-md px-3 py-1.5 rounded-xl">
+                  <Zap className="w-3.5 h-3.5" /> Automated Line Crediting
+                </span>
+                <span className="flex items-center gap-1.5 bg-white/20 backdrop-blur-md px-3 py-1.5 rounded-xl">
+                  <ShieldCheck className="w-3.5 h-3.5" /> No Expiry Guarantee
+                </span>
+              </div>
+            </>
+          )}
         </div>
       </div>
 

@@ -244,6 +244,11 @@ export default function CheckoutModal({ product, isOpen, onClose, settings }: Pr
               <p className="mt-1 text-[10px] text-slate-500 dark:text-slate-400">
                 Data will be credited to this Ghanaian mobile line immediately upon payment.
               </p>
+              {product.network.toLowerCase() === "mtn" && (
+                <p className="mt-1.5 text-[10px] text-amber-600 dark:text-amber-400 font-bold">
+                  ⚠️ Note: Wrong numbers cannot be refunded. Do NOT order on Turbonet, Broadband, Agent SIMs, or Ported numbers.
+                </p>
+              )}
             </div>
 
             <div>
