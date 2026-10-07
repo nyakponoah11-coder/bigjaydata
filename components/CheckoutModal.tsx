@@ -14,6 +14,8 @@ import {
   AlertTriangle,
   RefreshCw,
   Sparkles,
+  Info,
+  Check,
 } from "lucide-react";
 
 declare global {
@@ -36,11 +38,12 @@ export default function CheckoutModal({ product, isOpen, onClose, settings }: Pr
   const [error, setError] = useState("");
   const [detectedTelco, setDetectedTelco] = useState<string | null>(null);
 
-  // Number Verification State
+  // Number Verification State (Optional)
   const [verifying, setVerifying] = useState(false);
   const [verificationResult, setVerificationResult] = useState<{
     checked: boolean;
     servable: boolean;
+    isExistingLine: boolean;
     recommendation?: string;
     message?: string;
   } | null>(null);
@@ -55,7 +58,7 @@ export default function CheckoutModal({ product, isOpen, onClose, settings }: Pr
     }
   }, []);
 
-  // Ghana telco number detection & auto-verification
+  // Ghana telco number detection
   useEffect(() => {
     const clean = phone.replace(/[^0-9]/g, "");
     if (clean.length >= 3) {
@@ -73,16 +76,17 @@ export default function CheckoutModal({ product, isOpen, onClose, settings }: Pr
       setDetectedTelco(null);
     }
 
-    // Reset verification if phone changes
-    if (clean.length < 10) {
-      setVerificationResult(null);
-    }
+    // Reset verification if phone is altered
+    setVerificationResult(null);
   }, [phone]);
 
-  // Trigger verify number against DataMart API
-  const performNumberVerification = async (targetPhone: string): Promise<boolean> => {
+  // Optional Number Verification Check
+  const performNumberVerification = async (targetPhone: string) => {
     const clean = targetPhone.replace(/[^0-9]/g, "");
-    if (clean.length < 10) return false;
+    if (clean.length < 10) {
+      setError("Please enter a valid 10-digit number to verify.");
+      return;
+    }
 
     setVerifying(true);
     setError("");
@@ -96,24 +100,24 @@ export default function CheckoutModal({ product, isOpen, onClose, settings }: Pr
 
       const data = await res.json();
       const isServable = data.servable !== false;
+      const isOldActive = isServable && data.recommendation !== "activate_first";
 
       setVerificationResult({
         checked: true,
         servable: isServable,
-        recommendation: data.recommendation || (isServable ? "sell_any" : "activate_first"),
-        message: data.message || (isServable ? "Line is active and ready for bundle delivery." : "Number cannot receive bundles right now."),
+        isExistingLine: isOldActive,
+        recommendation: data.recommendation || (isOldActive ? "sell_any" : "activate_first"),
+        message: data.message || "",
       });
-
-      return isServable;
     } catch (err) {
-      // In case of error/timeout, allow order to proceed smoothly
+      // In case of network timeout, provide smooth fallback
       setVerificationResult({
         checked: true,
         servable: true,
+        isExistingLine: true,
         recommendation: "sell_any",
-        message: "Line verified. Ready for automated delivery.",
+        message: "Line checked. Ready to proceed with order.",
       });
-      return true;
     } finally {
       setVerifying(false);
     }
@@ -131,6 +135,7 @@ export default function CheckoutModal({ product, isOpen, onClose, settings }: Pr
     product.network.toLowerCase() !== detectedTelco &&
     ["mtn", "telecel", "at"].includes(product.network.toLowerCase());
 
+  // Proceed directly to Paystack payment (verification is optional!)
   const handleCheckout = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
@@ -142,20 +147,6 @@ export default function CheckoutModal({ product, isOpen, onClose, settings }: Pr
     }
 
     setLoading(true);
-
-    // If not verified yet, verify up-front before opening payment
-    if (!verificationResult?.checked) {
-      const isValid = await performNumberVerification(cleanPhone);
-      if (!isValid) {
-        setError("This number cannot be served on the delivery network. Please check the recipient number.");
-        setLoading(false);
-        return;
-      }
-    } else if (!verificationResult.servable) {
-      setError(verificationResult.message || "This line cannot receive data on the network. Please enter an active number.");
-      setLoading(false);
-      return;
-    }
 
     const reference = generateReference();
     const customerEmail = `${cleanPhone}@customer.bundlemartgh.com`;
@@ -239,6 +230,8 @@ export default function CheckoutModal({ product, isOpen, onClose, settings }: Pr
     }
   };
 
+  const cleanPhoneLength = phone.replace(/[^0-9]/g, "").length;
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fade-in">
       <div
@@ -298,7 +291,7 @@ export default function CheckoutModal({ product, isOpen, onClose, settings }: Pr
                 <label className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wide">
                   Recipient Phone Number *
                 </label>
-                {phone.replace(/[^0-9]/g, "").length === 10 && (
+                {cleanPhoneLength === 10 && (
                   <button
                     type="button"
                     onClick={() => performNumberVerification(phone)}
@@ -306,7 +299,7 @@ export default function CheckoutModal({ product, isOpen, onClose, settings }: Pr
                     className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 hover:underline flex items-center gap-1"
                   >
                     <RefreshCw className={`w-3 h-3 ${verifying ? "animate-spin" : ""}`} />
-                    Verify line
+                    Verify line (Optional)
                   </button>
                 )}
               </div>
@@ -321,60 +314,86 @@ export default function CheckoutModal({ product, isOpen, onClose, settings }: Pr
                   onChange={(e) => setPhone(e.target.value)}
                   placeholder="055XXXXXXX"
                   maxLength={13}
-                  className="w-full pl-10 pr-24 py-3 text-base font-mono font-bold border border-slate-300 dark:border-slate-700 rounded-2xl bg-slate-50 dark:bg-slate-800/80 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 tracking-wider"
+                  className="w-full pl-10 pr-28 py-3 text-base font-mono font-bold border border-slate-300 dark:border-slate-700 rounded-2xl bg-slate-50 dark:bg-slate-800/80 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 tracking-wider"
                 />
 
-                {/* Quick Inline Check Button inside input */}
+                {/* Quick Optional Check Button Inside Input */}
                 <div className="absolute right-2 top-2">
                   <button
                     type="button"
                     onClick={() => performNumberVerification(phone)}
-                    disabled={verifying || phone.replace(/[^0-9]/g, "").length < 10}
+                    disabled={verifying || cleanPhoneLength < 10}
                     className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1 ${
-                      verificationResult?.checked && verificationResult.servable
+                      verificationResult?.checked && verificationResult.isExistingLine
                         ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30"
                         : "bg-slate-900 hover:bg-slate-800 text-white dark:bg-slate-700 dark:hover:bg-slate-600 disabled:opacity-40"
                     }`}
                   >
                     {verifying ? (
                       <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    ) : verificationResult?.checked && verificationResult.servable ? (
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+                    ) : verificationResult?.checked ? (
+                      <Check className="w-3.5 h-3.5 text-emerald-500" />
                     ) : null}
-                    <span>{verifying ? "Checking" : verificationResult?.checked ? "Verified" : "Check Line"}</span>
+                    <span>{verifying ? "Checking..." : verificationResult?.checked ? "Verified" : "Verify Line"}</span>
                   </button>
                 </div>
               </div>
 
-              {/* Number Verification Status Box */}
+              {/* POST-VERIFICATION NOTIFICATIONS (Existing Line vs New Number) */}
               {verifying ? (
-                <div className="mt-2.5 p-3 rounded-xl bg-slate-100 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 flex items-center gap-2.5 text-xs text-slate-600 dark:text-slate-300 animate-pulse">
+                <div className="mt-2.5 p-3 rounded-2xl bg-slate-100 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 flex items-center gap-2.5 text-xs text-slate-600 dark:text-slate-300 animate-pulse">
                   <Loader2 className="w-4 h-4 text-emerald-500 animate-spin shrink-0" />
-                  <span>Verifying number against telecom dispatch network...</span>
+                  <span>Checking line status with telecom network...</span>
                 </div>
               ) : verificationResult?.checked ? (
-                verificationResult.servable ? (
-                  <div className="mt-2.5 p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800/60 flex items-start gap-2.5 text-xs text-emerald-800 dark:text-emerald-300">
+                verificationResult.isExistingLine ? (
+                  /* OLD / EXISTING ACTIVE NUMBER NOTIFICATION */
+                  <div className="mt-2.5 p-3.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-800 dark:text-emerald-200 text-xs flex items-start gap-2.5 shadow-xs">
                     <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
                     <div>
-                      <div className="font-extrabold">Active & Verified for Instant Delivery</div>
-                      <div className="text-[11px] opacity-90 mt-0.5">
-                        {verificationResult.recommendation === "activate_first"
-                          ? "New SIM detected: 1GB bundle recommended first."
-                          : "Line confirmed ready to receive this data bundle immediately."}
+                      <div className="font-black text-emerald-700 dark:text-emerald-300 flex items-center gap-1.5">
+                        <span>Active Line in System</span>
+                        <span className="text-[10px] bg-emerald-500/20 text-emerald-600 dark:text-emerald-300 px-2 py-0.2 rounded-full font-bold">
+                          Old Number
+                        </span>
                       </div>
+                      <p className="text-[11px] opacity-90 mt-1 leading-relaxed">
+                        This number is already in the system. You can proceed and buy any bundle size with instant delivery!
+                      </p>
+                    </div>
+                  </div>
+                ) : verificationResult.recommendation === "activate_first" ? (
+                  /* NEW NUMBER TO SYSTEM NOTIFICATION */
+                  <div className="mt-2.5 p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-900 dark:text-amber-200 text-xs flex items-start gap-2.5 shadow-xs">
+                    <Info className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+                    <div>
+                      <div className="font-black text-amber-700 dark:text-amber-300 flex items-center gap-1.5">
+                        <span>New Number to Network</span>
+                        <span className="text-[10px] bg-amber-500/20 text-amber-700 dark:text-amber-300 px-2 py-0.2 rounded-full font-bold">
+                          New SIM
+                        </span>
+                      </div>
+                      <p className="text-[11px] opacity-90 mt-1 leading-relaxed">
+                        This number is new to the telecom system. It needs to be activated (1GB bundle recommended first; allow time for first activation). You can still proceed to pay!
+                      </p>
                     </div>
                   </div>
                 ) : (
-                  <div className="mt-2.5 p-3 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800/60 flex items-start gap-2.5 text-xs text-amber-800 dark:text-amber-300">
-                    <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                  /* OTHER STATUS */
+                  <div className="mt-2.5 p-3.5 rounded-2xl bg-slate-100 dark:bg-slate-800/60 border border-slate-300 dark:border-slate-700 text-xs text-slate-700 dark:text-slate-300 flex items-start gap-2.5">
+                    <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
                     <div>
-                      <div className="font-extrabold">Network Notice</div>
-                      <div className="text-[11px] opacity-90 mt-0.5">{verificationResult.message}</div>
+                      <div className="font-bold">Network Pre-check Notice</div>
+                      <p className="text-[11px] opacity-85 mt-0.5">{verificationResult.message || "Line check complete. You can proceed to payment."}</p>
                     </div>
                   </div>
                 )
-              ) : null}
+              ) : (
+                /* OPTIONAL HINT BEFORE VERIFYING */
+                <p className="mt-1.5 text-[10px] text-slate-500 dark:text-slate-400 flex items-center justify-between">
+                  <span>Pre-checking line is optional. You can skip and pay directly below.</span>
+                </p>
+              )}
 
               {product.network.toLowerCase() === "mtn" && (
                 <p className="mt-2 text-[10px] text-amber-600 dark:text-amber-400 font-bold">
@@ -383,22 +402,24 @@ export default function CheckoutModal({ product, isOpen, onClose, settings }: Pr
               )}
             </div>
 
-            {/* Total Due & Pay Button */}
+            {/* Total Due & Pay Button (Instant Payment - Never Blocked!) */}
             <div className="pt-2">
               <button
                 type="submit"
-                disabled={loading || verifying}
+                disabled={loading}
                 className="w-full py-3.5 px-5 bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black rounded-2xl text-sm sm:text-base shadow-lg shadow-emerald-600/30 flex items-center justify-center gap-2 transition-all transform hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-50 tracking-wide"
               >
                 {loading ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    Securing Order & Payment...
+                    Opening Paystack...
                   </>
                 ) : (
                   <>
                     <Lock className="w-4 h-4 text-emerald-200" />
-                    Verify & Pay GHS {product.price.toFixed(2)}
+                    {verificationResult?.checked && verificationResult.isExistingLine
+                      ? `Proceed & Pay GHS ${product.price.toFixed(2)}`
+                      : `Pay GHS ${product.price.toFixed(2)} with Paystack`}
                     <ArrowRight className="w-4 h-4 ml-0.5" />
                   </>
                 )}
@@ -407,7 +428,7 @@ export default function CheckoutModal({ product, isOpen, onClose, settings }: Pr
           </form>
 
           {/* Security badge */}
-          <div className="pt-2 flex items-center justify-center gap-1.5 text-[10px] text-slate-400 text-center">
+          <div className="pt-1 flex items-center justify-center gap-1.5 text-[10px] text-slate-400 text-center">
             <ShieldCheck className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
             <span>Automated Telecom Delivery • Instant Crediting</span>
           </div>
