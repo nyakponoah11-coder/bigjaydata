@@ -28,14 +28,9 @@ export default function Navbar({
                 className="w-full h-full object-contain"
               />
             </div>
-            <div className="flex flex-col">
-              <span className="font-extrabold text-lg sm:text-xl tracking-tight text-slate-900 dark:text-white">
-                {storeName}
-              </span>
-              <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium tracking-wide">
-                Ghana's #1 Automated Data Hub
-              </span>
-            </div>
+            <span className="font-extrabold text-lg sm:text-xl tracking-tight text-slate-900 dark:text-white">
+              {storeName}
+            </span>
           </Link>
 
           {/* Desktop Navigation Links */}
@@ -67,34 +62,10 @@ export default function Navbar({
               <span className="w-2 h-2 rounded-full bg-blue-500"></span>
               AT Data
             </Link>
-            <Link
-              href="/track"
-              className="text-sm font-semibold text-slate-700 dark:text-slate-200 hover:text-emerald-600 dark:hover:text-emerald-400 px-3 py-2 rounded-lg transition-colors flex items-center gap-1.5"
-            >
-              <Search className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-              Track Order
-            </Link>
-          </div>
-
-          {/* Actions & Status Badge */}
-          <div className="hidden md:flex items-center gap-3">
-            <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
-              <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-300">
-                Instant Dispatch
-              </span>
-            </div>
           </div>
 
           {/* Mobile Menu Button */}
           <div className="flex md:hidden items-center gap-2">
-            <Link
-              href="/track"
-              className="p-2 text-slate-700 dark:text-slate-200 hover:text-emerald-600 rounded-lg"
-              title="Track Order"
-            >
-              <Search className="w-5 h-5" />
-            </Link>
             <button
               onClick={() => setIsMobileOpen(!isMobileOpen)}
               className="p-2 text-slate-700 dark:text-slate-200 hover:text-emerald-600 rounded-lg"
@@ -119,7 +90,7 @@ export default function Navbar({
           <Link
             href="/buy/mtn"
             onClick={() => setIsMobileOpen(false)}
-            className="flex items-center gap-2 text-base font-medium text-slate-800 dark:text-slate-200 py-2.5 px-3 rounded-lg hover:bg-amber-50 dark:hover:bg-amber-950/30 text-amber-700 dark:text-amber-400"
+            className="flex items-center gap-2 text-base font-medium text-slate-800 dark:text-slate-200 py-2.5 px-3 rounded-lg hover:bg-amber-50 dark:hover:bg-amber-950/30 text-amber-600 dark:text-amber-400"
           >
             <span className="w-2.5 h-2.5 rounded-full bg-amber-400"></span>
             MTN Data Bundles
@@ -145,16 +116,8 @@ export default function Navbar({
             onClick={() => setIsMobileOpen(false)}
             className="flex items-center gap-2 text-base font-medium text-slate-800 dark:text-slate-200 py-2.5 px-3 rounded-lg hover:bg-emerald-50 dark:hover:bg-emerald-950/30 text-emerald-600"
           >
-            <Search className="w-4 h-4" />
             Track Order Status
           </Link>
-          <div className="pt-2 border-t border-slate-200 dark:border-slate-800 flex justify-between items-center text-xs text-slate-500">
-            <span>24/7 Automated Dispatch</span>
-            <span className="text-emerald-600 font-semibold flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-              Live & Active
-            </span>
-          </div>
         </div>
       )}
     </nav>

@@ -5,6 +5,7 @@ import Footer from "@/components/Footer";
 import AnnouncementBanner from "@/components/AnnouncementBanner";
 import WhatsAppButton from "@/components/WhatsAppButton";
 import CommentsMarquee from "@/components/CommentsMarquee";
+import NetworkSelectionSection from "@/components/NetworkSelectionSection";
 import {
   Zap,
   ShieldCheck,
@@ -158,96 +159,11 @@ export default async function HomePage() {
         </div>
       </section>
 
-      {/* 3 BEAUTIFUL NETWORK CARDS (Compact, Sleek & Modern) */}
-      <section id="networks" className="py-8 sm:py-12 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 w-full">
-        <div className="text-center max-w-2xl mx-auto mb-6 sm:mb-8">
-          <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-600 bg-emerald-50 px-2.5 py-0.5 rounded-full">
-            Select Your Telco
-          </span>
-          <h2 className="mt-2 text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
-            Choose Your Network & Package
-          </h2>
-          <p className="mt-1 text-xs sm:text-sm text-slate-600">
-            Select any network below to view all available bundles and purchase directly in 2 clicks.
-          </p>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-5 lg:gap-6">
-          {allNetworkKeys.map((networkKey) => {
-            const theme = getNetworkTheme(networkKey);
-            const networkProducts = networksMap.get(networkKey) || [];
-            const hasPackages = networkProducts.length > 0;
-            const startingPrice = hasPackages
-              ? Math.min(...networkProducts.map((p) => p.price))
-              : null;
-            const packageCount = networkProducts.length;
-
-            return (
-              <div
-                key={networkKey}
-                className={`group bg-white rounded-2xl p-4 sm:p-5 border ${theme.cardBorder} shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col justify-between relative overflow-hidden transform hover:-translate-y-1`}
-              >
-                {/* Network decorative top gradient line */}
-                <div className={`absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r ${theme.gradient}`} />
-
-                <div>
-                  {/* Top Badge */}
-                  <div className="flex items-center justify-between mb-3">
-                    <div className={`w-10 h-10 rounded-xl ${theme.iconBg} flex items-center justify-center font-black text-sm shadow-xs`}>
-                      {networkKey.toUpperCase().slice(0, 3)}
-                    </div>
-                    <span className={`text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full ${theme.tagColor}`}>
-                      {theme.tag}
-                    </span>
-                  </div>
-
-                  {/* Network Info */}
-                  <h3 className="text-lg sm:text-xl font-black text-slate-900 group-hover:text-emerald-700 transition-colors">
-                    {theme.title}
-                  </h3>
-                  <p className="mt-1 text-xs text-slate-500 leading-snug line-clamp-2">
-                    {theme.desc}
-                  </p>
-                </div>
-
-                <div>
-                  {/* Price anchor & package count */}
-                  <div className="mt-4 pt-3 border-t border-slate-100 flex items-baseline justify-between">
-                    <div>
-                      <span className="text-[11px] text-slate-400 font-medium block">Starting from</span>
-                      <span className="text-xl sm:text-2xl font-black text-slate-900">
-                        {startingPrice !== null ? `GHS ${startingPrice.toFixed(2)}` : "Best Rates"}
-                      </span>
-                    </div>
-                    <div className="text-right">
-                      <span className="text-[11px] font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md">
-                        {packageCount > 0 ? `${packageCount} Packages` : "Live Setup"}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Sleek inline features */}
-                  <div className="mt-3 flex items-center gap-1.5 text-[11px] text-slate-500">
-                    <CheckCircle className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                    <span>Instant auto-delivery • Non-expiry</span>
-                  </div>
-
-                  {/* Buy Button */}
-                  <div className="mt-3.5">
-                    <Link
-                      href={`/buy/${networkKey}`}
-                      className={`w-full py-2.5 px-4 rounded-xl font-bold text-xs sm:text-sm shadow-sm flex items-center justify-center gap-1.5 transition-all bg-gradient-to-r ${theme.btnGradient}`}
-                    >
-                      <span>Buy {theme.title}</span>
-                      <ArrowRight className="w-3.5 h-3.5" />
-                    </Link>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </section>
+      {/* VERTICALLY STACKED NETWORK CARDS (MTN on top, Telecel middle, AirtelTigo down) */}
+      <NetworkSelectionSection
+        products={products}
+        settings={settings}
+      />
 
       {/* WHY CHOOSE BUNDLEMARTGH / FEATURES SECTION */}
       <section className="py-10 sm:py-14 bg-white border-y border-slate-200/80">

@@ -3,7 +3,7 @@
 import React, { useState } from "react";
 import { Product, Settings } from "@/lib/db";
 import CheckoutModal from "@/components/CheckoutModal";
-import { Zap, Check, ArrowRight, ShieldCheck, Sparkles } from "lucide-react";
+import { Zap, Check, ArrowRight, ShieldCheck, Sparkles, ChevronDown } from "lucide-react";
 
 interface Props {
   network: string;
@@ -118,47 +118,53 @@ export default function BuyClientView({ network, products, settings }: Props) {
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5 sm:gap-4">
-            {activeProducts.map((pkg) => (
-              <div
-                key={pkg.id}
-                onClick={() => handleSelect(pkg)}
-                className={`group bg-white rounded-2xl p-4 sm:p-5 border border-slate-200/90 ${theme.borderHover} shadow-xs hover:shadow-lg transition-all duration-200 flex flex-col justify-between cursor-pointer transform hover:-translate-y-0.5 relative`}
-              >
-                {/* Size and badge */}
-                <div>
-                  <div className="flex items-start justify-between gap-2 mb-1.5">
-                    <span className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight group-hover:text-emerald-700 transition-colors">
-                      {pkg.size}
-                    </span>
-                    <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${theme.badgeColor}`}>
-                      No Expiry
-                    </span>
-                  </div>
+            {activeProducts.map((pkg) => {
+              const isMtn = network.toLowerCase() === "mtn";
+              const isTelecel = network.toLowerCase() === "telecel";
+              const cardBg = isMtn
+                ? "bg-[#ffcc00] text-slate-950"
+                : isTelecel
+                ? "bg-[#e60000] text-white"
+                : "bg-[#1a73e8] text-white";
 
-                  <p className="text-xs text-slate-500 mb-3">
-                    {network.toUpperCase()} High-Speed Internet • Instant auto-delivery
-                  </p>
-                </div>
-
-                {/* Price and CTA */}
-                <div className="pt-3 border-t border-slate-100">
-                  <div className="flex items-baseline justify-between mb-2.5">
-                    <span className="text-[11px] text-slate-400 font-medium">Price</span>
-                    <div className="text-xl font-black text-slate-900">
-                      GHS {pkg.price.toFixed(2)}
+              return (
+                <div
+                  key={pkg.id}
+                  onClick={() => handleSelect(pkg)}
+                  className={`rounded-2xl p-5 transition-all duration-200 cursor-pointer shadow-md hover:shadow-xl transform hover:-translate-y-0.5 active:scale-98 relative flex flex-col justify-between ${cardBg}`}
+                >
+                  {/* Top: Oval network pill badge + chevron icon */}
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="border border-current/30 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider">
+                      {network.toUpperCase()}
+                    </span>
+                    <div className="w-6 h-6 rounded-full bg-black/10 flex items-center justify-center">
+                      <ChevronDown className="w-3.5 h-3.5" />
                     </div>
                   </div>
 
-                  <button
-                    type="button"
-                    className={`w-full py-2.5 px-3.5 rounded-xl font-bold text-xs shadow-xs flex items-center justify-center gap-1.5 transition-all group-hover:shadow-sm ${theme.selectBtn}`}
-                  >
-                    <span>Buy {pkg.size}</span>
-                    <ArrowRight className="w-3.5 h-3.5" />
-                  </button>
+                  {/* Middle: Big bold size + network bundle label */}
+                  <div className="my-1.5">
+                    <div className="text-3xl sm:text-4xl font-black tracking-tight leading-none">
+                      {pkg.size}
+                    </div>
+                    <div className="text-xs font-semibold opacity-90 mt-1">
+                      {network.toUpperCase()} Bundle
+                    </div>
+                  </div>
+
+                  {/* Bottom: Price in Cedis + No Expiry */}
+                  <div className="flex items-baseline justify-between pt-2 border-t border-current/15 mt-2">
+                    <span className="text-xl sm:text-2xl font-black tracking-tight">
+                      ₵{pkg.price.toFixed(2)}
+                    </span>
+                    <span className="text-xs font-bold opacity-85">
+                      No Expiry
+                    </span>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
