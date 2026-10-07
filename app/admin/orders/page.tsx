@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from "react";
 import AdminLayout from "@/components/AdminLayout";
 import DeliveryTrackerCard from "@/components/DeliveryTrackerCard";
+import DirectPurchaseModal from "@/components/DirectPurchaseModal";
 import { Order } from "@/lib/db";
 import {
   Search,
@@ -17,6 +18,7 @@ import {
   Calendar,
   AlertCircle,
   ExternalLink,
+  Zap,
 } from "lucide-react";
 
 export default function AdminOrdersPage() {
@@ -36,6 +38,9 @@ export default function AdminOrdersPage() {
   const [smsText, setSmsText] = useState("");
   const [sendingSms, setSendingSms] = useState(false);
   const [actionNotice, setActionNotice] = useState("");
+
+  // Direct Buy Modal
+  const [isDirectBuyOpen, setIsDirectBuyOpen] = useState(false);
 
   const fetchOrders = async () => {
     setLoading(true);
@@ -178,13 +183,23 @@ export default function AdminOrdersPage() {
             </p>
           </div>
 
-          <button
-            onClick={fetchOrders}
-            className="self-start sm:self-auto py-2 px-3 bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded-xl text-xs font-semibold text-slate-300 flex items-center gap-2 transition-colors"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
-            Refresh
-          </button>
+          <div className="flex items-center gap-2.5">
+            <button
+              onClick={() => setIsDirectBuyOpen(true)}
+              className="py-2 px-3.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-slate-950 font-black rounded-xl text-xs flex items-center gap-2 shadow-lg shadow-amber-500/20 transition-all hover:scale-105"
+            >
+              <Zap className="w-3.5 h-3.5 text-slate-950" />
+              <span>Direct Buy (DataMart)</span>
+            </button>
+
+            <button
+              onClick={fetchOrders}
+              className="py-2 px-3 bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded-xl text-xs font-semibold text-slate-300 flex items-center gap-2 transition-colors"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
+              Refresh
+            </button>
+          </div>
         </div>
 
         {/* Action Notice toast */}
@@ -639,6 +654,17 @@ export default function AdminOrdersPage() {
             </div>
           </div>
         )}
+
+        {/* Direct DataMart Purchase Modal */}
+        <DirectPurchaseModal
+          isOpen={isDirectBuyOpen}
+          onClose={() => setIsDirectBuyOpen(false)}
+          onSuccess={() => {
+            fetchOrders();
+            setActionNotice("Direct DataMart order dispatched successfully!");
+            setTimeout(() => setActionNotice(""), 4000);
+          }}
+        />
       </div>
     </AdminLayout>
   );

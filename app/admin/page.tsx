@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from "react";
 import AdminLayout from "@/components/AdminLayout";
 import DeliveryTrackerCard from "@/components/DeliveryTrackerCard";
+import DirectPurchaseModal from "@/components/DirectPurchaseModal";
 import Link from "next/link";
 import {
   TrendingUp,
@@ -17,6 +18,7 @@ import {
   Package,
   Bot,
   Wallet,
+  Zap,
 } from "lucide-react";
 
 export default function AdminDashboardPage() {
@@ -41,6 +43,7 @@ export default function AdminDashboardPage() {
   });
   const [recentOrders, setRecentOrders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isDirectBuyOpen, setIsDirectBuyOpen] = useState(false);
 
   const fetchStats = async (date: string) => {
     setLoading(true);
@@ -92,6 +95,14 @@ export default function AdminDashboardPage() {
             </div>
 
             <button
+              onClick={() => setIsDirectBuyOpen(true)}
+              className="py-2 px-3.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-slate-950 font-black rounded-xl text-xs flex items-center gap-1.5 shadow-lg shadow-amber-500/20 transition-all hover:scale-105"
+            >
+              <Zap className="w-3.5 h-3.5 text-slate-950" />
+              <span>Direct Buy</span>
+            </button>
+
+            <button
               onClick={() => fetchStats(selectedDate)}
               className="p-2.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded-xl text-slate-400 hover:text-white transition-colors"
               title="Refresh Stats"
@@ -133,6 +144,13 @@ export default function AdminDashboardPage() {
                 Top up →
               </Link>
             </div>
+            <button
+              onClick={() => setIsDirectBuyOpen(true)}
+              className="mt-3 w-full py-1.5 px-3 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-400 font-bold text-[11px] flex items-center justify-center gap-1.5 transition-colors"
+            >
+              <Zap className="w-3 h-3 text-amber-400" />
+              <span>Direct Buy from Balance</span>
+            </button>
           </div>
 
           {/* Total Orders Today */}
@@ -336,6 +354,14 @@ export default function AdminDashboardPage() {
             </table>
           </div>
         </div>
+
+        {/* Direct DataMart Purchase Modal */}
+        <DirectPurchaseModal
+          isOpen={isDirectBuyOpen}
+          onClose={() => setIsDirectBuyOpen(false)}
+          currentBalance={stats.datamartBalance?.balance}
+          onSuccess={() => fetchStats(selectedDate)}
+        />
       </div>
     </AdminLayout>
   );

@@ -17,6 +17,7 @@ import {
   Menu,
   X,
   Sparkles,
+  Gift,
 } from "lucide-react";
 
 interface Props {
@@ -151,6 +152,7 @@ export default function AdminLayout({ children }: Props) {
   const navItems = [
     { label: "Dashboard", href: "/admin", icon: LayoutDashboard },
     { label: "Orders", href: "/admin/orders", icon: ShoppingCart },
+    { label: "Free Data Vouchers", href: "/admin/vouchers", icon: Gift, badge: "Giveaway" },
     { label: "Products", href: "/admin/products", icon: Package },
     { label: "AI Agent Actions", href: "/admin/ai-agent", icon: Bot, badge: "AI Copilot" },
     { label: "Messages", href: "/admin/messages", icon: MessageSquare },

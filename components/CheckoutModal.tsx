@@ -389,9 +389,8 @@ export default function CheckoutModal({ product, isOpen, onClose, settings }: Pr
                   </div>
                 )
               ) : (
-                /* OPTIONAL HINT BEFORE VERIFYING */
-                <p className="mt-1.5 text-[10px] text-slate-500 dark:text-slate-400 flex items-center justify-between">
-                  <span>Pre-checking line is optional. You can skip and pay directly below.</span>
+                <p className="mt-1.5 text-[10px] text-slate-500 dark:text-slate-400 font-medium">
+                  New numbers need to be verified before orders will go through.
                 </p>
               )}
 

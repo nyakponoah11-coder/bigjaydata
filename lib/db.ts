@@ -76,6 +76,29 @@ export interface Message {
   created_at: string;
 }
 
+export interface Voucher {
+  id: string;
+  code: string;
+  network: string; // mtn, telecel, at
+  package_size: string; // 1GB, 500MB
+  tagline: string;
+  max_claims: number;
+  claimed_count: number;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface VoucherClaim {
+  id: string;
+  voucher_id: string;
+  voucher_code: string;
+  phone: string;
+  network: string;
+  package_size: string;
+  order_reference: string;
+  created_at: string;
+}
+
 // Products start empty - added and managed purely via /admin/products
 let initialProducts: Product[] = [];
 
@@ -158,12 +181,16 @@ const globalStore = globalThis as unknown as {
   __bmgh_settings?: Settings;
   __bmgh_orders?: Order[];
   __bmgh_messages?: Message[];
+  __bmgh_vouchers?: Voucher[];
+  __bmgh_voucher_claims?: VoucherClaim[];
 };
 
 if (!globalStore.__bmgh_products) globalStore.__bmgh_products = initialProducts;
 if (!globalStore.__bmgh_settings) globalStore.__bmgh_settings = initialSettings;
 if (!globalStore.__bmgh_orders) globalStore.__bmgh_orders = initialOrders;
 if (!globalStore.__bmgh_messages) globalStore.__bmgh_messages = initialMessages;
+if (!globalStore.__bmgh_vouchers) globalStore.__bmgh_vouchers = [];
+if (!globalStore.__bmgh_voucher_claims) globalStore.__bmgh_voucher_claims = [];
 
 export const db = {
   // SETTINGS
@@ -635,5 +662,151 @@ export const db = {
     const msg = globalStore.__bmgh_messages!.find((m) => m.id === id);
     if (msg) msg.is_read = true;
     return true;
+  },
+
+  // FREE DATA VOUCHERS
+  async getVouchers(): Promise<Voucher[]> {
+    if (isSupabaseConfigured && supabaseAdmin) {
+      try {
+        const { data, error } = await supabaseAdmin.from("vouchers").select("*").order("created_at", { ascending: false });
+        if (!error && data) return data as Voucher[];
+      } catch (err) {
+        console.error("Supabase getVouchers error:", err);
+      }
+    }
+    return globalStore.__bmgh_vouchers || [];
+  },
+
+  async getActiveVoucher(): Promise<Voucher | null> {
+    if (isSupabaseConfigured && supabaseAdmin) {
+      try {
+        const { data, error } = await supabaseAdmin
+          .from("vouchers")
+          .select("*")
+          .eq("is_active", true)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (!error && data) return data as Voucher;
+      } catch (err) {
+        console.error("Supabase getActiveVoucher error:", err);
+      }
+    }
+    return (globalStore.__bmgh_vouchers || []).find((v) => v.is_active && v.claimed_count < v.max_claims) || null;
+  },
+
+  async createVoucher(voucher: Omit<Voucher, "id" | "claimed_count" | "created_at">): Promise<Voucher> {
+    const newVoucher: Voucher = {
+      ...voucher,
+      id: crypto.randomUUID(),
+      code: voucher.code.trim().toUpperCase(),
+      claimed_count: 0,
+      created_at: new Date().toISOString(),
+    };
+
+    if (isSupabaseConfigured && supabaseAdmin) {
+      try {
+        const { data, error } = await supabaseAdmin.from("vouchers").insert([newVoucher]).select().single();
+        if (!error && data) return data as Voucher;
+      } catch (err) {
+        console.error("Supabase createVoucher error:", err);
+      }
+    }
+
+    if (!globalStore.__bmgh_vouchers) globalStore.__bmgh_vouchers = [];
+    globalStore.__bmgh_vouchers.unshift(newVoucher);
+    return newVoucher;
+  },
+
+  async toggleVoucher(id: string, is_active: boolean): Promise<boolean> {
+    if (isSupabaseConfigured && supabaseAdmin) {
+      try {
+        await supabaseAdmin.from("vouchers").update({ is_active }).eq("id", id);
+      } catch (err) {
+        console.error("Supabase toggleVoucher error:", err);
+      }
+    }
+    const v = (globalStore.__bmgh_vouchers || []).find((x) => x.id === id);
+    if (v) v.is_active = is_active;
+    return true;
+  },
+
+  async deleteVoucher(id: string): Promise<boolean> {
+    if (isSupabaseConfigured && supabaseAdmin) {
+      try {
+        await supabaseAdmin.from("vouchers").delete().eq("id", id);
+      } catch (err) {
+        console.error("Supabase deleteVoucher error:", err);
+      }
+    }
+    if (globalStore.__bmgh_vouchers) {
+      globalStore.__bmgh_vouchers = globalStore.__bmgh_vouchers.filter((x) => x.id !== id);
+    }
+    return true;
+  },
+
+  async hasPhoneClaimedVoucher(phone: string): Promise<boolean> {
+    const cleaned = (phone || "").replace(/[^0-9]/g, "");
+    const formatted = cleaned.startsWith("233") ? "0" + cleaned.slice(3) : cleaned.length === 9 ? "0" + cleaned : cleaned;
+    
+    if (isSupabaseConfigured && supabaseAdmin) {
+      try {
+        const { data, error } = await supabaseAdmin.from("voucher_claims").select("id").eq("phone", formatted).limit(1);
+        if (!error && data && data.length > 0) return true;
+      } catch (err) {
+        console.error("Supabase hasPhoneClaimedVoucher error:", err);
+      }
+    }
+    return (globalStore.__bmgh_voucher_claims || []).some((c) => c.phone === formatted);
+  },
+
+  async recordVoucherClaim(claim: Omit<VoucherClaim, "id" | "created_at">): Promise<VoucherClaim> {
+    const cleaned = (claim.phone || "").replace(/[^0-9]/g, "");
+    const formatted = cleaned.startsWith("233") ? "0" + cleaned.slice(3) : cleaned.length === 9 ? "0" + cleaned : cleaned;
+    const newClaim: VoucherClaim = {
+      ...claim,
+      id: crypto.randomUUID(),
+      phone: formatted,
+      created_at: new Date().toISOString(),
+    };
+
+    if (isSupabaseConfigured && supabaseAdmin) {
+      try {
+        await supabaseAdmin.from("voucher_claims").insert([newClaim]);
+        const { data: v } = await supabaseAdmin.from("vouchers").select("claimed_count, max_claims").eq("id", claim.voucher_id).single();
+        if (v) {
+          const nextCount = (v.claimed_count || 0) + 1;
+          await supabaseAdmin.from("vouchers").update({
+            claimed_count: nextCount,
+            is_active: nextCount < v.max_claims,
+          }).eq("id", claim.voucher_id);
+        }
+      } catch (err) {
+        console.error("Supabase recordVoucherClaim error:", err);
+      }
+    }
+
+    if (!globalStore.__bmgh_voucher_claims) globalStore.__bmgh_voucher_claims = [];
+    globalStore.__bmgh_voucher_claims.unshift(newClaim);
+
+    const v = (globalStore.__bmgh_vouchers || []).find((x) => x.id === claim.voucher_id);
+    if (v) {
+      v.claimed_count += 1;
+      if (v.claimed_count >= v.max_claims) v.is_active = false;
+    }
+
+    return newClaim;
+  },
+
+  async getVoucherClaims(): Promise<VoucherClaim[]> {
+    if (isSupabaseConfigured && supabaseAdmin) {
+      try {
+        const { data, error } = await supabaseAdmin.from("voucher_claims").select("*").order("created_at", { ascending: false });
+        if (!error && data) return data as VoucherClaim[];
+      } catch (err) {
+        console.error("Supabase getVoucherClaims error:", err);
+      }
+    }
+    return globalStore.__bmgh_voucher_claims || [];
   },
 };
