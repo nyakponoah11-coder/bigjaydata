@@ -21,12 +21,13 @@ export default async function BuyNetworkPage({
   const settings = await db.getSettings();
   const products = await db.getProducts(decodedNetwork);
 
-  const safeSettings: typeof settings = {
-    ...settings,
-    datamart_api_key: "",
-    datamart_api_url: "",
-    paystack_secret_key: "",
-  };
+  // Omit all backend API keys and datamart configuration from client props
+  const {
+    datamart_api_key: _dmKey,
+    datamart_api_url: _dmUrl,
+    paystack_secret_key: _psSecret,
+    ...safeSettings
+  } = settings as any;
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900">
