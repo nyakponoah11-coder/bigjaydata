@@ -7,7 +7,6 @@ import WhatsAppButton from "@/components/WhatsAppButton";
 import {
   Zap,
   ShieldCheck,
-  Clock,
   Sparkles,
   ArrowRight,
   TrendingDown,
@@ -111,87 +110,45 @@ export default async function HomePage() {
       />
 
       {/* Hero Section */}
-      <section className="relative overflow-hidden pt-12 pb-20 lg:pt-20 lg:pb-28 bg-gradient-to-b from-white via-slate-50 to-slate-100 border-b border-slate-200/60">
+      <section className="relative overflow-hidden pt-8 pb-12 lg:pt-14 lg:pb-16 bg-gradient-to-b from-white via-slate-50 to-slate-100 border-b border-slate-200/60">
         {/* Subtle decorative glow */}
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full max-w-7xl h-96 bg-gradient-to-tr from-emerald-500/10 via-teal-500/5 to-amber-500/10 blur-3xl pointer-events-none -z-10" />
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full max-w-7xl h-96 bg-gradient-to-tr from-amber-500/10 via-yellow-400/10 to-amber-600/5 blur-3xl pointer-events-none -z-10" />
 
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-          {/* Trust pill */}
-          <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-emerald-50 border border-emerald-200/80 text-emerald-800 text-xs sm:text-sm font-semibold mb-6 shadow-xs animate-fade-in">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-            <span className="tracking-wide">Direct Telco Gateway • Instant 60-Sec Delivery</span>
-          </div>
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          {/* Yellow Hero Card */}
+          <div className="max-w-4xl mx-auto rounded-3xl bg-gradient-to-b from-amber-100/90 via-yellow-50/85 to-amber-50/90 border-2 border-amber-300 shadow-xl shadow-amber-500/10 p-6 sm:p-10 lg:p-12 text-center relative overflow-hidden backdrop-blur-sm">
+            {/* Subtle top glow highlight */}
+            <div className="absolute -top-24 left-1/2 -translate-x-1/2 w-96 h-48 bg-gradient-to-b from-amber-300/40 to-transparent blur-2xl pointer-events-none" />
 
-          {/* Dynamic Store Headline */}
-          <h1 className="text-4xl sm:text-6xl lg:text-7xl font-extrabold text-slate-900 tracking-tight max-w-4xl mx-auto leading-tight sm:leading-none">
-            Get High-Speed Data On <br className="hidden sm:inline" />
-            <span className="bg-gradient-to-r from-emerald-600 via-teal-500 to-amber-500 bg-clip-text text-transparent">
-              {settings.store_name}
-            </span>
-          </h1>
+            {/* Dynamic Store Headline */}
+            <h1 className="relative text-3xl sm:text-5xl lg:text-6xl font-extrabold text-slate-900 tracking-tight max-w-3xl mx-auto leading-tight sm:leading-tight">
+              Get High-Speed Data On <br className="hidden sm:inline" />
+              <span className="bg-gradient-to-r from-amber-600 via-yellow-600 to-amber-700 bg-clip-text text-transparent">
+                {settings.store_name}
+              </span>
+            </h1>
 
-          <p className="mt-6 text-base sm:text-xl text-slate-600 max-w-2xl mx-auto leading-relaxed">
-            The fastest, cheapest, and most trusted mobile data portal in Ghana. Buy MTN, Telecel, and AT data packages at discounted rates with automatic delivery.
-          </p>
+            {/* Subtext */}
+            <p className="relative mt-4 sm:mt-5 text-sm sm:text-base lg:text-lg text-slate-700 max-w-2xl mx-auto leading-relaxed font-medium">
+              The fastest, cheapest, and most trusted mobile data portal in Ghana. Buy MTN, Telecel, and AT data packages at discounted rates with automatic delivery.
+            </p>
 
-          {/* Quick CTA buttons */}
-          <div className="mt-8 flex flex-wrap items-center justify-center gap-3 sm:gap-4">
-            <a
-              href="#networks"
-              className="px-7 py-3.5 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-sm sm:text-base shadow-xl shadow-emerald-600/20 flex items-center gap-2 transform hover:-translate-y-0.5 transition-all"
-            >
-              <Zap className="w-4 h-4 fill-current text-amber-300" />
-              Buy Data Bundles Now
-            </a>
-            <Link
-              href="/track"
-              className="px-7 py-3.5 rounded-2xl bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 font-bold text-sm sm:text-base shadow-xs flex items-center gap-2 hover:border-slate-400 transition-all"
-            >
-              Track Existing Order
-              <ArrowRight className="w-4 h-4 text-slate-400" />
-            </Link>
-          </div>
-
-          {/* Key Metric Badges */}
-          <div className="mt-14 grid grid-cols-2 sm:grid-cols-4 gap-4 max-w-4xl mx-auto text-left">
-            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex items-center gap-3.5">
-              <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
-                <Clock className="w-5 h-5" />
-              </div>
-              <div>
-                <div className="font-extrabold text-slate-900 text-base sm:text-lg">&lt; 60s</div>
-                <div className="text-xs text-slate-500">Average Delivery</div>
-              </div>
-            </div>
-
-            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex items-center gap-3.5">
-              <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
-                <TrendingDown className="w-5 h-5" />
-              </div>
-              <div>
-                <div className="font-extrabold text-slate-900 text-base sm:text-lg">Up to 40%</div>
-                <div className="text-xs text-slate-500">Cheaper than Telcos</div>
-              </div>
-            </div>
-
-            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex items-center gap-3.5">
-              <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
-                <ShieldCheck className="w-5 h-5" />
-              </div>
-              <div>
-                <div className="font-extrabold text-slate-900 text-base sm:text-lg">100% Safe</div>
-                <div className="text-xs text-slate-500">Paystack Protected</div>
-              </div>
-            </div>
-
-            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex items-center gap-3.5">
-              <div className="w-10 h-10 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center shrink-0">
-                <Headphones className="w-5 h-5" />
-              </div>
-              <div>
-                <div className="font-extrabold text-slate-900 text-base sm:text-lg">24/7 Desk</div>
-                <div className="text-xs text-slate-500">WhatsApp & Live Chat</div>
-              </div>
+            {/* Quick CTA buttons - opposite each other (side-by-side) on both phone and laptop */}
+            <div className="relative mt-7 sm:mt-8 w-full max-w-md sm:max-w-lg mx-auto grid grid-cols-2 gap-2.5 sm:gap-4">
+              <a
+                href="#networks"
+                className="w-full py-3 sm:py-3.5 px-2.5 sm:px-6 rounded-2xl bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-600 hover:to-yellow-600 text-slate-950 font-bold text-xs sm:text-base shadow-lg shadow-amber-500/30 flex items-center justify-center gap-1.5 sm:gap-2 transition-all transform active:scale-95"
+              >
+                <Zap className="w-4 h-4 fill-current text-slate-950 shrink-0" />
+                <span className="truncate">Buy Data Bundles Now</span>
+              </a>
+              <Link
+                href="/track"
+                className="w-full py-3 sm:py-3.5 px-2.5 sm:px-6 rounded-2xl bg-white hover:bg-slate-50 border border-slate-300 text-slate-800 font-bold text-xs sm:text-base shadow-sm flex items-center justify-center gap-1.5 sm:gap-2 hover:border-slate-400 transition-all transform active:scale-95"
+              >
+                <span className="truncate">Track Existing Order</span>
+                <ArrowRight className="w-4 h-4 text-slate-500 shrink-0" />
+              </Link>
             </div>
           </div>
         </div>
