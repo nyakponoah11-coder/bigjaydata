@@ -67,10 +67,15 @@ export async function POST(request: Request) {
           idempotency_key: existingOrder.reference,
         });
 
+        const finalDelivery = deliveryResult.success ? "delivered" : "failed";
         await db.updateOrderStatus(
           existingOrder.id,
-          deliveryResult.success ? "delivered" : "failed",
-          deliveryResult.raw_response || deliveryResult
+          finalDelivery,
+          deliveryResult.raw_response || deliveryResult,
+          {
+            payment_status: "paid",
+            delivery_status: finalDelivery,
+          }
         );
       } else if (phone && network && package_size) {
         // Background creation if checkout closed before client trigger
@@ -82,6 +87,8 @@ export async function POST(request: Request) {
           phone,
           amount,
           paystack_ref: paystackRef,
+          payment_status: "paid",
+          delivery_status: "processing",
           status: "pending",
           datamart_response: { status: "pending", source: "paystack_webhook" },
         });
@@ -94,10 +101,15 @@ export async function POST(request: Request) {
           idempotency_key: reference,
         });
 
+        const finalDelivery = deliveryResult.success ? "delivered" : "failed";
         await db.updateOrderStatus(
           newOrder.id,
-          deliveryResult.success ? "delivered" : "failed",
-          deliveryResult.raw_response || deliveryResult
+          finalDelivery,
+          deliveryResult.raw_response || deliveryResult,
+          {
+            payment_status: "paid",
+            delivery_status: finalDelivery,
+          }
         );
       }
     }

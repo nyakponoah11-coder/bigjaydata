@@ -18,9 +18,37 @@ export interface Order {
   phone: string;
   amount: number;
   paystack_ref: string | null;
+  payment_status: "paid" | "pending" | "failed" | string;
+  delivery_status: "delivered" | "processing" | "pending" | "failed" | string;
   status: "pending" | "delivered" | "failed" | "refunded";
   datamart_response: any;
   created_at: string;
+}
+
+export function normalizeOrder(order: any): Order {
+  if (!order) return order;
+  const isPaid =
+    order.payment_status === "paid" ||
+    order.payment_status === "completed" ||
+    !!order.paystack_ref ||
+    (Number(order.amount) > 0 && order.status !== "failed");
+
+  const payment_status = order.payment_status || (isPaid ? "paid" : "pending");
+
+  let delivery_status = order.delivery_status;
+  if (!delivery_status) {
+    if (order.status === "delivered") delivery_status = "delivered";
+    else if (order.status === "failed") delivery_status = "failed";
+    else delivery_status = "pending";
+  }
+
+  return {
+    ...order,
+    amount: Number(order.amount || 0),
+    payment_status,
+    delivery_status,
+    status: (order.status as Order["status"]) || (delivery_status === "delivered" ? "delivered" : "pending"),
+  };
 }
 
 export interface Settings {
@@ -77,6 +105,8 @@ let initialOrders: Order[] = [
     phone: "0554128901",
     amount: 28.5,
     paystack_ref: "pst_98234120",
+    payment_status: "paid",
+    delivery_status: "delivered",
     status: "delivered",
     datamart_response: { status: "success", datamart_id: "DM-10923", message: "Transaction successful" },
     created_at: new Date(Date.now() - 1000 * 60 * 15).toISOString(),
@@ -89,6 +119,8 @@ let initialOrders: Order[] = [
     phone: "0208192384",
     amount: 50.0,
     paystack_ref: "pst_77123984",
+    payment_status: "paid",
+    delivery_status: "delivered",
     status: "delivered",
     datamart_response: { status: "success", datamart_id: "DM-10924", message: "Transaction successful" },
     created_at: new Date(Date.now() - 1000 * 60 * 42).toISOString(),
@@ -101,6 +133,8 @@ let initialOrders: Order[] = [
     phone: "0271109923",
     amount: 10.0,
     paystack_ref: "pst_55102941",
+    payment_status: "paid",
+    delivery_status: "delivered",
     status: "delivered",
     datamart_response: { status: "success", datamart_id: "DM-10925", message: "Transaction successful" },
     created_at: new Date(Date.now() - 1000 * 60 * 95).toISOString(),
@@ -291,7 +325,14 @@ export const db = {
   },
 
   // ORDERS
-  async getOrders(filter?: { date?: string; network?: string; status?: string; search?: string }): Promise<Order[]> {
+  async getOrders(filter?: {
+    date?: string;
+    network?: string;
+    status?: string;
+    delivery_status?: string;
+    payment_status?: string;
+    search?: string;
+  }): Promise<Order[]> {
     if (isSupabaseConfigured && supabaseAdmin) {
       try {
         let query = supabaseAdmin.from("orders").select("*").order("created_at", { ascending: false });
@@ -301,9 +342,21 @@ export const db = {
         if (filter?.status && filter.status !== "all") {
           query = query.eq("status", filter.status);
         }
+        if (filter?.delivery_status && filter.delivery_status !== "all") {
+          query = query.eq("delivery_status", filter.delivery_status);
+        }
+        if (filter?.payment_status && filter.payment_status !== "all") {
+          query = query.eq("payment_status", filter.payment_status);
+        }
         const { data, error } = await query;
         if (!error && data) {
-          let results = data as Order[];
+          let results = (data as Order[]).map(normalizeOrder);
+          if (filter?.delivery_status && filter.delivery_status !== "all") {
+            results = results.filter((o) => o.delivery_status === filter.delivery_status);
+          }
+          if (filter?.payment_status && filter.payment_status !== "all") {
+            results = results.filter((o) => o.payment_status === filter.payment_status);
+          }
           if (filter?.date) {
             results = results.filter((o) => o.created_at.startsWith(filter.date!));
           }
@@ -318,7 +371,7 @@ export const db = {
       }
     }
 
-    let results = [...globalStore.__bmgh_orders!].sort(
+    let results = [...globalStore.__bmgh_orders!].map(normalizeOrder).sort(
       (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
     );
 
@@ -327,6 +380,12 @@ export const db = {
     }
     if (filter?.status && filter.status !== "all") {
       results = results.filter((o) => o.status === filter.status);
+    }
+    if (filter?.delivery_status && filter.delivery_status !== "all") {
+      results = results.filter((o) => o.delivery_status === filter.delivery_status);
+    }
+    if (filter?.payment_status && filter.payment_status !== "all") {
+      results = results.filter((o) => o.payment_status === filter.payment_status);
     }
     if (filter?.date) {
       results = results.filter((o) => o.created_at.startsWith(filter.date!));
@@ -346,15 +405,16 @@ export const db = {
           .select("*")
           .ilike("reference", reference.trim())
           .maybeSingle();
-        if (!error && data) return data as Order;
+        if (!error && data) return normalizeOrder(data as Order);
       } catch (err) {
         console.error("Supabase getOrderByReference error:", err);
       }
     }
 
-    return (
-      globalStore.__bmgh_orders!.find((o) => o.reference.toLowerCase() === reference.trim().toLowerCase()) || null
+    const found = globalStore.__bmgh_orders!.find(
+      (o) => o.reference.toLowerCase() === reference.trim().toLowerCase()
     );
+    return found ? normalizeOrder(found) : null;
   },
 
   async getOrdersByPhone(phone: string): Promise<Order[]> {
@@ -366,41 +426,68 @@ export const db = {
           .select("*")
           .ilike("phone", `%${cleanPhone}%`)
           .order("created_at", { ascending: false });
-        if (!error && data) return data as Order[];
+        if (!error && data) return (data as Order[]).map(normalizeOrder);
       } catch (err) {
         console.error("Supabase getOrdersByPhone error:", err);
       }
     }
 
-    return globalStore.__bmgh_orders!.filter((o) => o.phone.includes(cleanPhone));
+    return globalStore.__bmgh_orders!
+      .filter((o) => o.phone.includes(cleanPhone))
+      .map(normalizeOrder);
   },
 
   async createOrder(orderData: Omit<Order, "id" | "created_at">): Promise<Order> {
+    const payment_status = orderData.payment_status || (orderData.paystack_ref ? "paid" : "paid");
+    const delivery_status = orderData.delivery_status || (orderData.status === "delivered" ? "delivered" : "pending");
+    const status = orderData.status || (delivery_status === "delivered" ? "delivered" : "pending");
+
     if (isSupabaseConfigured && supabaseAdmin) {
+      const insertPayload: any = {
+        reference: orderData.reference,
+        network: orderData.network.toLowerCase().trim(),
+        package_size: orderData.package_size.trim(),
+        phone: orderData.phone.trim(),
+        amount: Number(orderData.amount),
+        paystack_ref: orderData.paystack_ref || null,
+        payment_status,
+        delivery_status,
+        status,
+        datamart_response: orderData.datamart_response || {},
+      };
+
       try {
-        const { data, error } = await supabaseAdmin
+        let { data, error } = await supabaseAdmin
           .from("orders")
-          .insert([
-            {
-              reference: orderData.reference,
-              network: orderData.network.toLowerCase().trim(),
-              package_size: orderData.package_size.trim(),
-              phone: orderData.phone.trim(),
-              amount: Number(orderData.amount),
-              paystack_ref: orderData.paystack_ref || null,
-              status: orderData.status || "pending",
-              datamart_response: orderData.datamart_response || {},
-            },
-          ])
+          .insert([insertPayload])
           .select()
           .single();
+
+        // If table doesn't have payment_status / delivery_status columns yet
+        if (error && (error.message?.includes("payment_status") || error.message?.includes("delivery_status"))) {
+          console.warn("Retrying insert without newer columns:", error.message);
+          const fallbackPayload = {
+            reference: insertPayload.reference,
+            network: insertPayload.network,
+            package_size: insertPayload.package_size,
+            phone: insertPayload.phone,
+            amount: insertPayload.amount,
+            paystack_ref: insertPayload.paystack_ref,
+            status: insertPayload.status,
+            datamart_response: insertPayload.datamart_response,
+          };
+          const fallbackRes = await supabaseAdmin.from("orders").insert([fallbackPayload]).select().single();
+          data = fallbackRes.data;
+          error = fallbackRes.error;
+        }
+
         if (error) {
           if (
             error.code === "23505" ||
             error.message?.includes("orders_reference_key") ||
             error.message?.includes("duplicate key")
           ) {
-            console.log("Order already exists in Supabase (webhook race condition), fetching existing:", orderData.reference);
+            console.log("Order already exists in Supabase, fetching existing:", orderData.reference);
             const existing = await this.getOrderByReference(orderData.reference);
             if (existing) return existing;
           }
@@ -408,7 +495,7 @@ export const db = {
           throw new Error(error.message);
         }
         if (data) {
-          const ord = data as Order;
+          const ord = normalizeOrder(data as Order);
           globalStore.__bmgh_orders = [ord, ...(globalStore.__bmgh_orders || [])];
           return ord;
         }
@@ -430,13 +517,16 @@ export const db = {
     const existingMemory = (globalStore.__bmgh_orders || []).find(
       (o) => o.reference.toLowerCase() === orderData.reference.trim().toLowerCase()
     );
-    if (existingMemory) return existingMemory;
+    if (existingMemory) return normalizeOrder(existingMemory);
 
-    const newOrder: Order = {
+    const newOrder: Order = normalizeOrder({
       ...orderData,
+      payment_status,
+      delivery_status,
+      status,
       id: crypto.randomUUID(),
       created_at: new Date().toISOString(),
-    };
+    });
 
     globalStore.__bmgh_orders!.unshift(newOrder);
     return newOrder;
@@ -444,20 +534,45 @@ export const db = {
 
   async updateOrderStatus(
     orderIdOrRef: string,
-    status: Order["status"],
-    datamartResponse?: any
+    statusOrDelivery: Order["status"] | string,
+    datamartResponse?: any,
+    options?: { payment_status?: string; delivery_status?: string }
   ): Promise<Order | null> {
+    const isDeliveryStatus = ["delivered", "failed", "processing", "pending"].includes(statusOrDelivery);
+    const legacyStatus: Order["status"] = (statusOrDelivery === "delivered" ? "delivered" : statusOrDelivery === "refunded" ? "refunded" : statusOrDelivery === "failed" ? "failed" : "pending");
+    const targetDeliveryStatus = options?.delivery_status || (isDeliveryStatus ? statusOrDelivery : undefined);
+    const targetPaymentStatus = options?.payment_status;
+
     if (isSupabaseConfigured && supabaseAdmin) {
       try {
         const isRef = orderIdOrRef.startsWith("BMGH-") || orderIdOrRef.startsWith("BIGJ-") || orderIdOrRef.includes("-");
-        const query = supabaseAdmin.from("orders").update({
-          status,
+        const updatePayload: any = {
+          status: legacyStatus,
           ...(datamartResponse ? { datamart_response: datamartResponse } : {}),
-        });
-        const { data, error } = isRef
+          ...(targetDeliveryStatus ? { delivery_status: targetDeliveryStatus } : {}),
+          ...(targetPaymentStatus ? { payment_status: targetPaymentStatus } : {}),
+        };
+
+        let query = supabaseAdmin.from("orders").update(updatePayload);
+        let { data, error } = isRef
           ? await query.eq("reference", orderIdOrRef).select().single()
           : await query.eq("id", orderIdOrRef).select().single();
-        if (!error && data) return data as Order;
+
+        // If columns do not exist yet in Supabase
+        if (error && (error.message?.includes("delivery_status") || error.message?.includes("payment_status"))) {
+          const fallbackPayload: any = {
+            status: legacyStatus,
+            ...(datamartResponse ? { datamart_response: datamartResponse } : {}),
+          };
+          const fallbackQuery = supabaseAdmin.from("orders").update(fallbackPayload);
+          const fallbackRes = isRef
+            ? await fallbackQuery.eq("reference", orderIdOrRef).select().single()
+            : await fallbackQuery.eq("id", orderIdOrRef).select().single();
+          data = fallbackRes.data;
+          error = fallbackRes.error;
+        }
+
+        if (!error && data) return normalizeOrder(data as Order);
       } catch (err) {
         console.error("Supabase updateOrderStatus error:", err);
       }
@@ -467,9 +582,11 @@ export const db = {
       (o) => o.id === orderIdOrRef || o.reference.toLowerCase() === orderIdOrRef.toLowerCase()
     );
     if (!order) return null;
-    order.status = status;
+    order.status = legacyStatus;
+    if (targetDeliveryStatus) order.delivery_status = targetDeliveryStatus;
+    if (targetPaymentStatus) order.payment_status = targetPaymentStatus;
     if (datamartResponse) order.datamart_response = datamartResponse;
-    return order;
+    return normalizeOrder(order);
   },
 
   // MESSAGES

@@ -29,10 +29,16 @@ CREATE TABLE public.orders (
     phone TEXT NOT NULL,
     amount NUMERIC(10, 2) NOT NULL,
     paystack_ref TEXT,
+    payment_status TEXT NOT NULL DEFAULT 'paid',
+    delivery_status TEXT NOT NULL DEFAULT 'pending',
     status TEXT NOT NULL DEFAULT 'pending',
     datamart_response JSONB DEFAULT '{}'::jsonb,
     created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
 );
+
+-- (If updating an existing Supabase table without dropping, run these 2 lines in SQL Editor):
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS payment_status TEXT NOT NULL DEFAULT 'paid';
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS delivery_status TEXT NOT NULL DEFAULT 'pending';
 
 -- 3. SETTINGS TABLE
 CREATE TABLE public.settings (

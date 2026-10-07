@@ -9,9 +9,18 @@ export async function GET(request: Request) {
     const date = searchParams.get("date") || undefined;
     const network = searchParams.get("network") || undefined;
     const status = searchParams.get("status") || undefined;
+    const delivery_status = searchParams.get("delivery_status") || undefined;
+    const payment_status = searchParams.get("payment_status") || undefined;
     const search = searchParams.get("search") || undefined;
 
-    const orders = await db.getOrders({ date, network, status, search });
+    const orders = await db.getOrders({
+      date,
+      network,
+      status,
+      delivery_status,
+      payment_status,
+      search,
+    });
     return NextResponse.json({ success: true, orders });
   } catch (error: any) {
     return NextResponse.json(
@@ -24,7 +33,16 @@ export async function GET(request: Request) {
 export async function PATCH(request: Request) {
   try {
     const body = await request.json();
-    const { order_id, reference, status, send_sms, sms_text, resend_datamart } = body;
+    const {
+      order_id,
+      reference,
+      status,
+      delivery_status,
+      payment_status,
+      send_sms,
+      sms_text,
+      resend_datamart,
+    } = body;
 
     const targetRef = reference || order_id;
     if (!targetRef) {
@@ -56,10 +74,15 @@ export async function PATCH(request: Request) {
         reference: order.reference,
       });
 
+      const finalDelivery = dmResult.success ? "delivered" : "failed";
       const updated = await db.updateOrderStatus(
         order.id,
-        dmResult.success ? "delivered" : "failed",
-        dmResult.raw_response || dmResult
+        finalDelivery,
+        dmResult.raw_response || dmResult,
+        {
+          payment_status: order.payment_status || "paid",
+          delivery_status: finalDelivery,
+        }
       );
 
       return NextResponse.json({
@@ -69,18 +92,27 @@ export async function PATCH(request: Request) {
       });
     }
 
-    // Status change
-    let updatedOrder = order;
-    if (status) {
-      updatedOrder = (await db.updateOrderStatus(order.id, status)) || order;
-    }
+    // Status changes (delivery_status and/or payment_status)
+    const newDeliveryStatus = delivery_status || status || order.delivery_status;
+    const newPaymentStatus = payment_status || order.payment_status || "paid";
+
+    const updatedOrder =
+      (await db.updateOrderStatus(
+        order.id,
+        newDeliveryStatus,
+        undefined,
+        {
+          delivery_status: newDeliveryStatus,
+          payment_status: newPaymentStatus,
+        }
+      )) || order;
 
     // Optional SMS sending
     if (send_sms && updatedOrder.phone) {
       const defaultMsg =
-        status === "delivered"
+        updatedOrder.delivery_status === "delivered"
           ? `Hello, your ${updatedOrder.network.toUpperCase()} ${updatedOrder.package_size} data bundle from BundleMartGh (${updatedOrder.reference}) has been delivered! Thank you for choosing us.`
-          : `Hello, update on your BundleMartGh order (${updatedOrder.reference}): Status changed to ${status}. For questions, contact support.`;
+          : `Hello, update on your BundleMartGh order (${updatedOrder.reference}): Delivery is ${updatedOrder.delivery_status}. For questions, contact support.`;
 
       await sendCustomerSMS({
         phone: updatedOrder.phone,

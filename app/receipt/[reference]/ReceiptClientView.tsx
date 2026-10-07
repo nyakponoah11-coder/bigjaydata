@@ -225,27 +225,63 @@ export default function ReceiptClientView({ initialOrder, reference, settings }:
             <div className="py-3 flex justify-between items-center">
               <span className="text-slate-500">Amount Paid</span>
               <span className="font-black text-slate-900 text-base">
-                GHS {order.amount.toFixed(2)}
+                GHS {Number(order.amount).toFixed(2)}
               </span>
             </div>
             <div className="py-3 flex justify-between items-center">
               <span className="text-slate-500">Payment Reference</span>
               <span className="font-mono text-slate-600 truncate max-w-[200px]">
-                {order.paystack_ref || "Direct Telco"}
+                {order.paystack_ref || "Paystack Checkout"}
               </span>
             </div>
+            {/* 1. SEPARATE PAYMENT STATUS */}
             <div className="py-3 flex justify-between items-center">
-              <span className="text-slate-500">Status</span>
+              <span className="text-slate-500 font-medium">Payment Status</span>
+              {order.payment_status === "paid" || !!order.paystack_ref ? (
+                <span className="inline-flex items-center gap-1.5 font-bold text-xs px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                  Paid (Payment Successful)
+                </span>
+              ) : order.payment_status === "failed" ? (
+                <span className="inline-flex items-center gap-1.5 font-bold text-xs px-3 py-1 rounded-full bg-rose-100 text-rose-800 border border-rose-200">
+                  <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />
+                  Payment Failed
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1.5 font-bold text-xs px-3 py-1 rounded-full bg-amber-100 text-amber-800 border border-amber-200">
+                  <Clock className="w-3.5 h-3.5 text-amber-600" />
+                  Pending Payment
+                </span>
+              )}
+            </div>
+            {/* 2. SEPARATE DELIVERY STATUS */}
+            <div className="py-3 flex justify-between items-center">
+              <span className="text-slate-500 font-medium">Delivery Status</span>
               <span
-                className={`font-bold uppercase text-xs px-2.5 py-1 rounded-full ${
+                className={`inline-flex items-center gap-1.5 font-bold text-xs px-3 py-1 rounded-full ${
                   isDelivered
-                    ? "bg-emerald-100 text-emerald-800"
+                    ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
                     : isPending
-                    ? "bg-amber-100 text-amber-800"
-                    : "bg-red-100 text-red-800"
+                    ? "bg-sky-100 text-sky-800 border border-sky-200"
+                    : "bg-rose-100 text-rose-800 border border-rose-200"
                 }`}
               >
-                {order.status}
+                {isDelivered ? (
+                  <>
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                    Data Delivered to Line
+                  </>
+                ) : isPending ? (
+                  <>
+                    <Clock className="w-3.5 h-3.5 text-sky-600 animate-spin" />
+                    Delivery In Progress
+                  </>
+                ) : (
+                  <>
+                    <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />
+                    Delivery Delayed (Queued for Manual Dispatch)
+                  </>
+                )}
               </span>
             </div>
             <div className="py-3 flex justify-between items-center">

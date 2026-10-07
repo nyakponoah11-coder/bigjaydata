@@ -12,11 +12,15 @@ export async function GET(request: Request) {
 
     const totalOrdersToday = ordersForDate.length;
     const totalSalesToday = ordersForDate
-      .filter((o) => o.status === "delivered" || o.status === "pending")
+      .filter((o) => o.payment_status === "paid" || !!o.paystack_ref || o.status === "delivered" || o.status === "pending")
       .reduce((sum, o) => sum + Number(o.amount || 0), 0);
 
-    const pendingOrdersCount = allOrders.filter((o) => o.status === "pending").length;
-    const failedOrdersCount = allOrders.filter((o) => o.status === "failed").length;
+    const pendingOrdersCount = allOrders.filter(
+      (o) => (o.delivery_status === "pending" || o.delivery_status === "processing" || o.status === "pending")
+    ).length;
+    const failedOrdersCount = allOrders.filter(
+      (o) => (o.delivery_status === "failed" || o.status === "failed")
+    ).length;
 
     const recentOrders = allOrders.slice(0, 5);
 

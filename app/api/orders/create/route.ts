@@ -26,6 +26,8 @@ export async function POST(request: Request) {
           phone,
           amount: Number(amount),
           paystack_ref: paystack_ref || null,
+          payment_status: "paid",
+          delivery_status: "processing",
           status: "pending",
           datamart_response: { status: "pending", initiated_at: new Date().toISOString() },
         });
@@ -36,10 +38,10 @@ export async function POST(request: Request) {
       }
     }
 
-    console.log(`[Order Ready] ${reference} - Current status: ${order.status}`);
+    console.log(`[Order Ready] ${reference} - Payment: ${order.payment_status}, Delivery: ${order.delivery_status || order.status}`);
 
     // If already delivered (e.g. by webhook dispatch), return success immediately
-    if (order.status === "delivered") {
+    if (order.delivery_status === "delivered" || order.status === "delivered") {
       return NextResponse.json({
         success: true,
         order,
@@ -66,12 +68,16 @@ export async function POST(request: Request) {
       };
     }
 
-    // 3. Update order status based on DataMart result
-    const finalStatus = deliveryResult.success ? "delivered" : "failed";
+    // 3. Update order status based on DataMart result (Payment is 100% paid, delivery is separate)
+    const finalDeliveryStatus = deliveryResult.success ? "delivered" : "failed";
     const updatedOrder = await db.updateOrderStatus(
       order.id,
-      finalStatus,
-      deliveryResult.raw_response || deliveryResult
+      finalDeliveryStatus,
+      deliveryResult.raw_response || deliveryResult,
+      {
+        payment_status: "paid",
+        delivery_status: finalDeliveryStatus,
+      }
     );
 
     return NextResponse.json({

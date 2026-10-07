@@ -205,7 +205,8 @@ export default function AdminDashboardPage() {
                   <th className="pb-3">Package</th>
                   <th className="pb-3">Phone</th>
                   <th className="pb-3">Amount</th>
-                  <th className="pb-3">Status</th>
+                  <th className="pb-3">Payment</th>
+                  <th className="pb-3">Delivery</th>
                   <th className="pb-3">Date</th>
                   <th className="pb-3 text-right pr-2">Action</th>
                 </tr>
@@ -213,56 +214,74 @@ export default function AdminDashboardPage() {
               <tbody className="divide-y divide-slate-800/60">
                 {recentOrders.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="py-6 text-center text-slate-500">
+                    <td colSpan={9} className="py-6 text-center text-slate-500">
                       No orders recorded yet.
                     </td>
                   </tr>
                 ) : (
-                  recentOrders.map((o) => (
-                    <tr key={o.id} className="hover:bg-slate-800/40 transition-colors">
-                      <td className="py-3.5 pl-2 font-mono font-bold text-white">
-                        {o.reference}
-                      </td>
-                      <td className="py-3.5 font-bold uppercase text-slate-300">
-                        {o.network}
-                      </td>
-                      <td className="py-3.5 font-semibold text-emerald-400">
-                        {o.package_size}
-                      </td>
-                      <td className="py-3.5 font-mono text-slate-300">
-                        {o.phone}
-                      </td>
-                      <td className="py-3.5 font-bold text-white">
-                        GHS {Number(o.amount).toFixed(2)}
-                      </td>
-                      <td className="py-3.5">
-                        <span
-                          className={`px-2 py-0.5 rounded-full font-bold uppercase text-[10px] ${
-                            o.status === "delivered"
-                              ? "bg-emerald-950 text-emerald-400 border border-emerald-800"
-                              : o.status === "pending"
-                              ? "bg-amber-950 text-amber-400 border border-amber-800"
-                              : "bg-red-950 text-red-400 border border-red-800"
-                          }`}
-                        >
-                          {o.status}
-                        </span>
-                      </td>
-                      <td className="py-3.5 text-slate-400">
-                        {new Date(o.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                      </td>
-                      <td className="py-3.5 text-right pr-2">
-                        <Link
-                          href={`/receipt/${o.reference}`}
-                          target="_blank"
-                          className="inline-flex items-center gap-1 text-[11px] text-emerald-400 hover:text-emerald-300 font-medium"
-                        >
-                          <Eye className="w-3.5 h-3.5" />
-                          Receipt
-                        </Link>
-                      </td>
-                    </tr>
-                  ))
+                  recentOrders.map((o) => {
+                    const paymentStatus = o.payment_status || (o.paystack_ref ? "paid" : "paid");
+                    const deliveryStatus = o.delivery_status || (o.status === "delivered" ? "delivered" : o.status === "failed" ? "failed" : "pending");
+
+                    return (
+                      <tr key={o.id} className="hover:bg-slate-800/40 transition-colors">
+                        <td className="py-3.5 pl-2 font-mono font-bold text-white">
+                          {o.reference}
+                        </td>
+                        <td className="py-3.5 font-bold uppercase text-slate-300">
+                          {o.network}
+                        </td>
+                        <td className="py-3.5 font-semibold text-emerald-400">
+                          {o.package_size}
+                        </td>
+                        <td className="py-3.5 font-mono text-slate-300">
+                          {o.phone}
+                        </td>
+                        <td className="py-3.5 font-bold text-white">
+                          GHS {Number(o.amount).toFixed(2)}
+                        </td>
+                        <td className="py-3.5">
+                          <span
+                            className={`px-2 py-0.5 rounded-full font-bold uppercase text-[10px] ${
+                              paymentStatus === "paid" || paymentStatus === "completed"
+                                ? "bg-emerald-950 text-emerald-400 border border-emerald-800"
+                                : paymentStatus === "failed"
+                                ? "bg-red-950 text-red-400 border border-red-800"
+                                : "bg-amber-950 text-amber-400 border border-amber-800"
+                            }`}
+                          >
+                            {paymentStatus === "paid" ? "Paid" : paymentStatus}
+                          </span>
+                        </td>
+                        <td className="py-3.5">
+                          <span
+                            className={`px-2 py-0.5 rounded-full font-bold uppercase text-[10px] ${
+                              deliveryStatus === "delivered"
+                                ? "bg-emerald-950 text-emerald-400 border border-emerald-800"
+                                : deliveryStatus === "pending" || deliveryStatus === "processing"
+                                ? "bg-sky-950 text-sky-400 border border-sky-800"
+                                : "bg-red-950 text-red-400 border border-red-800"
+                            }`}
+                          >
+                            {deliveryStatus === "delivered" ? "Delivered" : deliveryStatus === "pending" || deliveryStatus === "processing" ? "In Progress" : "Failed"}
+                          </span>
+                        </td>
+                        <td className="py-3.5 text-slate-400">
+                          {new Date(o.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </td>
+                        <td className="py-3.5 text-right pr-2">
+                          <Link
+                            href={`/receipt/${o.reference}`}
+                            target="_blank"
+                            className="inline-flex items-center gap-1 text-[11px] text-emerald-400 hover:text-emerald-300 font-medium"
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                            Receipt
+                          </Link>
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>

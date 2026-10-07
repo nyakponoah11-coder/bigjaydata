@@ -106,7 +106,7 @@ export async function POST(request: Request) {
           success: true,
           actionTaken: "getOrderDetails",
           toolParams: { target },
-          reply: `Done bossu, order ${order.reference} details:\n• Network: ${order.network.toUpperCase()} (${order.package_size})\n• Recipient: ${order.phone}\n• Amount: GHS ${order.amount.toFixed(2)}\n• Status: ${order.status.toUpperCase()}\n• Date: ${new Date(order.created_at).toLocaleString()}`,
+          reply: `Done bossu, order ${order.reference} details:\n• Network: ${order.network.toUpperCase()} (${order.package_size})\n• Recipient: ${order.phone}\n• Amount: GHS ${order.amount.toFixed(2)}\n• Payment: ${(order.payment_status || "paid").toUpperCase()}\n• Delivery: ${(order.delivery_status || order.status).toUpperCase()}\n• Date: ${new Date(order.created_at).toLocaleString()}`,
           order,
         });
       } else {

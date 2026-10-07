@@ -23,7 +23,8 @@ export default function AdminOrdersPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [networkFilter, setNetworkFilter] = useState("all");
-  const [statusFilter, setStatusFilter] = useState("all");
+  const [deliveryFilter, setDeliveryFilter] = useState("all");
+  const [paymentFilter, setPaymentFilter] = useState("all");
   const [dateFilter, setDateFilter] = useState("");
 
   // Details Modal
@@ -41,7 +42,8 @@ export default function AdminOrdersPage() {
       const params = new URLSearchParams();
       if (search) params.set("search", search);
       if (networkFilter !== "all") params.set("network", networkFilter);
-      if (statusFilter !== "all") params.set("status", statusFilter);
+      if (deliveryFilter !== "all") params.set("delivery_status", deliveryFilter);
+      if (paymentFilter !== "all") params.set("payment_status", paymentFilter);
       if (dateFilter) params.set("date", dateFilter);
 
       const res = await fetch(`/api/admin/orders?${params.toString()}`);
@@ -58,24 +60,48 @@ export default function AdminOrdersPage() {
 
   useEffect(() => {
     fetchOrders();
-  }, [networkFilter, statusFilter, dateFilter]);
+  }, [networkFilter, deliveryFilter, paymentFilter, dateFilter]);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     fetchOrders();
   };
 
-  const handleUpdateStatus = async (orderId: string, status: Order["status"]) => {
+  const handleUpdateDeliveryStatus = async (orderId: string, delivery_status: string) => {
     try {
       const res = await fetch("/api/admin/orders", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ order_id: orderId, status }),
+        body: JSON.stringify({ order_id: orderId, delivery_status }),
       });
       const data = await res.json();
       if (data.success) {
-        setActionNotice(`Order status updated to ${status}`);
+        setActionNotice(`Delivery status updated to ${delivery_status}`);
         fetchOrders();
+        if (selectedOrder && selectedOrder.id === orderId) {
+          setSelectedOrder(data.order);
+        }
+        setTimeout(() => setActionNotice(""), 3000);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleUpdatePaymentStatus = async (orderId: string, payment_status: string) => {
+    try {
+      const res = await fetch("/api/admin/orders", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ order_id: orderId, payment_status }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setActionNotice(`Payment status updated to ${payment_status}`);
+        fetchOrders();
+        if (selectedOrder && selectedOrder.id === orderId) {
+          setSelectedOrder(data.order);
+        }
         setTimeout(() => setActionNotice(""), 3000);
       }
     } catch (e) {
@@ -194,18 +220,31 @@ export default function AdminOrdersPage() {
               </select>
             </div>
 
-            {/* Status Filter */}
+            {/* Delivery Status Filter */}
             <div>
               <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
+                value={deliveryFilter}
+                onChange={(e) => setDeliveryFilter(e.target.value)}
                 className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer"
               >
-                <option value="all">All Statuses</option>
+                <option value="all">All Delivery Statuses</option>
                 <option value="delivered">Delivered</option>
-                <option value="pending">Pending</option>
-                <option value="failed">Failed</option>
-                <option value="refunded">Refunded</option>
+                <option value="pending">In Progress / Pending</option>
+                <option value="failed">Failed / Delayed</option>
+              </select>
+            </div>
+
+            {/* Payment Status Filter */}
+            <div>
+              <select
+                value={paymentFilter}
+                onChange={(e) => setPaymentFilter(e.target.value)}
+                className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer"
+              >
+                <option value="all">All Payment Statuses</option>
+                <option value="paid">Paid</option>
+                <option value="pending">Pending Payment</option>
+                <option value="failed">Payment Failed</option>
               </select>
             </div>
 
@@ -248,7 +287,8 @@ export default function AdminOrdersPage() {
                   <th className="py-3.5">Package</th>
                   <th className="py-3.5">Recipient</th>
                   <th className="py-3.5">Amount</th>
-                  <th className="py-3.5">Status</th>
+                  <th className="py-3.5">Payment Status</th>
+                  <th className="py-3.5">Delivery Status</th>
                   <th className="py-3.5">Date</th>
                   <th className="py-3.5 text-right pr-4">Actions</th>
                 </tr>
@@ -256,108 +296,126 @@ export default function AdminOrdersPage() {
               <tbody className="divide-y divide-slate-800/60">
                 {orders.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="py-8 text-center text-slate-500">
+                    <td colSpan={9} className="py-8 text-center text-slate-500">
                       No orders match the current criteria.
                     </td>
                   </tr>
                 ) : (
-                  orders.map((o) => (
-                    <tr key={o.id} className="hover:bg-slate-800/40 transition-colors">
-                      <td className="py-3 pl-4 font-mono font-bold text-white">
-                        {o.reference}
-                      </td>
-                      <td className="py-3 font-bold uppercase text-slate-300">
-                        {o.network}
-                      </td>
-                      <td className="py-3 font-semibold text-emerald-400">
-                        {o.package_size}
-                      </td>
-                      <td className="py-3 font-mono text-slate-300">
-                        {o.phone}
-                      </td>
-                      <td className="py-3 font-bold text-white">
-                        GHS {Number(o.amount).toFixed(2)}
-                      </td>
-                      <td className="py-3">
-                        <span
-                          className={`px-2 py-0.5 rounded-full font-bold uppercase text-[10px] ${
-                            o.status === "delivered"
-                              ? "bg-emerald-950 text-emerald-400 border border-emerald-800"
-                              : o.status === "pending"
-                              ? "bg-amber-950 text-amber-400 border border-amber-800"
-                              : o.status === "refunded"
-                              ? "bg-purple-950 text-purple-400 border border-purple-800"
-                              : "bg-red-950 text-red-400 border border-red-800"
-                          }`}
-                        >
-                          {o.status}
-                        </span>
-                      </td>
-                      <td className="py-3 text-slate-400">
-                        {new Date(o.created_at).toLocaleString([], {
-                          month: "short",
-                          day: "numeric",
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })}
-                      </td>
-                      <td className="py-3 text-right pr-4 space-x-1 whitespace-nowrap">
-                        {/* Quick Delivered Button */}
-                        {o.status !== "delivered" && (
-                          <button
-                            onClick={() => handleUpdateStatus(o.id, "delivered")}
-                            className="p-1.5 bg-emerald-950/60 hover:bg-emerald-900 border border-emerald-800 text-emerald-300 rounded-lg transition-colors"
-                            title="Mark Delivered"
+                  orders.map((o) => {
+                    const paymentStatus = o.payment_status || (o.paystack_ref ? "paid" : "paid");
+                    const deliveryStatus = o.delivery_status || (o.status === "delivered" ? "delivered" : o.status === "failed" ? "failed" : "pending");
+
+                    return (
+                      <tr key={o.id} className="hover:bg-slate-800/40 transition-colors">
+                        <td className="py-3 pl-4 font-mono font-bold text-white">
+                          {o.reference}
+                        </td>
+                        <td className="py-3 font-bold uppercase text-slate-300">
+                          {o.network}
+                        </td>
+                        <td className="py-3 font-semibold text-emerald-400">
+                          {o.package_size}
+                        </td>
+                        <td className="py-3 font-mono text-slate-300">
+                          {o.phone}
+                        </td>
+                        <td className="py-3 font-bold text-white">
+                          GHS {Number(o.amount).toFixed(2)}
+                        </td>
+                        {/* 1. SEPARATE PAYMENT STATUS BADGE */}
+                        <td className="py-3">
+                          <span
+                            className={`px-2 py-0.5 rounded-full font-bold uppercase text-[10px] inline-flex items-center gap-1 ${
+                              paymentStatus === "paid" || paymentStatus === "completed"
+                                ? "bg-emerald-950 text-emerald-400 border border-emerald-800"
+                                : paymentStatus === "failed"
+                                ? "bg-red-950 text-red-400 border border-red-800"
+                                : "bg-amber-950 text-amber-400 border border-amber-800"
+                            }`}
                           >
-                            <CheckCircle className="w-3.5 h-3.5" />
-                          </button>
-                        )}
-
-                        {/* Quick Failed Button */}
-                        {o.status !== "failed" && (
-                          <button
-                            onClick={() => handleUpdateStatus(o.id, "failed")}
-                            className="p-1.5 bg-red-950/60 hover:bg-red-900 border border-red-800 text-red-300 rounded-lg transition-colors"
-                            title="Mark Failed"
+                            {paymentStatus === "paid" ? "✓ Paid" : paymentStatus}
+                          </span>
+                        </td>
+                        {/* 2. SEPARATE DELIVERY STATUS BADGE */}
+                        <td className="py-3">
+                          <span
+                            className={`px-2 py-0.5 rounded-full font-bold uppercase text-[10px] inline-flex items-center gap-1 ${
+                              deliveryStatus === "delivered"
+                                ? "bg-emerald-950 text-emerald-400 border border-emerald-800"
+                                : deliveryStatus === "pending" || deliveryStatus === "processing"
+                                ? "bg-sky-950 text-sky-400 border border-sky-800"
+                                : "bg-red-950 text-red-400 border border-red-800"
+                            }`}
                           >
-                            <XCircle className="w-3.5 h-3.5" />
+                            {deliveryStatus === "delivered" ? "✓ Delivered" : deliveryStatus === "pending" || deliveryStatus === "processing" ? "⏳ In Progress" : "✕ Failed"}
+                          </span>
+                        </td>
+                        <td className="py-3 text-slate-400">
+                          {new Date(o.created_at).toLocaleString([], {
+                            month: "short",
+                            day: "numeric",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
+                        </td>
+                        <td className="py-3 text-right pr-4 space-x-1 whitespace-nowrap">
+                          {/* Quick Delivered Delivery Button */}
+                          {deliveryStatus !== "delivered" && (
+                            <button
+                              onClick={() => handleUpdateDeliveryStatus(o.id, "delivered")}
+                              className="p-1.5 bg-emerald-950/60 hover:bg-emerald-900 border border-emerald-800 text-emerald-300 rounded-lg transition-colors"
+                              title="Mark Delivery as Delivered"
+                            >
+                              <CheckCircle className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+
+                          {/* Quick Failed Delivery Button */}
+                          {deliveryStatus !== "failed" && (
+                            <button
+                              onClick={() => handleUpdateDeliveryStatus(o.id, "failed")}
+                              className="p-1.5 bg-red-950/60 hover:bg-red-900 border border-red-800 text-red-300 rounded-lg transition-colors"
+                              title="Mark Delivery as Failed"
+                            >
+                              <XCircle className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+
+                          {/* Resend to DataMart */}
+                          <button
+                            onClick={() => handleResendDataMart(o)}
+                            className="p-1.5 bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700 rounded-lg transition-colors"
+                            title="Resend to DataMart"
+                          >
+                            <RefreshCw className="w-3.5 h-3.5" />
                           </button>
-                        )}
 
-                        {/* Resend to DataMart */}
-                        <button
-                          onClick={() => handleResendDataMart(o)}
-                          className="p-1.5 bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700 rounded-lg transition-colors"
-                          title="Resend to DataMart"
-                        >
-                          <RefreshCw className="w-3.5 h-3.5" />
-                        </button>
+                          {/* Send SMS Modal Trigger */}
+                          <button
+                            onClick={() => {
+                              setSmsModalOrder(o);
+                              setSmsText(
+                                `Hello, your ${o.network.toUpperCase()} ${o.package_size} bundle from BundleMartGh (${o.reference}) is now ${deliveryStatus}. Thank you!`
+                              );
+                            }}
+                            className="p-1.5 bg-slate-800 hover:bg-slate-700 text-blue-300 border border-slate-700 rounded-lg transition-colors"
+                            title="Send SMS"
+                          >
+                            <MessageSquare className="w-3.5 h-3.5" />
+                          </button>
 
-                        {/* Send SMS Modal Trigger */}
-                        <button
-                          onClick={() => {
-                            setSmsModalOrder(o);
-                            setSmsText(
-                              `Hello, your ${o.network.toUpperCase()} ${o.package_size} bundle from BundleMartGh (${o.reference}) is now ${o.status}. Thank you!`
-                            );
-                          }}
-                          className="p-1.5 bg-slate-800 hover:bg-slate-700 text-blue-300 border border-slate-700 rounded-lg transition-colors"
-                          title="Send SMS"
-                        >
-                          <MessageSquare className="w-3.5 h-3.5" />
-                        </button>
-
-                        {/* View Details */}
-                        <button
-                          onClick={() => setSelectedOrder(o)}
-                          className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded-lg transition-colors"
-                          title="View Full Details"
-                        >
-                          <Eye className="w-3.5 h-3.5" />
-                        </button>
-                      </td>
-                    </tr>
-                  ))
+                          {/* View Details */}
+                          <button
+                            onClick={() => setSelectedOrder(o)}
+                            className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded-lg transition-colors"
+                            title="View Full Details"
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>
@@ -393,7 +451,7 @@ export default function AdminOrdersPage() {
                   </span>
                 </div>
                 <div className="bg-slate-800/50 p-3 rounded-xl">
-                  <span className="text-slate-400 block mb-0.5">Amount Paid</span>
+                  <span className="text-slate-400 block mb-0.5">Amount</span>
                   <span className="font-bold text-emerald-400">
                     GHS {Number(selectedOrder.amount).toFixed(2)}
                   </span>
@@ -405,16 +463,86 @@ export default function AdminOrdersPage() {
                   </span>
                 </div>
                 <div className="bg-slate-800/50 p-3 rounded-xl">
-                  <span className="text-slate-400 block mb-0.5">Current Status</span>
-                  <span className="font-bold uppercase text-amber-400">
-                    {selectedOrder.status}
+                  <span className="text-slate-400 block mb-0.5">Paystack Reference</span>
+                  <span className="font-mono text-slate-200 truncate block">
+                    {selectedOrder.paystack_ref || "None / Manual"}
                   </span>
                 </div>
-                <div className="bg-slate-800/50 p-3 rounded-xl col-span-2">
-                  <span className="text-slate-400 block mb-0.5">Paystack Reference</span>
-                  <span className="font-mono text-slate-200">
-                    {selectedOrder.paystack_ref || "None / Cash"}
-                  </span>
+
+                {/* 1. SEPARATE PAYMENT STATUS IN MODAL */}
+                <div className="bg-slate-800/70 p-3.5 rounded-xl border border-slate-700/60">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-slate-400 font-semibold">Payment Status</span>
+                    <span
+                      className={`px-2 py-0.5 rounded-full font-bold uppercase text-[10px] ${
+                        selectedOrder.payment_status === "paid"
+                          ? "bg-emerald-950 text-emerald-400 border border-emerald-800"
+                          : selectedOrder.payment_status === "failed"
+                          ? "bg-red-950 text-red-400 border border-red-800"
+                          : "bg-amber-950 text-amber-400 border border-amber-800"
+                      }`}
+                    >
+                      {selectedOrder.payment_status || "paid"}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5 mt-2">
+                    <button
+                      onClick={() => handleUpdatePaymentStatus(selectedOrder.id, "paid")}
+                      className="px-2 py-1 bg-emerald-900/60 hover:bg-emerald-800 border border-emerald-700 text-emerald-300 rounded-md text-[10px] font-bold"
+                    >
+                      Set Paid
+                    </button>
+                    <button
+                      onClick={() => handleUpdatePaymentStatus(selectedOrder.id, "pending")}
+                      className="px-2 py-1 bg-amber-900/60 hover:bg-amber-800 border border-amber-700 text-amber-300 rounded-md text-[10px] font-bold"
+                    >
+                      Set Pending
+                    </button>
+                    <button
+                      onClick={() => handleUpdatePaymentStatus(selectedOrder.id, "failed")}
+                      className="px-2 py-1 bg-red-900/60 hover:bg-red-800 border border-red-700 text-red-300 rounded-md text-[10px] font-bold"
+                    >
+                      Set Failed
+                    </button>
+                  </div>
+                </div>
+
+                {/* 2. SEPARATE DELIVERY STATUS IN MODAL */}
+                <div className="bg-slate-800/70 p-3.5 rounded-xl border border-slate-700/60">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-slate-400 font-semibold">Delivery Status</span>
+                    <span
+                      className={`px-2 py-0.5 rounded-full font-bold uppercase text-[10px] ${
+                        selectedOrder.delivery_status === "delivered"
+                          ? "bg-emerald-950 text-emerald-400 border border-emerald-800"
+                          : selectedOrder.delivery_status === "pending" || selectedOrder.delivery_status === "processing"
+                          ? "bg-sky-950 text-sky-400 border border-sky-800"
+                          : "bg-red-950 text-red-400 border border-red-800"
+                      }`}
+                    >
+                      {selectedOrder.delivery_status || "pending"}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5 mt-2">
+                    <button
+                      onClick={() => handleUpdateDeliveryStatus(selectedOrder.id, "delivered")}
+                      className="px-2 py-1 bg-emerald-900/60 hover:bg-emerald-800 border border-emerald-700 text-emerald-300 rounded-md text-[10px] font-bold"
+                    >
+                      Set Delivered
+                    </button>
+                    <button
+                      onClick={() => handleUpdateDeliveryStatus(selectedOrder.id, "processing")}
+                      className="px-2 py-1 bg-sky-900/60 hover:bg-sky-800 border border-sky-700 text-sky-300 rounded-md text-[10px] font-bold"
+                    >
+                      Set Processing
+                    </button>
+                    <button
+                      onClick={() => handleUpdateDeliveryStatus(selectedOrder.id, "failed")}
+                      className="px-2 py-1 bg-red-900/60 hover:bg-red-800 border border-red-700 text-red-300 rounded-md text-[10px] font-bold"
+                    >
+                      Set Failed
+                    </button>
+                  </div>
                 </div>
               </div>
 
