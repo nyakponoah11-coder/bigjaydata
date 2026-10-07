@@ -43,7 +43,7 @@ export default function AdminAIAgentPage() {
   const [error, setError] = useState("");
 
   const [geminiKey, setGeminiKey] = useState("");
-  const [geminiModel, setGeminiModel] = useState("gemini-2.5-flash");
+  const [geminiModel, setGeminiModel] = useState("gemini-3.8-flash");
   const [showGeminiKey, setShowGeminiKey] = useState(false);
   const [testingGemini, setTestingGemini] = useState(false);
   const [geminiTestStatus, setGeminiTestStatus] = useState<{ success: boolean; message: string } | null>(null);
@@ -92,7 +92,7 @@ export default function AdminAIAgentPage() {
       const data = await res.json();
       if (data.success && data.settings) {
         setGeminiKey(data.settings.gemini_api_key || "");
-        setGeminiModel(data.settings.gemini_model || "gemini-2.5-flash");
+        setGeminiModel(data.settings.gemini_model || "gemini-3.8-flash");
         setGrokKey(data.settings.grok_api_key || "");
         setGrokModel(data.settings.grok_model || "grok-2-latest");
         setOpenaiKey(data.settings.openai_api_key || "");
@@ -405,13 +405,19 @@ export default function AdminAIAgentPage() {
                   </label>
                   <select
                     value={[
+                      "gemini-3.8-flash",
+                      "gemini-3.8-lite",
+                      "gemini-3.7-flash",
+                      "gemini-3.6-flash",
+                      "gemini-3.1-pro",
+                      "gemini-3.0-flash",
+                      "gemini-2.5-flash",
+                      "gemini-2.5-pro",
                       "gemini-2.0-flash",
                       "gemini-2.0-flash-lite",
                       "gemini-1.5-flash",
                       "gemini-1.5-flash-8b",
                       "gemini-1.5-pro",
-                      "gemini-2.5-flash",
-                      "gemini-2.5-pro",
                     ].includes(geminiModel) ? geminiModel : "custom"}
                     onChange={(e) => {
                       if (e.target.value !== "custom") {
@@ -420,13 +426,19 @@ export default function AdminAIAgentPage() {
                     }}
                     className="w-full px-3.5 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white font-medium focus:outline-none focus:ring-2 focus:ring-amber-400"
                   >
-                    <option value="gemini-2.0-flash">gemini-2.0-flash (Recommended • Ultra Fast)</option>
-                    <option value="gemini-2.0-flash-lite">gemini-2.0-flash-lite (Flash Lite • High Quota)</option>
-                    <option value="gemini-1.5-flash">gemini-1.5-flash (High Volume)</option>
-                    <option value="gemini-1.5-flash-8b">gemini-1.5-flash-8b (Flash 8B • Super Low Latency)</option>
-                    <option value="gemini-1.5-pro">gemini-1.5-pro (Pro Deep Reasoning)</option>
+                    <option value="gemini-3.8-flash">gemini-3.8-flash (Recommended • Ultra Fast)</option>
+                    <option value="gemini-3.8-lite">gemini-3.8-lite (Flash Lite • High Quota)</option>
+                    <option value="gemini-3.7-flash">gemini-3.7-flash (Hybrid Reasoning)</option>
+                    <option value="gemini-3.6-flash">gemini-3.6-flash</option>
+                    <option value="gemini-3.1-pro">gemini-3.1-pro (Deep Reasoning Pro)</option>
+                    <option value="gemini-3.0-flash">gemini-3.0-flash</option>
                     <option value="gemini-2.5-flash">gemini-2.5-flash (Preview)</option>
                     <option value="gemini-2.5-pro">gemini-2.5-pro (Preview)</option>
+                    <option value="gemini-2.0-flash">gemini-2.0-flash</option>
+                    <option value="gemini-2.0-flash-lite">gemini-2.0-flash-lite</option>
+                    <option value="gemini-1.5-flash">gemini-1.5-flash</option>
+                    <option value="gemini-1.5-flash-8b">gemini-1.5-flash-8b</option>
+                    <option value="gemini-1.5-pro">gemini-1.5-pro</option>
                     <option value="custom">✏️ Enter Custom Model Name...</option>
                   </select>
 

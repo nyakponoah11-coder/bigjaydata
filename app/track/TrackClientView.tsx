@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { Order } from "@/lib/db";
-import { Search, Loader2, ArrowRight, Clock, CheckCircle2, AlertTriangle, ShieldCheck } from "lucide-react";
+import { Search, Loader2, ArrowRight, Clock, CheckCircle2, AlertTriangle, ShieldCheck, Copy, Check } from "lucide-react";
 
 export default function TrackClientView({ storeName }: { storeName: string }) {
   const [query, setQuery] = useState("");
@@ -11,6 +11,27 @@ export default function TrackClientView({ storeName }: { storeName: string }) {
   const [orders, setOrders] = useState<Order[] | null>(null);
   const [searched, setSearched] = useState(false);
   const [error, setError] = useState("");
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  const handleCopyAllDetails = (o: Order) => {
+    const paymentStatus = o.payment_status || (o.paystack_ref ? "paid" : "paid");
+    const deliveryStatus = o.delivery_status || (o.status === "delivered" ? "delivered" : o.status === "failed" ? "failed" : "pending");
+    const text = `📋 ORDER DETAILS - ${storeName}
+• Order Reference: ${o.reference}
+• Network: ${o.network.toUpperCase()}
+• Bundle: ${o.package_size}
+• Recipient Phone: ${o.phone}
+• Amount: GHS ${Number(o.amount).toFixed(2)}
+• Payment Status: ${paymentStatus.toUpperCase()}
+• Delivery Status: ${deliveryStatus.toUpperCase()}
+• Date Placed: ${new Date(o.created_at).toLocaleString()}`;
+
+    navigator.clipboard.writeText(text);
+    setCopiedId(o.id);
+    setTimeout(() => {
+      setCopiedId(null);
+    }, 2500);
+  };
 
   const executeSearch = async (searchTerm: string) => {
     const clean = searchTerm.trim();
@@ -211,13 +232,38 @@ export default function TrackClientView({ storeName }: { storeName: string }) {
                       )}
                     </div>
 
-                    <Link
-                      href={`/receipt/${o.reference}`}
-                      className="shrink-0 py-2.5 px-4 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors"
-                    >
-                      View Receipt
-                      <ArrowRight className="w-3.5 h-3.5" />
-                    </Link>
+                    <div className="flex items-center gap-2 w-full sm:w-auto">
+                      <button
+                        type="button"
+                        onClick={() => handleCopyAllDetails(o)}
+                        className={`flex-1 sm:flex-none py-2.5 px-3.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all border ${
+                          copiedId === o.id
+                            ? "bg-emerald-600 text-white border-emerald-500 shadow-sm"
+                            : "bg-slate-100 hover:bg-slate-200 text-slate-800 border-slate-300 active:scale-95"
+                        }`}
+                        title="Copy all order details to clipboard"
+                      >
+                        {copiedId === o.id ? (
+                          <>
+                            <Check className="w-3.5 h-3.5 text-white stroke-[2.5]" />
+                            <span>Copied All Details!</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-3.5 h-3.5 text-slate-600" />
+                            <span>Copy All Details</span>
+                          </>
+                        )}
+                      </button>
+
+                      <Link
+                        href={`/receipt/${o.reference}`}
+                        className="flex-1 sm:flex-none py-2.5 px-4 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors"
+                      >
+                        View Receipt
+                        <ArrowRight className="w-3.5 h-3.5" />
+                      </Link>
+                    </div>
                   </div>
                 </div>
               );

@@ -76,9 +76,13 @@ export interface Settings {
 
 export interface Message {
   id: string;
-  name: string;
-  phone: string;
+  name?: string;
+  phone?: string;
   message: string;
+  image_url?: string;
+  reply?: string;
+  replied_at?: string;
+  session_id?: string;
   is_read: boolean;
   created_at: string;
 }
@@ -125,7 +129,7 @@ let initialSettings: Settings = {
   announcement_text: "⚡ Instant Delivery Guarantee: MTN, Telecel & AT packages delivered in under 60 seconds! 24/7 Automated.",
   announcement_active: true,
   gemini_api_key: process.env.GEMINI_API_KEY || "",
-  gemini_model: "gemini-2.5-flash",
+  gemini_model: "gemini-3.8-flash",
   grok_api_key: process.env.GROK_API_KEY || "",
   grok_model: "grok-2-latest",
   openai_api_key: process.env.OPENAI_API_KEY || "",
@@ -661,16 +665,24 @@ export const db = {
   },
 
   // MESSAGES
-  async getMessages(): Promise<Message[]> {
+  async getMessages(sessionId?: string): Promise<Message[]> {
     if (isSupabaseConfigured && supabaseAdmin) {
       try {
-        const { data, error } = await supabaseAdmin.from("messages").select("*").order("created_at", { ascending: false });
+        let query = supabaseAdmin.from("messages").select("*").order("created_at", { ascending: false });
+        if (sessionId) {
+          query = query.eq("session_id", sessionId);
+        }
+        const { data, error } = await query;
         if (!error && data) return data as Message[];
       } catch (err) {
         console.error("Supabase getMessages error:", err);
       }
     }
-    return globalStore.__bmgh_messages!;
+    const msgs = globalStore.__bmgh_messages || [];
+    if (sessionId) {
+      return msgs.filter((m) => m.session_id === sessionId);
+    }
+    return msgs;
   },
 
   async createMessage(msg: Omit<Message, "id" | "is_read" | "created_at">): Promise<Message> {
@@ -692,6 +704,31 @@ export const db = {
 
     globalStore.__bmgh_messages!.unshift(newMsg);
     return newMsg;
+  },
+
+  async replyMessage(id: string, replyText: string): Promise<Message | null> {
+    const replied_at = new Date().toISOString();
+    if (isSupabaseConfigured && supabaseAdmin) {
+      try {
+        const { data, error } = await supabaseAdmin
+          .from("messages")
+          .update({ reply: replyText, replied_at, is_read: true })
+          .eq("id", id)
+          .select()
+          .single();
+        if (!error && data) return data as Message;
+      } catch (err) {
+        console.error("Supabase replyMessage error:", err);
+      }
+    }
+    const msg = globalStore.__bmgh_messages!.find((m) => m.id === id);
+    if (msg) {
+      msg.reply = replyText;
+      msg.replied_at = replied_at;
+      msg.is_read = true;
+      return msg;
+    }
+    return null;
   },
 
   async markMessageRead(id: string): Promise<boolean> {

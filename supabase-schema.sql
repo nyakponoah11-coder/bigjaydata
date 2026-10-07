@@ -73,14 +73,23 @@ ALTER TABLE public.settings ADD COLUMN IF NOT EXISTS openai_api_key TEXT DEFAULT
 ALTER TABLE public.settings ADD COLUMN IF NOT EXISTS openai_model TEXT DEFAULT 'gpt-4o-mini';
 
 -- 4. MESSAGES TABLE
-CREATE TABLE public.messages (
+CREATE TABLE IF NOT EXISTS public.messages (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name TEXT,
     phone TEXT,
     message TEXT NOT NULL,
+    image_url TEXT,
+    reply TEXT,
+    replied_at TIMESTAMPTZ,
+    session_id TEXT,
     is_read BOOLEAN NOT NULL DEFAULT false,
     created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
 );
+
+ALTER TABLE public.messages ADD COLUMN IF NOT EXISTS image_url TEXT;
+ALTER TABLE public.messages ADD COLUMN IF NOT EXISTS reply TEXT;
+ALTER TABLE public.messages ADD COLUMN IF NOT EXISTS replied_at TIMESTAMPTZ;
+ALTER TABLE public.messages ADD COLUMN IF NOT EXISTS session_id TEXT;
 
 -- ENABLE ROW LEVEL SECURITY
 ALTER TABLE public.products ENABLE ROW LEVEL SECURITY;
