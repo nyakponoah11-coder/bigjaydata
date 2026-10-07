@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { Order } from "@/lib/db";
 import { Search, Loader2, ArrowRight, Clock, CheckCircle2, AlertTriangle, ShieldCheck } from "lucide-react";
@@ -12,16 +12,16 @@ export default function TrackClientView({ storeName }: { storeName: string }) {
   const [searched, setSearched] = useState(false);
   const [error, setError] = useState("");
 
-  const handleSearch = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!query.trim()) return;
+  const executeSearch = async (searchTerm: string) => {
+    const clean = searchTerm.trim();
+    if (!clean) return;
 
     setError("");
     setLoading(true);
     setSearched(true);
 
     try {
-      const res = await fetch(`/api/orders/track?q=${encodeURIComponent(query.trim())}`);
+      const res = await fetch(`/api/orders/track?q=${encodeURIComponent(clean)}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || "Failed to search");
       setOrders(data.orders || []);
@@ -31,6 +31,22 @@ export default function TrackClientView({ storeName }: { storeName: string }) {
     } finally {
       setLoading(false);
     }
+  };
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const initialRef = params.get("reference") || params.get("trxref") || params.get("q");
+      if (initialRef) {
+        setQuery(initialRef);
+        executeSearch(initialRef);
+      }
+    }
+  }, []);
+
+  const handleSearch = async (e: React.FormEvent) => {
+    e.preventDefault();
+    executeSearch(query);
   };
 
   return (
