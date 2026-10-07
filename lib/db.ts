@@ -262,12 +262,35 @@ export const db = {
       try {
         const { data, error } = await supabaseAdmin.from("settings").select("*").eq("id", "default").single();
         if (!error && data) {
-          const merged = { ...globalStore.__bmgh_settings, ...data };
-          // Preserve whatsapp_channel_url if configured locally or in db
-          if (data.whatsapp_channel_url !== undefined) merged.whatsapp_channel_url = data.whatsapp_channel_url;
+          const merged: Settings = { ...globalStore.__bmgh_settings, ...data };
+          // Preserve channel url and AI keys if configured locally
+          if (data.whatsapp_channel_url !== undefined && data.whatsapp_channel_url !== null) {
+            merged.whatsapp_channel_url = data.whatsapp_channel_url;
+          } else if (globalStore.__bmgh_settings?.whatsapp_channel_url) {
+            merged.whatsapp_channel_url = globalStore.__bmgh_settings.whatsapp_channel_url;
+          }
+
+          if (data.gemini_api_key) merged.gemini_api_key = data.gemini_api_key;
+          else if (globalStore.__bmgh_settings?.gemini_api_key) merged.gemini_api_key = globalStore.__bmgh_settings.gemini_api_key;
+
+          if (data.gemini_model) merged.gemini_model = data.gemini_model;
+          else if (globalStore.__bmgh_settings?.gemini_model) merged.gemini_model = globalStore.__bmgh_settings.gemini_model;
+
+          if (data.grok_api_key) merged.grok_api_key = data.grok_api_key;
+          else if (globalStore.__bmgh_settings?.grok_api_key) merged.grok_api_key = globalStore.__bmgh_settings.grok_api_key;
+
+          if (data.grok_model) merged.grok_model = data.grok_model;
+          else if (globalStore.__bmgh_settings?.grok_model) merged.grok_model = globalStore.__bmgh_settings.grok_model;
+
+          if (data.openai_api_key) merged.openai_api_key = data.openai_api_key;
+          else if (globalStore.__bmgh_settings?.openai_api_key) merged.openai_api_key = globalStore.__bmgh_settings.openai_api_key;
+
+          if (data.openai_model) merged.openai_model = data.openai_model;
+          else if (globalStore.__bmgh_settings?.openai_model) merged.openai_model = globalStore.__bmgh_settings.openai_model;
+
           globalStore.__bmgh_settings = merged;
           saveToDisk();
-          return merged as Settings;
+          return merged;
         }
       } catch (err) {
         console.error("Supabase getSettings error:", err);
@@ -277,9 +300,24 @@ export const db = {
   },
 
   async updateSettings(updates: Partial<Settings>): Promise<Settings> {
+    // Sanitize: do not overwrite real API keys if masked bullets are passed
+    const safeUpdates: Partial<Settings> = { ...updates };
+    if (safeUpdates.gemini_api_key && safeUpdates.gemini_api_key.includes("••••")) {
+      delete safeUpdates.gemini_api_key;
+    }
+    if (safeUpdates.grok_api_key && safeUpdates.grok_api_key.includes("••••")) {
+      delete safeUpdates.grok_api_key;
+    }
+    if (safeUpdates.openai_api_key && safeUpdates.openai_api_key.includes("••••")) {
+      delete safeUpdates.openai_api_key;
+    }
+    if (safeUpdates.paystack_secret_key && safeUpdates.paystack_secret_key.includes("••••")) {
+      delete safeUpdates.paystack_secret_key;
+    }
+
     if (isSupabaseConfigured && supabaseAdmin) {
       try {
-        const payload = { id: "default", ...updates, updated_at: new Date().toISOString() };
+        const payload = { id: "default", ...safeUpdates, updated_at: new Date().toISOString() };
         let { data, error } = await supabaseAdmin
           .from("settings")
           .upsert(payload)
@@ -291,17 +329,23 @@ export const db = {
           console.warn("Retrying settings upsert with legacy core columns:", error.message);
           const legacyPayload: any = {
             id: "default",
-            store_name: updates.store_name,
-            support_phone: updates.support_phone,
-            whatsapp_number: updates.whatsapp_number,
-            whatsapp_channel_url: updates.whatsapp_channel_url,
-            email: updates.email,
-            paystack_public_key: updates.paystack_public_key,
-            paystack_secret_key: updates.paystack_secret_key,
-            datamart_api_key: updates.datamart_api_key,
-            datamart_api_url: updates.datamart_api_url,
-            announcement_text: updates.announcement_text,
-            announcement_active: updates.announcement_active,
+            store_name: safeUpdates.store_name,
+            support_phone: safeUpdates.support_phone,
+            whatsapp_number: safeUpdates.whatsapp_number,
+            whatsapp_channel_url: safeUpdates.whatsapp_channel_url,
+            email: safeUpdates.email,
+            paystack_public_key: safeUpdates.paystack_public_key,
+            paystack_secret_key: safeUpdates.paystack_secret_key,
+            datamart_api_key: safeUpdates.datamart_api_key,
+            datamart_api_url: safeUpdates.datamart_api_url,
+            announcement_text: safeUpdates.announcement_text,
+            announcement_active: safeUpdates.announcement_active,
+            gemini_api_key: safeUpdates.gemini_api_key,
+            gemini_model: safeUpdates.gemini_model,
+            grok_api_key: safeUpdates.grok_api_key,
+            grok_model: safeUpdates.grok_model,
+            openai_api_key: safeUpdates.openai_api_key,
+            openai_model: safeUpdates.openai_model,
             updated_at: new Date().toISOString(),
           };
           // Filter out undefined keys
@@ -314,7 +358,7 @@ export const db = {
           globalStore.__bmgh_settings = {
             ...globalStore.__bmgh_settings!,
             ...(data as Settings),
-            ...updates,
+            ...safeUpdates,
           };
           saveToDisk();
           return globalStore.__bmgh_settings;
@@ -325,7 +369,7 @@ export const db = {
     }
     globalStore.__bmgh_settings = {
       ...globalStore.__bmgh_settings!,
-      ...updates,
+      ...safeUpdates,
       updated_at: new Date().toISOString(),
     };
     saveToDisk();

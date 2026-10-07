@@ -4,6 +4,13 @@ import { askCustomerSupportAI } from "@/lib/ai-rotator";
 
 export const dynamic = "force-dynamic";
 
+function maskPhone(phone?: string): string {
+  if (!phone) return "";
+  const clean = phone.trim();
+  if (clean.length < 7) return clean;
+  return clean.slice(0, 3) + "****" + clean.slice(-3);
+}
+
 export async function POST(request: Request) {
   try {
     const body = await request.json().catch(() => ({}));
@@ -26,19 +33,23 @@ export async function POST(request: Request) {
       const ref = refMatch[1].toUpperCase();
       const order = await db.getOrderByReference(ref);
       if (order) {
-        orderContext += `ORDER FOUND: Reference ${order.reference} | Network: ${order.network.toUpperCase()} | Package: ${order.package_size} | Recipient: ${order.phone} | Amount: GHS ${order.amount.toFixed(2)} | Payment Status: ${order.payment_status?.toUpperCase() || "PAID"} | Delivery Status: ${(order.delivery_status || order.status)?.toUpperCase()} | Placed: ${new Date(order.created_at).toLocaleString()}`;
+        orderContext += `ORDER FOUND: Reference ${order.reference} | Network: ${order.network.toUpperCase()} | Package: ${order.package_size} | Recipient: ${maskPhone(order.phone)} | Amount: GHS ${order.amount.toFixed(2)} | Payment Status: ${order.payment_status?.toUpperCase() || "PAID"} | Delivery Status: ${(order.delivery_status || order.status)?.toUpperCase()} | Placed: ${new Date(order.created_at).toLocaleString()}`;
       }
     }
 
-    // 2. Check for 10-digit phone number if reference was not found
+    // 2. Check for Phone Number (supports 055 123 4567, 055-123-4567, 0551234567, +233...)
     if (!orderContext) {
-      const phoneMatch = message.match(/(0\d{9}|233\d{9})/);
+      const cleanDigits = message.replace(/[\s\-\(\)]/g, "");
+      const phoneMatch = cleanDigits.match(/(?:233|0)[235]\d{8}/);
       if (phoneMatch) {
-        const phone = phoneMatch[1];
+        let phone = phoneMatch[0];
+        if (phone.startsWith("233")) {
+          phone = "0" + phone.slice(3);
+        }
         const orders = await db.getOrdersByPhone(phone);
         if (orders.length > 0) {
           const latest = orders[0];
-          orderContext += `ORDER FOUND FOR PHONE ${phone}: Reference ${latest.reference} | Network: ${latest.network.toUpperCase()} | Package: ${latest.package_size} | Amount: GHS ${latest.amount.toFixed(2)} | Payment: ${latest.payment_status?.toUpperCase() || "PAID"} | Delivery Status: ${(latest.delivery_status || latest.status)?.toUpperCase()} | Placed: ${new Date(latest.created_at).toLocaleString()}`;
+          orderContext += `ORDER FOUND FOR PHONE: Reference ${latest.reference} | Network: ${latest.network.toUpperCase()} | Package: ${latest.package_size} | Recipient: ${maskPhone(latest.phone)} | Amount: GHS ${latest.amount.toFixed(2)} | Payment: ${latest.payment_status?.toUpperCase() || "PAID"} | Delivery Status: ${(latest.delivery_status || latest.status)?.toUpperCase()} | Placed: ${new Date(latest.created_at).toLocaleString()}`;
         }
       }
     }
@@ -49,9 +60,21 @@ export async function POST(request: Request) {
       extraContext: orderContext || undefined,
     });
 
+    let safeReply = aiResult.reply;
+
+    // Safety privacy filter: Ensure no raw phone numbers belonging to other people are leaked in the reply
+    // If reply contains a 10-digit number that was NOT typed by the user, mask it
+    const phoneRegex = /\b(0[235]\d{8})\b/g;
+    safeReply = safeReply.replace(phoneRegex, (matchedPhone) => {
+      if (message.includes(matchedPhone)) {
+        return matchedPhone; // User themselves typed it
+      }
+      return maskPhone(matchedPhone);
+    });
+
     return NextResponse.json({
       success: true,
-      reply: aiResult.reply,
+      reply: safeReply,
       provider: aiResult.provider,
       modelUsed: aiResult.modelUsed,
     });
@@ -67,3 +90,4 @@ export async function POST(request: Request) {
     );
   }
 }
+

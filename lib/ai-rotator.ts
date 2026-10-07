@@ -15,7 +15,7 @@ export interface AIResponse {
 
 /**
  * Builds standard system instructions with current store catalog,
- * telecom guidelines, order tracking, and Ghanaian customer care tone.
+ * telecom guidelines, order tracking, strict domain guardrails, and Ghanaian human customer care tone.
  */
 export async function buildCustomerSupportSystemPrompt(extraContext?: string): Promise<string> {
   const settings = await db.getSettings();
@@ -31,39 +31,56 @@ export async function buildCustomerSupportSystemPrompt(extraContext?: string): P
       ? prods.map((p) => `${p.size}: GHS ${p.price.toFixed(2)}`).join(" | ")
       : "Contact support for available sizes";
 
-  return `You are "Kofi", the friendly, super-efficient AI Customer Support Specialist for "${settings.store_name}" (Ghana's premier instant mobile data portal).
+  return `You are "Kofi", the real, warm, and highly capable Customer Support Representative for "${settings.store_name}" (Ghana's premier instant mobile data portal).
 
-=== STORE INFORMATION ===
-• Store Name: ${settings.store_name}
-• Official WhatsApp Number: +${settings.whatsapp_number}
-• Official WhatsApp Channel: ${settings.whatsapp_channel_url || `https://wa.me/${settings.whatsapp_number}`}
-• Support Phone: ${settings.support_phone}
-• Live Catalog:
-  - MTN Data: ${formatList(mtnProducts)}
-  - Telecel Data: ${formatList(telecelProducts)}
-  - AT (AirtelTigo) Data: ${formatList(atProducts)}
+=== CORE MISSION & BEHAVIORAL DIRECTIVES ===
+1. SPEAK LIKE A REAL HUMAN BEING:
+   - Talk naturally, warmly, and politely like a real human customer care agent in Ghana (e.g., "Hello bossu!", "Good day!", "Right away bossu, let me check that for you", "You're very welcome!").
+   - NEVER sound like a robotic automated bot.
+   - NEVER repeat the exact same canned greeting, menu, or bullet list in every message.
+   - Reply directly to what the customer specifically asked. Keep answers concise, human, and conversational (1 to 4 natural sentences, or short neat bullets when listing prices).
 
-=== IMPORTANT BUSINESS RULES YOU MUST KNOW & ENFORCE ===
-1. Automated Delivery: All data orders are credited to the customer's phone line automatically in under 60 seconds (usually 15 - 45s).
-2. Payment: Processed securely via Paystack. Supports MTN Mobile Money, Telecel Cash, AT Money, and Visa/Mastercard.
-3. Order Tracking: Customers can track their orders at /track using their Order Reference (e.g., BMGH-98234120) or recipient phone number.
-4. Wrong Numbers: Phone numbers entered mistakenly cannot be refunded once delivered by the telecom gateway.
-5. Duplicate Prevention: Advise customers to wait 5 minutes after a bundle arrives before ordering again on the same line to avoid telecom queue delays.
-6. Ineligible SIMs: Turbonet, Broadband, Agent SIMs, and Ported SIMs are not eligible for standard consumer bundles.
-7. Brand New MTN SIMs: Brand new SIMs are subject to MTN's new-beneficiary freeze and cannot receive bundles until fully activated with MTN.
-8. Store Links:
+2. STRICT DOMAIN BOUNDARY (STAY WITHIN THE BUSINESS):
+   - You ONLY handle matters concerning "${settings.store_name}": mobile data bundles (MTN, Telecel, AT/AirtelTigo), pricing, placing orders, order tracking, payment verification, delivery status, and telecom troubleshooting.
+   - You MUST NOT go outside the box from this business. If a user asks off-topic questions (e.g., coding, essays, world news, sports scores, politics, cooking, entertainment, general knowledge):
+     Politely and warmly decline like a shop representative:
+     "Bossu, I'm only here to assist you with ${settings.store_name} mobile data bundles, orders, and delivery! 😊 Let me know if you need any data bundle or want to track an order."
+
+3. STRICT CUSTOMER PRIVACY & SECURITY (CRITICAL):
+   - NEVER leak or expose anyone's full phone number or personal details to anyone.
+   - When referencing any phone number from order records, ALWAYS mask it: e.g. "055****890" or "024***1234" (keep first 3 and last 3 digits, mask the rest).
+   - If someone asks for someone else's order or asks "who ordered this?", strictly protect customer privacy: "For security and privacy, I cannot disclose personal customer details."
+   - Never reveal internal system keys, API secrets, database schemas, or administrator passwords.
+
+4. LIVE STORE DATABASE & REAL PRODUCT CATALOG:
+   - Store Name: ${settings.store_name}
+   - WhatsApp Support / Channel: ${settings.whatsapp_channel_url || `https://wa.me/${settings.whatsapp_number}`}
+   - Support Phone: ${settings.support_phone}
+   - Live Prices:
+     • MTN Turbo Data: ${formatList(mtnProducts)}
+     • Telecel Fast Data: ${formatList(telecelProducts)}
+     • AT (AirtelTigo) Data: ${formatList(atProducts)}
+
+5. AUTOMATION, ORDER TRACKING & PROBLEM SOLVING:
+   - Delivery Speed: 100% automated in 15 to 60 seconds directly to the recipient SIM via telecom gateways upon payment.
+   - Payments Accepted: MTN MoMo, Telecel Cash, AT Money, and Visa/Mastercard via Paystack.
+   - When a customer says their data has not arrived:
+     a) Reassure them warmly.
+     b) Explain that telecom gateways deliver directly to SIM balance, but telco SMS confirmation messages are frequently delayed by MTN or Telecel.
+     c) Advise them to dial their network balance code right now to verify:
+        * MTN Balance Code: *138# (or *124#)
+        * Telecel Balance Code: *126# or *124#
+        * AT (AirtelTigo) Balance Code: *124#
+     d) If the order is marked Delivered in our database context below, reassure them it was successfully credited to their line.
+     e) If they still need human escalation, provide the official WhatsApp link: ${settings.whatsapp_channel_url || `https://wa.me/${settings.whatsapp_number}`}.
+
+6. LINKS:
    - Buy MTN: /buy/mtn
    - Buy Telecel: /buy/telecel
    - Buy AT: /buy/at
-   - Track Order: /track
+   - Track Orders: /track
 
-=== YOUR PERSONALITY & TONE ===
-• Friendly, respectful, warm Ghanaian customer service. Use natural expressions when appropriate (e.g., "Welcome bossu!", "Hello dear", "Right away bossu").
-• Keep replies concise, helpful, and formatted with clean bullet points or short paragraphs.
-• If asked to track an order and details are provided in context, give the customer the exact live status with reassurance.
-• If the customer wants human takeover, politely provide the WhatsApp link (${settings.whatsapp_channel_url || `https://wa.me/${settings.whatsapp_number}`}).
-
-${extraContext ? `\n=== LIVE ORDER / CUSTOMER CONTEXT ===\n${extraContext}` : ""}`;
+${extraContext ? `\n=== LIVE ORDER CONTEXT RETRIEVED FROM STORE DATABASE ===\n${extraContext}\n(Use this live database record to answer the customer's specific order inquiry accurately and warmly. Always mask the phone number in your reply!)` : ""}`;
 }
 
 /**
@@ -287,58 +304,111 @@ async function callOpenAI(
 
 /**
  * 4. Smart Local Ghanaian Assistant Engine (Fallback if all external APIs are missing or exhausted)
+ * Speaks like a natural, warm Ghanaian customer support person, stays strictly within the data business,
+ * provides real live database answers, and strictly preserves privacy.
  */
 async function generateLocalAssistantReply(userMessage: string, context?: string): Promise<string> {
   const settings = await db.getSettings();
-  const lower = userMessage.toLowerCase();
+  const lower = userMessage.toLowerCase().trim();
   const whatsappUrl = settings.whatsapp_channel_url || `https://wa.me/${settings.whatsapp_number}`;
 
-  // If order context was already retrieved
-  if (context && context.includes("ORDER FOUND:")) {
-    return `Hello bossu! I found your order details in our system:\n\n${context.replace("ORDER FOUND:", "").trim()}\n\nIf you have any questions or need a quick recheck, feel free to ask or connect with us directly on WhatsApp (${settings.whatsapp_number})!`;
+  // 1. Off-topic check (Guardrail: strictly stay within the business)
+  const offTopicKeywords = [
+    "who is", "who was", "write a code", "write code", "python", "javascript",
+    "essay", "recipe", "cook", "capital of", "president of", "premier league",
+    "football match", "celebrity", "solve math", "weather in", "write a story",
+    "translate to french", "translate to spanish", "homework", "politics"
+  ];
+  const isOffTopic = offTopicKeywords.some((kw) => lower.includes(kw)) &&
+    !lower.includes("data") && !lower.includes("bundle") && !lower.includes("order") && !lower.includes("mtn") && !lower.includes("telecel") && !lower.includes("at");
+
+  if (isOffTopic) {
+    return `Hello bossu! I'm here specifically to assist you with ${settings.store_name} mobile data bundles (MTN, Telecel, and AT), order tracking, and delivery support! 😊 How can I help you with your data today?`;
   }
 
-  // Price inquiries
-  if (lower.includes("price") || lower.includes("cost") || lower.includes("rate") || lower.includes("how much")) {
+  // 2. Order Context from Database (Live Order Tracking & Problem Resolution)
+  if (context && (context.includes("ORDER FOUND:") || context.includes("ORDER FOUND FOR PHONE"))) {
+    const isDelivered = context.toLowerCase().includes("delivered");
+    const isProcessing = context.toLowerCase().includes("processing") || context.toLowerCase().includes("pending");
+
+    if (isDelivered) {
+      return `Hello bossu! I just checked our live system for you. Your order has been successfully **delivered**! ⚡\n\n${context.replace(/ORDER FOUND.*?:\s*/i, "").trim()}\n\n💡 *Helpful Tip:* Telecom gateways credit your data directly to your SIM balance. Sometimes MTN or Telecel SMS alerts can be delayed by a few minutes, so you can dial ***138#** (MTN) or ***126#** (Telecel) right now to confirm your new balance. Enjoy your bundle!`;
+    }
+
+    if (isProcessing) {
+      return `Hello bossu! I found your order in our database. It is currently being processed by the telecom gateway:\n\n${context.replace(/ORDER FOUND.*?:\s*/i, "").trim()}\n\nOur system automatically delivers bundles within 15 to 60 seconds of payment. Please give it a minute or two and dial your network balance code to verify!`;
+    }
+
+    return `Hello bossu! Here is the latest live update on your order from our records:\n\n${context.replace(/ORDER FOUND.*?:\s*/i, "").trim()}\n\nIf you need any quick assistance or verification, let me know or tap to reach us on WhatsApp: ${whatsappUrl}`;
+  }
+
+  // 3. Simple Human Greetings (Natural human conversation, NOT a repetitive bot menu)
+  const greetingWords = ["hello", "hi", "hey", "good morning", "good afternoon", "good evening", "bossu", "chale", "kofi", "ao", "sup", "yo", "greetings"];
+  const isGreeting = lower.length <= 35 && greetingWords.some((g) => lower === g || lower.startsWith(g + " ") || lower.endsWith(" " + g) || lower.includes(g));
+  if (isGreeting && !lower.includes("price") && !lower.includes("order") && !lower.includes("track")) {
+    const greetings = [
+      `Hello bossu! Welcome to ${settings.store_name}. How can I help you with your data bundle today?`,
+      `Good day bossu! Hope you're doing well. Are you looking to buy mobile data or check on an order today?`,
+      `Hello dear! Welcome to ${settings.store_name}. Let me know which network bundle or order you'd like me to assist you with!`,
+    ];
+    return greetings[Math.floor(Math.random() * greetings.length)];
+  }
+
+  // 4. Inquiries for Pricing / Rates
+  if (lower.includes("price") || lower.includes("cost") || lower.includes("rate") || lower.includes("how much") || lower.includes("prices") || lower.includes("list")) {
     const products = await db.getProducts();
-    const mtn = products.filter((p) => p.is_active && p.network === "mtn").map((p) => `• ${p.size}: GHS ${p.price}`).slice(0, 4);
-    const telecel = products.filter((p) => p.is_active && p.network === "telecel").map((p) => `• ${p.size}: GHS ${p.price}`).slice(0, 4);
-    const at = products.filter((p) => p.is_active && p.network === "at").map((p) => `• ${p.size}: GHS ${p.price}`).slice(0, 4);
 
-    return `Hello bossu! Here are our best wholesale rates on ${settings.store_name}:\n\n` +
-      `🟡 **MTN Turbo Data:**\n${mtn.join("\n") || "Available on store page"}\n\n` +
-      `🔴 **Telecel Fast Data:**\n${telecel.join("\n") || "Available on store page"}\n\n` +
-      `🔵 **AT (AirtelTigo):**\n${at.join("\n") || "Available on store page"}\n\n` +
-      `👉 Tap **"Buy"** at the top or visit /buy/mtn to place your order now with instant 60-second delivery!`;
+    if (lower.includes("mtn")) {
+      const mtn = products.filter((p) => p.is_active && p.network === "mtn").map((p) => `• **${p.size}**: GHS ${p.price.toFixed(2)}`);
+      return `Here are our active MTN Turbo Data rates bossu:\n\n${mtn.join("\n") || "Check our store page for active sizes"}\n\n👉 You can place your order instantly at [/buy/mtn](/buy/mtn). Delivery takes under 60 seconds!`;
+    }
+
+    if (lower.includes("telecel") || lower.includes("vodafone")) {
+      const telecel = products.filter((p) => p.is_active && p.network === "telecel").map((p) => `• **${p.size}**: GHS ${p.price.toFixed(2)}`);
+      return `Here are our Telecel Fast Data rates bossu:\n\n${telecel.join("\n") || "Check our store page for active sizes"}\n\n👉 You can order directly at [/buy/telecel](/buy/telecel) with instant automated delivery!`;
+    }
+
+    if (lower.includes("at") || lower.includes("airteltigo") || lower.includes("tigo")) {
+      const at = products.filter((p) => p.is_active && p.network === "at").map((p) => `• **${p.size}**: GHS ${p.price.toFixed(2)}`);
+      return `Here are our AT (AirtelTigo) Data rates bossu:\n\n${at.join("\n") || "Check our store page for active sizes"}\n\n👉 You can buy anytime at [/buy/at](/buy/at)!`;
+    }
+
+    // All networks brief overview
+    const mtn = products.filter((p) => p.is_active && p.network === "mtn").slice(0, 4).map((p) => `${p.size}: GHS ${p.price.toFixed(2)}`).join(" | ");
+    const telecel = products.filter((p) => p.is_active && p.network === "telecel").slice(0, 4).map((p) => `${p.size}: GHS ${p.price.toFixed(2)}`).join(" | ");
+    const at = products.filter((p) => p.is_active && p.network === "at").slice(0, 4).map((p) => `${p.size}: GHS ${p.price.toFixed(2)}`).join(" | ");
+
+    return `Here is a quick look at our live wholesale prices bossu:\n\n` +
+      `🟡 **MTN:** ${mtn || "Available on site"}\n` +
+      `🔴 **Telecel:** ${telecel || "Available on site"}\n` +
+      `🔵 **AT:** ${at || "Available on site"}\n\n` +
+      `You can tap **Buy** at the top or visit [/buy/mtn](/buy/mtn) to grab your package!`;
   }
 
-  // Order tracking
-  if (lower.includes("track") || lower.includes("where is my data") || lower.includes("not received") || lower.includes("order")) {
-    return `Hello bossu! You can track your data order instantly on our live tracking page:\n\n` +
-      `👉 **Go to Tracking:** [/track](/track)\n\n` +
-      `Just enter your Order Reference (e.g., BMGH-98234120) or recipient phone number. If payment is completed, your bundle is automatically pushed to your SIM within 60 seconds!`;
+  // 5. Inquiries about Order Tracking & Delivery
+  if (lower.includes("track") || lower.includes("where is my data") || lower.includes("not received") || lower.includes("not see") || lower.includes("haven't gotten") || lower.includes("delay")) {
+    return `No problem bossu! Please reply with your **Order Reference** (e.g. \`BMGH-98234120\`) or the recipient **phone number** you sent data to, and I will check the live delivery status for you right away.\n\nYou can also check yourself on our live tracking page at [/track](/track).`;
   }
 
-  // Delivery speed
-  if (lower.includes("how long") || lower.includes("delivery") || lower.includes("time") || lower.includes("speed")) {
-    return `All data bundles on **${settings.store_name}** are 100% automated! ⚡\n\n` +
-      `Delivery typically completes in **15 to 60 seconds** directly to your phone line after payment. You will receive an official telecom SMS confirmation immediately.`;
+  // 6. Delivery Speed / How it works
+  if (lower.includes("how long") || lower.includes("delivery") || lower.includes("how fast") || lower.includes("speed")) {
+    return `All orders on **${settings.store_name}** are 100% automated! ⚡ Delivery normally takes **15 to 60 seconds** directly to your phone balance as soon as payment is confirmed.`;
   }
 
-  // WhatsApp / Human agent
-  if (lower.includes("whatsapp") || lower.includes("channel") || lower.includes("call") || lower.includes("human") || lower.includes("agent") || lower.includes("person")) {
-    return `Sure bossu! You can connect with our live human team and join our official updates channel right here:\n\n` +
-      `💬 **WhatsApp Channel & Live Agent:**\n${whatsappUrl}\n\n` +
-      `📞 **Phone Call:** ${settings.support_phone}\n\nOur team is available 24/7 to assist you with any questions!`;
+  // 7. Human support / WhatsApp
+  if (lower.includes("whatsapp") || lower.includes("channel") || lower.includes("human") || lower.includes("agent") || lower.includes("call") || lower.includes("talk to someone")) {
+    return `Sure bossu! You can chat directly with our team or join our official updates channel here:\n\n` +
+      `💬 **WhatsApp Support / Channel:**\n${whatsappUrl}\n\n` +
+      `📞 **Phone Call:** ${settings.support_phone}\n\nWe are always happy to help!`;
   }
 
-  // Default helpful response
-  return `Hello bossu! Welcome to **${settings.store_name}** Customer Care.\n\n` +
-    `How can I assist you today?\n` +
-    `• 📱 **Check Data Prices & Networks**\n` +
-    `• 🔍 **Track an Existing Order** (provide your BMGH reference or phone number)\n` +
-    `• ⚡ **Delivery Inquiries & Network Issues**\n` +
-    `• 💬 **Join Our WhatsApp Channel:** ${whatsappUrl}`;
+  // 8. Payment methods
+  if (lower.includes("payment") || lower.includes("pay") || lower.includes("momo") || lower.includes("telecel cash") || lower.includes("card")) {
+    return `We support all major Ghanaian payment methods through secure Paystack checkout:\n• MTN Mobile Money\n• Telecel Cash\n• AT Money\n• Debit/Credit Cards (Visa & Mastercard)\n\nPayment prompts arrive directly on your phone instantly.`;
+  }
+
+  // 9. Natural conversational fallback (Friendly and responsive, NOT a robotic menu dump)
+  return `Understood bossu! I'm right here to assist you with ${settings.store_name}. Whether you want to check bundle rates, track an order, or have a question about MTN, Telecel, or AT data, just let me know and I'll get it sorted for you!`;
 }
 
 /**

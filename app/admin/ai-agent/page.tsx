@@ -131,7 +131,16 @@ export default function AdminAIAgentPage() {
         throw new Error(data.message || "Failed to save AI settings");
       }
 
-      setNotice("AI API keys and model rotation configuration successfully saved!");
+      if (data.settings) {
+        if (data.settings.gemini_api_key !== undefined) setGeminiKey(data.settings.gemini_api_key);
+        if (data.settings.gemini_model !== undefined) setGeminiModel(data.settings.gemini_model);
+        if (data.settings.grok_api_key !== undefined) setGrokKey(data.settings.grok_api_key);
+        if (data.settings.grok_model !== undefined) setGrokModel(data.settings.grok_model);
+        if (data.settings.openai_api_key !== undefined) setOpenaiKey(data.settings.openai_api_key);
+        if (data.settings.openai_model !== undefined) setOpenaiModel(data.settings.openai_model);
+      }
+
+      setNotice("AI API keys and model rotation configuration successfully saved in database!");
       setTimeout(() => setNotice(""), 5000);
     } catch (err: any) {
       setError(err?.message || "Error saving AI settings.");
@@ -378,9 +387,18 @@ export default function AdminAIAgentPage() {
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
                 <div className="sm:col-span-2">
-                  <label className="block text-slate-300 font-bold mb-1">
-                    Gemini API Key
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-slate-300 font-bold">
+                      Gemini API Key
+                    </label>
+                    {geminiKey ? (
+                      <span className="text-[10px] font-black text-emerald-400 bg-emerald-950/80 border border-emerald-800/80 px-2 py-0.5 rounded-full flex items-center gap-1">
+                        <CheckCircle2 className="w-3 h-3 text-emerald-400" /> Saved in Database
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-bold text-amber-400">Not configured</span>
+                    )}
+                  </div>
                   <div className="relative">
                     <input
                       type={showGeminiKey ? "text" : "password"}
@@ -393,10 +411,24 @@ export default function AdminAIAgentPage() {
                       type="button"
                       onClick={() => setShowGeminiKey(!showGeminiKey)}
                       className="absolute right-3 top-2.5 text-slate-400 hover:text-white"
+                      title={showGeminiKey ? "Hide key" : "Show key"}
                     >
                       {showGeminiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
                   </div>
+                  {geminiKey && (
+                    <div className="mt-2 p-2 rounded-xl bg-slate-800/80 border border-slate-700 flex items-center justify-between text-[11px] text-slate-300">
+                      <span className="font-mono">
+                        🔒 Key Stored:{" "}
+                        <strong className="text-amber-300">
+                          {geminiKey.length > 8
+                            ? geminiKey.slice(0, 4) + "••••••••" + geminiKey.slice(-4)
+                            : "••••••••"}
+                        </strong>
+                      </span>
+                      <span className="text-emerald-400 font-bold">Active in Rotator</span>
+                    </div>
+                  )}
                 </div>
 
                 <div>
@@ -514,9 +546,18 @@ export default function AdminAIAgentPage() {
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
                 <div className="sm:col-span-2">
-                  <label className="block text-slate-300 font-bold mb-1">
-                    xAI Grok API Key
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-slate-300 font-bold">
+                      xAI Grok API Key
+                    </label>
+                    {grokKey ? (
+                      <span className="text-[10px] font-black text-emerald-400 bg-emerald-950/80 border border-emerald-800/80 px-2 py-0.5 rounded-full flex items-center gap-1">
+                        <CheckCircle2 className="w-3 h-3 text-emerald-400" /> Saved in Database
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-bold text-slate-400">Not configured</span>
+                    )}
+                  </div>
                   <div className="relative">
                     <input
                       type={showGrokKey ? "text" : "password"}
@@ -529,10 +570,24 @@ export default function AdminAIAgentPage() {
                       type="button"
                       onClick={() => setShowGrokKey(!showGrokKey)}
                       className="absolute right-3 top-2.5 text-slate-400 hover:text-white"
+                      title={showGrokKey ? "Hide key" : "Show key"}
                     >
                       {showGrokKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
                   </div>
+                  {grokKey && (
+                    <div className="mt-2 p-2 rounded-xl bg-slate-800/80 border border-slate-700 flex items-center justify-between text-[11px] text-slate-300">
+                      <span className="font-mono">
+                        🔒 Key Stored:{" "}
+                        <strong className="text-blue-300">
+                          {grokKey.length > 8
+                            ? grokKey.slice(0, 4) + "••••••••" + grokKey.slice(-4)
+                            : "••••••••"}
+                        </strong>
+                      </span>
+                      <span className="text-emerald-400 font-bold">Active in Rotator</span>
+                    </div>
+                  )}
                 </div>
 
                 <div>
@@ -626,9 +681,18 @@ export default function AdminAIAgentPage() {
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
                 <div className="sm:col-span-2">
-                  <label className="block text-slate-300 font-bold mb-1">
-                    OpenAI API Key
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-slate-300 font-bold">
+                      OpenAI API Key
+                    </label>
+                    {openaiKey ? (
+                      <span className="text-[10px] font-black text-emerald-400 bg-emerald-950/80 border border-emerald-800/80 px-2 py-0.5 rounded-full flex items-center gap-1">
+                        <CheckCircle2 className="w-3 h-3 text-emerald-400" /> Saved in Database
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-bold text-slate-400">Not configured</span>
+                    )}
+                  </div>
                   <div className="relative">
                     <input
                       type={showOpenaiKey ? "text" : "password"}
@@ -641,10 +705,24 @@ export default function AdminAIAgentPage() {
                       type="button"
                       onClick={() => setShowOpenaiKey(!showOpenaiKey)}
                       className="absolute right-3 top-2.5 text-slate-400 hover:text-white"
+                      title={showOpenaiKey ? "Hide key" : "Show key"}
                     >
                       {showOpenaiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
                   </div>
+                  {openaiKey && (
+                    <div className="mt-2 p-2 rounded-xl bg-slate-800/80 border border-slate-700 flex items-center justify-between text-[11px] text-slate-300">
+                      <span className="font-mono">
+                        🔒 Key Stored:{" "}
+                        <strong className="text-emerald-300">
+                          {openaiKey.length > 8
+                            ? openaiKey.slice(0, 4) + "••••••••" + openaiKey.slice(-4)
+                            : "••••••••"}
+                        </strong>
+                      </span>
+                      <span className="text-emerald-400 font-bold">Active in Rotator</span>
+                    </div>
+                  )}
                 </div>
 
                 <div>

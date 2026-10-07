@@ -14,6 +14,11 @@ import {
   Bell,
   RefreshCw,
   ExternalLink,
+  Bot,
+  Eye,
+  EyeOff,
+  Sparkles,
+  Key,
 } from "lucide-react";
 
 export default function AdminSettingsPage() {
@@ -35,6 +40,13 @@ export default function AdminSettingsPage() {
   const [datamartApiUrl, setDatamartApiUrl] = useState("");
   const [announcementText, setAnnouncementText] = useState("");
   const [announcementActive, setAnnouncementActive] = useState(true);
+
+  // Gemini AI Agent State
+  const [geminiApiKey, setGeminiApiKey] = useState("");
+  const [geminiModel, setGeminiModel] = useState("gemini-3.8-flash");
+  const [showGeminiKey, setShowGeminiKey] = useState(false);
+  const [testingGemini, setTestingGemini] = useState(false);
+  const [geminiTestResult, setGeminiTestResult] = useState<{ success: boolean; message: string } | null>(null);
 
   // DataMart Connection Testing
   const [testingDataMart, setTestingDataMart] = useState(false);
@@ -71,6 +83,39 @@ export default function AdminSettingsPage() {
     }
   };
 
+  const handleTestGemini = async () => {
+    if (!geminiApiKey.trim()) {
+      setGeminiTestResult({ success: false, message: "Please enter your Gemini API key first." });
+      return;
+    }
+    setTestingGemini(true);
+    setGeminiTestResult(null);
+    try {
+      const res = await fetch("/api/admin/ai-settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "test",
+          provider: "gemini",
+          api_key: geminiApiKey.trim(),
+          model: geminiModel.trim(),
+        }),
+      });
+      const data = await res.json();
+      setGeminiTestResult({
+        success: data.success,
+        message: data.message || (data.success ? "Connected to Google Gemini!" : "Connection failed"),
+      });
+    } catch (err: any) {
+      setGeminiTestResult({
+        success: false,
+        message: err?.message || "Failed to contact Gemini API",
+      });
+    } finally {
+      setTestingGemini(false);
+    }
+  };
+
   const fetchSettings = async () => {
     setLoading(true);
     try {
@@ -94,6 +139,8 @@ export default function AdminSettingsPage() {
         setDatamartApiUrl(cleanDmUrl);
         setAnnouncementText(s.announcement_text || "");
         setAnnouncementActive(s.announcement_active !== false);
+        setGeminiApiKey(s.gemini_api_key || "");
+        setGeminiModel(s.gemini_model || "gemini-3.8-flash");
       }
     } catch (e: any) {
       setError("Failed to load settings");
@@ -131,6 +178,14 @@ export default function AdminSettingsPage() {
         updates.paystack_secret_key = paystackSecretKey.trim();
       }
 
+      // Gemini AI Key & Model
+      if (geminiApiKey !== undefined && !geminiApiKey.includes("••••")) {
+        updates.gemini_api_key = geminiApiKey.trim();
+      }
+      if (geminiModel) {
+        updates.gemini_model = geminiModel.trim();
+      }
+
       const res = await fetch("/api/settings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -147,10 +202,16 @@ export default function AdminSettingsPage() {
         if (data.settings.whatsapp_channel_url !== undefined) {
           setWhatsappChannelUrl(data.settings.whatsapp_channel_url);
         }
+        if (data.settings.gemini_api_key !== undefined) {
+          setGeminiApiKey(data.settings.gemini_api_key);
+        }
+        if (data.settings.gemini_model !== undefined) {
+          setGeminiModel(data.settings.gemini_model);
+        }
       }
 
       setNotice(
-        `Settings saved successfully! WhatsApp Channel (${whatsappChannelUrl.trim() ? "Channel URL Active" : "Direct Chat"}) updated.`
+        `Settings saved successfully! Gemini AI key and store settings updated in database.`
       );
       setTimeout(() => setNotice(""), 6000);
     } catch (err: any) {
@@ -449,7 +510,141 @@ export default function AdminSettingsPage() {
             </div>
           </div>
 
-          {/* SECTION 4: ANNOUNCEMENT BANNER */}
+          {/* SECTION 4: GOOGLE GEMINI AI ASSISTANT CONFIGURATION */}
+          <div className="bg-slate-900 border border-amber-500/30 rounded-3xl p-6 shadow-lg space-y-4 relative overflow-hidden">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2.5">
+                <Bot className="w-5 h-5 text-amber-400" />
+                <span className="text-white font-bold text-sm">Google Gemini AI Customer Support</span>
+                {geminiApiKey ? (
+                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-950 text-emerald-400 border border-emerald-800 flex items-center gap-1">
+                    <CheckCircle className="w-3 h-3 text-emerald-400" /> Active & Saved
+                  </span>
+                ) : (
+                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-amber-950/80 text-amber-400 border border-amber-800 flex items-center gap-1">
+                    <AlertCircle className="w-3 h-3 text-amber-400" /> Key Required
+                  </span>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2">
+                <a
+                  href="/admin/ai-agent"
+                  className="inline-flex items-center gap-1.5 text-xs text-amber-400 hover:text-amber-300 font-bold bg-amber-400/10 hover:bg-amber-400/20 px-3 py-1.5 rounded-xl border border-amber-400/30 transition-colors"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>Multi-Model Rotator & Playground ↗</span>
+                </a>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
+              <div className="sm:col-span-2">
+                <label className="block text-slate-300 font-bold mb-1">
+                  Gemini API Key
+                </label>
+                <div className="relative">
+                  <input
+                    type={showGeminiKey ? "text" : "password"}
+                    value={geminiApiKey}
+                    onChange={(e) => setGeminiApiKey(e.target.value)}
+                    placeholder="AIzaSy..."
+                    className="w-full px-3.5 py-2.5 pr-10 bg-slate-800 border border-slate-700 rounded-xl text-white font-mono text-xs focus:outline-none focus:ring-2 focus:ring-amber-400"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowGeminiKey(!showGeminiKey)}
+                    className="absolute right-3 top-2.5 text-slate-400 hover:text-white"
+                  >
+                    {showGeminiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+                {geminiApiKey && (
+                  <div className="mt-2 p-2 rounded-xl bg-slate-800/80 border border-slate-700 flex items-center justify-between text-[11px] text-slate-300">
+                    <span className="font-mono">
+                      🔒 Saved in Database:{" "}
+                      <strong className="text-amber-300">
+                        {geminiApiKey.length > 8
+                          ? geminiApiKey.slice(0, 4) + "••••••••" + geminiApiKey.slice(-4)
+                          : "••••••••"}
+                      </strong>
+                    </span>
+                    <span className="text-emerald-400 font-bold">Encrypted & Stored</span>
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-slate-300 font-bold mb-1">
+                  Gemini Model
+                </label>
+                <select
+                  value={geminiModel}
+                  onChange={(e) => setGeminiModel(e.target.value)}
+                  className="w-full px-3.5 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white font-medium focus:outline-none focus:ring-2 focus:ring-amber-400"
+                >
+                  <option value="gemini-3.8-flash">gemini-3.8-flash (Recommended • Ultra Fast)</option>
+                  <option value="gemini-3.8-lite">gemini-3.8-lite (High Quota)</option>
+                  <option value="gemini-3.7-flash">gemini-3.7-flash (Hybrid Reasoning)</option>
+                  <option value="gemini-2.5-flash">gemini-2.5-flash (Preview)</option>
+                  <option value="gemini-2.0-flash">gemini-2.0-flash</option>
+                  <option value="gemini-1.5-flash">gemini-1.5-flash</option>
+                </select>
+                <span className="text-[10px] text-slate-400 mt-1 block">
+                  Get free API keys at{" "}
+                  <a
+                    href="https://aistudio.google.com/app/apikey"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-amber-400 underline font-bold"
+                  >
+                    Google AI Studio ↗
+                  </a>
+                </span>
+              </div>
+            </div>
+
+            {/* Test Gemini Connection Button */}
+            <div className="pt-2 border-t border-slate-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <button
+                type="button"
+                onClick={handleTestGemini}
+                disabled={testingGemini}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-amber-950/60 hover:bg-amber-900/80 border border-amber-800 text-amber-300 rounded-xl text-xs font-bold transition-all disabled:opacity-50"
+              >
+                {testingGemini ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Testing Gemini Connection...</span>
+                  </>
+                ) : (
+                  <>
+                    <Bot className="w-3.5 h-3.5" />
+                    <span>Test Gemini API Key</span>
+                  </>
+                )}
+              </button>
+
+              {geminiTestResult && (
+                <div
+                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-2 ${
+                    geminiTestResult.success
+                      ? "bg-emerald-950 text-emerald-300 border border-emerald-800"
+                      : "bg-red-950 text-red-300 border border-red-800"
+                  }`}
+                >
+                  {geminiTestResult.success ? (
+                    <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
+                  ) : (
+                    <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
+                  )}
+                  <span>{geminiTestResult.message}</span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* SECTION 5: ANNOUNCEMENT BANNER */}
           <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-lg space-y-4">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <div className="flex items-center gap-2.5 text-white font-bold text-sm">
