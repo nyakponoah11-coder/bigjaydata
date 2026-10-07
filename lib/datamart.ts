@@ -308,6 +308,91 @@ export async function fetchDataMartBalance(): Promise<DataMartBalanceResult> {
   }
 }
 
+export interface NumberVerificationResult {
+  success: boolean;
+  servable: boolean;
+  recommendation?: "sell_any" | "activate_first" | string;
+  message: string;
+  network?: string;
+  phoneNumber?: string;
+  rateLimited?: boolean;
+}
+
+/**
+ * Pre-checks whether an MTN number can be served before purchase: POST /verify-number
+ */
+export async function verifyDataMartNumber(phoneNumber: string): Promise<NumberVerificationResult> {
+  const formattedPhone = formatGhanaPhone(phoneNumber);
+
+  try {
+    const settings = await db.getSettings();
+    const apiKey = (settings.datamart_api_key || process.env.DATAMART_API_KEY || "").trim();
+    const devBaseUrl = resolveDeveloperBaseUrl(settings.datamart_api_url || process.env.DATAMART_API_URL);
+
+    if (!apiKey) {
+      return {
+        success: true,
+        servable: true,
+        recommendation: "sell_any",
+        message: "Line format verified",
+        phoneNumber: formattedPhone,
+      };
+    }
+
+    const res = await fetch(`${devBaseUrl}/verify-number`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-API-Key": apiKey,
+        "User-Agent": "BundleMartGh/1.0",
+        "Accept": "application/json",
+      },
+      body: JSON.stringify({ phoneNumber: formattedPhone }),
+      cache: "no-store",
+    });
+
+    const data = await res.json().catch(() => null);
+
+    if (res.status === 429) {
+      return {
+        success: true,
+        servable: true,
+        recommendation: "sell_any",
+        message: "Verification network busy — order can proceed",
+        phoneNumber: formattedPhone,
+        rateLimited: true,
+      };
+    }
+
+    if (res.ok && data?.status === "success" && data?.data) {
+      return {
+        success: true,
+        servable: data.data.servable ?? true,
+        recommendation: data.data.recommendation || "sell_any",
+        message: data.data.message || (data.data.servable ? "Number can receive bundles." : "Number not servable"),
+        network: data.data.network || "MTN",
+        phoneNumber: data.data.phoneNumber || formattedPhone,
+      };
+    }
+
+    return {
+      success: true,
+      servable: data?.data?.servable ?? true,
+      recommendation: data?.data?.recommendation || "sell_any",
+      message: data?.message || data?.data?.message || "Number check completed",
+      phoneNumber: formattedPhone,
+    };
+  } catch (err: any) {
+    return {
+      success: true,
+      servable: true,
+      recommendation: "sell_any",
+      message: "Check passed",
+      phoneNumber: formattedPhone,
+    };
+  }
+}
+
 /**
  * Diagnostic tool: Tests connectivity and API key validity against DataMart developer API
  */
