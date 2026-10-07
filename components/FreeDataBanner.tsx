@@ -98,14 +98,9 @@ export default function FreeDataBanner() {
           </div>
 
           <div className="flex flex-col items-start leading-tight">
-            <div className="flex items-center gap-1">
-              <span className="text-xs sm:text-sm font-black tracking-tight text-white uppercase drop-shadow-sm">
-                Free Data
-              </span>
-              <span className="hidden sm:inline-block text-[10px] bg-amber-400 text-slate-950 font-black px-1.5 py-0.2 rounded-md uppercase">
-                {voucher.package_size}
-              </span>
-            </div>
+            <span className="text-xs sm:text-sm font-black tracking-tight text-white uppercase drop-shadow-sm">
+              Free Data
+            </span>
 
             {/* Countdown Timer Display (if set) */}
             {timeLeft && (
