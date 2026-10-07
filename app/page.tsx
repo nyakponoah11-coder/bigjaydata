@@ -6,6 +6,7 @@ import AnnouncementBanner from "@/components/AnnouncementBanner";
 import WhatsAppButton from "@/components/WhatsAppButton";
 import CommentsMarquee from "@/components/CommentsMarquee";
 import NetworkSelectionSection from "@/components/NetworkSelectionSection";
+import HowToBuyAccordion from "@/components/HowToBuyAccordion";
 import {
   Zap,
   ShieldCheck,
@@ -37,66 +38,6 @@ export default async function HomePage() {
     networksMap.get(net)!.push(p);
   });
 
-  // Network visual themes
-  const getNetworkTheme = (network: string) => {
-    switch (network.toLowerCase()) {
-      case "mtn":
-        return {
-          title: "MTN Ghana",
-          tag: "Most Popular",
-          tagColor: "bg-amber-100 text-amber-900",
-          gradient: "from-amber-400 via-yellow-400 to-amber-500",
-          cardBorder: "border-amber-200 hover:border-amber-400",
-          accentColor: "text-amber-600",
-          btnGradient: "from-amber-500 to-yellow-500 hover:from-amber-600 hover:to-yellow-600 text-slate-950",
-          iconBg: "bg-amber-500 text-slate-950",
-          desc: "Superfast 4G+/5G Turbo Data with 100% network uptime across all 16 regions.",
-        };
-      case "telecel":
-        return {
-          title: "Telecel Ghana",
-          tag: "High Speed",
-          tagColor: "bg-red-100 text-red-900",
-          gradient: "from-red-500 via-rose-500 to-red-600",
-          cardBorder: "border-red-200 hover:border-red-400",
-          accentColor: "text-red-600",
-          btnGradient: "from-red-600 to-rose-600 hover:from-red-700 hover:to-rose-700 text-white",
-          iconBg: "bg-red-600 text-white",
-          desc: "Lightning fast Telecel internet for streaming, heavy downloads, and remote work.",
-        };
-      case "at":
-        return {
-          title: "AT (AirtelTigo)",
-          tag: "Best Value",
-          tagColor: "bg-blue-100 text-blue-900",
-          gradient: "from-blue-600 via-indigo-600 to-blue-700",
-          cardBorder: "border-blue-200 hover:border-blue-400",
-          accentColor: "text-blue-600",
-          btnGradient: "from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white",
-          iconBg: "bg-blue-600 text-white",
-          desc: "Maximum gigabytes at unmatched pocket-friendly prices. No expiry guarantee.",
-        };
-      default:
-        return {
-          title: network.toUpperCase(),
-          tag: "Active Network",
-          tagColor: "bg-emerald-100 text-emerald-900",
-          gradient: "from-emerald-500 via-teal-500 to-emerald-600",
-          cardBorder: "border-emerald-200 hover:border-emerald-400",
-          accentColor: "text-emerald-600",
-          btnGradient: "from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white",
-          iconBg: "bg-emerald-600 text-white",
-          desc: `Premium data bundles for ${network.toUpperCase()} subscribers with instant delivery.`,
-        };
-    }
-  };
-
-  // Ensure MTN, Telecel, AT are always displayed first even if empty initially
-  const defaultNetworkKeys = ["mtn", "telecel", "at"];
-  const allNetworkKeys = Array.from(
-    new Set([...defaultNetworkKeys, ...Array.from(networksMap.keys())])
-  );
-
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900">
       {/* Navigation */}
@@ -108,7 +49,7 @@ export default async function HomePage() {
       {/* Customer Comments Cards with Avatars (Comes First) */}
       <CommentsMarquee />
 
-      {/* Top Announcement Marquee Banner (Comes Last) */}
+      {/* Top Announcement Marquee Banner */}
       <AnnouncementBanner
         text={settings.announcement_text}
         isActive={settings.announcement_active}
@@ -138,7 +79,7 @@ export default async function HomePage() {
               The fastest, cheapest, and most trusted mobile data portal in Ghana. Buy MTN, Telecel, and AT data packages at discounted rates with automatic delivery.
             </p>
 
-            {/* Quick CTA buttons - opposite each other (side-by-side) on both phone and laptop */}
+            {/* Quick CTA buttons - side-by-side */}
             <div className="relative mt-7 sm:mt-8 w-full max-w-md sm:max-w-lg mx-auto grid grid-cols-2 gap-2.5 sm:gap-4">
               <a
                 href="#networks"
@@ -159,13 +100,16 @@ export default async function HomePage() {
         </div>
       </section>
 
-      {/* VERTICALLY STACKED NETWORK CARDS (MTN on top, Telecel middle, AirtelTigo down) */}
+      {/* LAPTOP-FRIENDLY & MOBILE-OPTIMIZED NETWORK CARDS */}
       <NetworkSelectionSection
         products={products}
         settings={settings}
       />
 
-      {/* WHY CHOOSE BUNDLEMARTGH / FEATURES SECTION */}
+      {/* HOW TO BUY DATA - DROP LIST FORM ACCORDION */}
+      <HowToBuyAccordion storeName={settings.store_name} />
+
+      {/* WHY CUSTOMERS LOVE US - POSITIONED DIRECTLY ABOVE FOOTER */}
       <section className="py-10 sm:py-14 bg-white border-y border-slate-200/80">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center max-w-2xl mx-auto mb-8 sm:mb-10">
@@ -210,50 +154,6 @@ export default async function HomePage() {
                 Have questions or need assistance? Our dedicated team is online around the clock on WhatsApp and Live Chat to assist you.
               </p>
             </div>
-          </div>
-        </div>
-      </section>
-
-      {/* HOW IT WORKS / 3 SIMPLE STEPS */}
-      <section className="py-10 sm:py-14 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 w-full">
-        <div className="text-center max-w-xl mx-auto mb-8 sm:mb-10">
-          <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-600 bg-emerald-50 px-2.5 py-0.5 rounded-full">
-            Simple 3-Step Process
-          </span>
-          <h2 className="mt-2 text-2xl sm:text-3xl font-extrabold text-slate-900">
-            How to Buy Data on {settings.store_name}
-          </h2>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6 relative">
-          <div className="flex flex-col items-center text-center p-4 sm:p-5 bg-white rounded-2xl border border-slate-200">
-            <div className="w-9 h-9 rounded-full bg-emerald-600 text-white font-extrabold text-sm flex items-center justify-center mb-2.5 shadow-sm">
-              1
-            </div>
-            <h4 className="font-bold text-sm text-slate-900 mb-1">Select Network & Package</h4>
-            <p className="text-xs text-slate-500 leading-relaxed">
-              Pick MTN, Telecel, or AT and choose any data bundle size.
-            </p>
-          </div>
-
-          <div className="flex flex-col items-center text-center p-4 sm:p-5 bg-white rounded-2xl border border-slate-200">
-            <div className="w-9 h-9 rounded-full bg-teal-600 text-white font-extrabold text-sm flex items-center justify-center mb-2.5 shadow-sm">
-              2
-            </div>
-            <h4 className="font-bold text-sm text-slate-900 mb-1">Enter Phone & Pay</h4>
-            <p className="text-xs text-slate-500 leading-relaxed">
-              Enter recipient number and pay securely with Paystack MoMo or Card.
-            </p>
-          </div>
-
-          <div className="flex flex-col items-center text-center p-4 sm:p-5 bg-white rounded-2xl border border-slate-200">
-            <div className="w-9 h-9 rounded-full bg-amber-500 text-slate-950 font-extrabold text-sm flex items-center justify-center mb-2.5 shadow-sm">
-              3
-            </div>
-            <h4 className="font-bold text-sm text-slate-900 mb-1">Instant Data Delivery</h4>
-            <p className="text-xs text-slate-500 leading-relaxed">
-              Receive telco SMS confirmation and start browsing instantly.
-            </p>
           </div>
         </div>
       </section>
