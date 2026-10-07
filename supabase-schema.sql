@@ -105,7 +105,7 @@ INSERT INTO public.settings (
     '',
     '',
     '',
-    'https://api.datamartgh.com/v1',
+    'https://api.datamartgh.shop/api',
     '⚡ Instant automated delivery active! MTN, Telecel & AT packages arrive in under 60 seconds.',
     true
 ) ON CONFLICT (id) DO UPDATE SET

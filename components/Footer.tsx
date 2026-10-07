@@ -101,11 +101,6 @@ export default function Footer({
                   Live WhatsApp Chat
                 </a>
               </li>
-              <li>
-                <Link href="/admin" className="hover:text-slate-200 transition-colors">
-                  Merchant Admin Area
-                </Link>
-              </li>
             </ul>
           </div>
 

@@ -20,7 +20,7 @@ export interface DataMartResult {
  * Maps application telco names to DataMart's official network enum:
  * YELLO | TELECEL | AT_PREMIUM
  */
-export function mapNetworkToDataMart(network: string): "YELLO" | "TELECEL" | "AT_PREMIUM" | string {
+export function mapNetworkToDataMart(network: string): string {
   const net = (network || "").toLowerCase().trim();
   if (net === "mtn" || net === "yello") return "YELLO";
   if (net === "telecel" || net === "vodafone") return "TELECEL";
@@ -61,10 +61,16 @@ export function formatGhanaPhone(phone: string): string {
 }
 
 /**
- * Resolves DataMart purchase endpoint URL
+ * Resolves DataMart purchase endpoint URL.
+ * Overrides any obsolete datamartgh.com domains with the official api.datamartgh.shop domain.
  */
-function resolvePurchaseUrl(configuredUrl: string): string {
-  const base = (configuredUrl || "https://api.datamartgh.shop/api").replace(/\/$/, "");
+export function resolvePurchaseUrl(configuredUrl?: string): string {
+  let base = (configuredUrl || "").trim();
+  // Sanitize any legacy .com URL or empty string
+  if (!base || base.includes("datamartgh.com")) {
+    return "https://api.datamartgh.shop/api/purchase";
+  }
+  base = base.replace(/\/$/, "");
   if (base.endsWith("/purchase")) return base;
   if (base.endsWith("/api")) return `${base}/purchase`;
   return `${base}/api/purchase`;
@@ -72,21 +78,20 @@ function resolvePurchaseUrl(configuredUrl: string): string {
 
 /**
  * Dispatches automated data purchase to DataMart API.
- * Endpoint: POST /purchase
+ * Endpoint: POST https://api.datamartgh.shop/api/purchase
  * Headers: X-API-Key, X-Idempotency-Key, Content-Type
  * Body: { phoneNumber, network, capacity, gateway: "wallet" }
  */
 export async function sendDataMartDelivery(params: DataMartDeliveryParams): Promise<DataMartResult> {
   try {
     const settings = await db.getSettings();
-    const apiKey = settings.datamart_api_key || process.env.DATAMART_API_KEY || "";
-    const rawUrl = settings.datamart_api_url || process.env.DATAMART_API_URL || "https://api.datamartgh.shop/api";
-    const purchaseUrl = resolvePurchaseUrl(rawUrl);
+    const apiKey = (settings.datamart_api_key || process.env.DATAMART_API_KEY || "").trim();
+    const purchaseUrl = resolvePurchaseUrl(settings.datamart_api_url || process.env.DATAMART_API_URL);
 
     const formattedPhone = formatGhanaPhone(params.phone);
     const datamartNetwork = mapNetworkToDataMart(params.network);
     const capacityGb = extractCapacityInGb(params.package_size);
-    const idempotencyKey = params.idempotency_key || crypto.randomUUID();
+    const idempotencyKey = params.idempotency_key || params.reference || crypto.randomUUID();
 
     const requestBody = {
       phoneNumber: formattedPhone,
@@ -95,56 +100,45 @@ export async function sendDataMartDelivery(params: DataMartDeliveryParams): Prom
       gateway: "wallet",
     };
 
-    console.log(
-      `[DataMart API] Sending purchase to ${purchaseUrl}:`,
-      JSON.stringify(requestBody)
-    );
+    console.log(`[DataMart API] Requesting ${purchaseUrl}`);
+    console.log(`[DataMart API] Payload:`, JSON.stringify(requestBody));
 
-    // Sandbox / Test Mode fallback if no real live API key is configured
-    const isMockOrTest =
-      !apiKey ||
-      apiKey.includes("placeholder") ||
-      apiKey.includes("sample") ||
-      apiKey.startsWith("dm_test_");
-
-    if (isMockOrTest) {
-      console.log("[DataMart API] Simulated/Sandbox mode active (no live dm_live key). Simulating success.");
+    // If API key is completely missing, return clear actionable error
+    if (!apiKey) {
+      const msg = "DataMart API Key is missing. Please configure your DataMart API Key in /admin/settings or DATAMART_API_KEY env var.";
+      console.error(`[DataMart API] ${msg}`);
       return {
-        success: true,
-        message: "Data bundle purchased successfully (Sandbox Simulation)",
-        datamart_id: "DM-SIM-" + Math.floor(100000 + Math.random() * 900000),
-        order_reference: "GN-" + Math.random().toString(36).substring(2, 10).toUpperCase(),
-        raw_response: {
-          status: "success",
-          message: "Data bundle purchased successfully (Simulation)",
-          data: {
-            purchaseId: "sim_" + Date.now(),
-            orderReference: "GN-SIM-" + params.reference,
-            network: datamartNetwork,
-            capacity: Number(capacityGb),
-            orderStatus: "completed",
-            processingMethod: "standard",
-          },
-        },
+        success: false,
+        message: msg,
+        raw_response: { error: "MISSING_DATAMART_API_KEY", details: msg },
       };
     }
+
+    console.log(`[DataMart API] Sending with key (${apiKey.substring(0, 5)}... length ${apiKey.length}) and idempotency ${idempotencyKey}`);
 
     // Live HTTP Call to DataMart official purchase endpoint
     const response = await fetch(purchaseUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "X-API-Key": apiKey.trim(),
+        "X-API-Key": apiKey,
+        "x-api-key": apiKey,
         "X-Idempotency-Key": idempotencyKey,
       },
       body: JSON.stringify(requestBody),
     });
 
-    const responseData = await response.json().catch(() => null);
+    const responseText = await response.text();
+    let responseData: any = null;
+    try {
+      responseData = JSON.parse(responseText);
+    } catch {
+      responseData = { text: responseText };
+    }
 
-    console.log(`[DataMart API] Response status ${response.status}:`, JSON.stringify(responseData));
+    console.log(`[DataMart API] Status ${response.status}:`, responseText);
 
-    if (response.ok && responseData?.status === "success") {
+    if (response.ok && (responseData?.status === "success" || responseData?.data?.purchaseId)) {
       const dataPayload = responseData.data || {};
       return {
         success: true,
@@ -155,20 +149,20 @@ export async function sendDataMartDelivery(params: DataMartDeliveryParams): Prom
       };
     }
 
-    // Error or failure from DataMart
+    // Capture exact error from DataMart
     const errorMessage =
       responseData?.message ||
-      (responseData?.status === "error" ? "DataMart purchase rejected" : `DataMart Error (${response.status})`);
+      (responseData?.status === "error" ? "DataMart purchase rejected" : `DataMart HTTP Error ${response.status}: ${responseText.slice(0, 150)}`);
 
     console.error("[DataMart API] Delivery failed:", errorMessage, responseData);
 
     return {
       success: false,
       message: errorMessage,
-      raw_response: responseData || { status: response.status, statusText: response.statusText },
+      raw_response: responseData,
     };
   } catch (error: any) {
-    console.error("[DataMart API] Execution exception:", error);
+    console.error("[DataMart API] Network/Execution error:", error);
     return {
       success: false,
       message: error?.message || "Failed to connect to DataMart server",
@@ -183,19 +177,20 @@ export async function sendDataMartDelivery(params: DataMartDeliveryParams): Prom
 export async function checkDataMartOrderStatus(orderReference: string): Promise<any> {
   try {
     const settings = await db.getSettings();
-    const apiKey = settings.datamart_api_key || process.env.DATAMART_API_KEY || "";
+    const apiKey = (settings.datamart_api_key || process.env.DATAMART_API_KEY || "").trim();
     const rawUrl = (settings.datamart_api_url || process.env.DATAMART_API_URL || "https://api.datamartgh.shop/api").replace(/\/$/, "");
-    const base = rawUrl.endsWith("/api") ? rawUrl : `${rawUrl}/api`;
-    const statusUrl = `${base}/order-status/${encodeURIComponent(orderReference)}`;
+    const base = rawUrl.includes("datamartgh.com") ? "https://api.datamartgh.shop/api" : rawUrl;
+    const statusUrl = `${base.replace(/\/$/, "")}/order-status/${encodeURIComponent(orderReference)}`;
 
-    if (!apiKey || apiKey.startsWith("dm_test_")) {
-      return { status: "success", data: { orderStatus: "completed" } };
+    if (!apiKey) {
+      return { status: "error", message: "Missing API Key" };
     }
 
     const response = await fetch(statusUrl, {
       method: "GET",
       headers: {
-        "X-API-Key": apiKey.trim(),
+        "X-API-Key": apiKey,
+        "x-api-key": apiKey,
       },
     });
 

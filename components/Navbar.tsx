@@ -84,13 +84,6 @@ export default function Navbar({
                 Instant Dispatch
               </span>
             </div>
-
-            <Link
-              href="/admin"
-              className="text-xs font-medium text-slate-500 hover:text-slate-900 dark:hover:text-white px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800 hover:border-slate-300 transition-all"
-            >
-              Admin
-            </Link>
           </div>
 
           {/* Mobile Menu Button */}
@@ -157,9 +150,10 @@ export default function Navbar({
           </Link>
           <div className="pt-2 border-t border-slate-200 dark:border-slate-800 flex justify-between items-center text-xs text-slate-500">
             <span>24/7 Automated Dispatch</span>
-            <Link href="/admin" className="text-emerald-600 font-semibold underline">
-              Admin Portal
-            </Link>
+            <span className="text-emerald-600 font-semibold flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+              Live & Active
+            </span>
           </div>
         </div>
       )}

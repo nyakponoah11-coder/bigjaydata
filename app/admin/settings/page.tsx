@@ -50,7 +50,9 @@ export default function AdminSettingsPage() {
         setPaystackPublicKey(s.paystack_public_key || "");
         setPaystackSecretKey(s.paystack_secret_key || "");
         setDatamartApiKey(s.datamart_api_key || "");
-        setDatamartApiUrl(s.datamart_api_url || "https://api.datamartgh.com/v1");
+        const rawDmUrl = s.datamart_api_url || "";
+        const cleanDmUrl = !rawDmUrl || rawDmUrl.includes("datamartgh.com") ? "https://api.datamartgh.shop/api" : rawDmUrl;
+        setDatamartApiUrl(cleanDmUrl);
         setAnnouncementText(s.announcement_text || "");
         setAnnouncementActive(s.announcement_active !== false);
       }
