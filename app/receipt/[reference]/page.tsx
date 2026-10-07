@@ -58,6 +58,7 @@ export default async function ReceiptPage({
 
       <WhatsAppButton
         whatsappNumber={settings.whatsapp_number}
+        whatsappChannelUrl={settings.whatsapp_channel_url}
         storeName={settings.store_name}
       />
 

@@ -26,6 +26,7 @@ export default async function TrackPage() {
 
       <WhatsAppButton
         whatsappNumber={settings.whatsapp_number}
+        whatsappChannelUrl={settings.whatsapp_channel_url}
         storeName={settings.store_name}
       />
 

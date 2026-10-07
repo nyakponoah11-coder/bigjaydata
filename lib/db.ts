@@ -56,6 +56,7 @@ export interface Settings {
   store_name: string;
   support_phone: string;
   whatsapp_number: string;
+  whatsapp_channel_url?: string;
   email: string;
   paystack_public_key: string;
   paystack_secret_key: string;
@@ -63,6 +64,12 @@ export interface Settings {
   datamart_api_url: string;
   announcement_text: string;
   announcement_active: boolean;
+  gemini_api_key?: string;
+  gemini_model?: string;
+  grok_api_key?: string;
+  grok_model?: string;
+  openai_api_key?: string;
+  openai_model?: string;
   created_at?: string;
   updated_at?: string;
 }
@@ -109,6 +116,7 @@ let initialSettings: Settings = {
   store_name: "BundleMartGh",
   support_phone: "+233 55 123 4567",
   whatsapp_number: "233551234567",
+  whatsapp_channel_url: "",
   email: "support@bundlemartgh.com",
   paystack_public_key: process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY || "",
   paystack_secret_key: process.env.PAYSTACK_SECRET_KEY || "",
@@ -116,6 +124,12 @@ let initialSettings: Settings = {
   datamart_api_url: process.env.DATAMART_API_URL || "https://api.datamartgh.shop/api/developer",
   announcement_text: "⚡ Instant Delivery Guarantee: MTN, Telecel & AT packages delivered in under 60 seconds! 24/7 Automated.",
   announcement_active: true,
+  gemini_api_key: process.env.GEMINI_API_KEY || "",
+  gemini_model: "gemini-2.5-flash",
+  grok_api_key: process.env.GROK_API_KEY || "",
+  grok_model: "grok-2-latest",
+  openai_api_key: process.env.OPENAI_API_KEY || "",
+  openai_model: "gpt-4o-mini",
   created_at: new Date().toISOString(),
   updated_at: new Date().toISOString(),
 };
@@ -210,14 +224,43 @@ export const db = {
   async updateSettings(updates: Partial<Settings>): Promise<Settings> {
     if (isSupabaseConfigured && supabaseAdmin) {
       try {
-        const { data, error } = await supabaseAdmin
+        const payload = { id: "default", ...updates, updated_at: new Date().toISOString() };
+        let { data, error } = await supabaseAdmin
           .from("settings")
-          .upsert({ id: "default", ...updates, updated_at: new Date().toISOString() })
+          .upsert(payload)
           .select()
           .single();
-        if (!error && data) {
-          globalStore.__bmgh_settings = data as Settings;
-          return data as Settings;
+
+        // If error due to missing newly added columns in Supabase
+        if (error && (error.message?.includes("column") || error.code === "PGRST204")) {
+          console.warn("Retrying settings upsert with legacy core columns:", error.message);
+          const legacyPayload: any = {
+            id: "default",
+            store_name: updates.store_name,
+            support_phone: updates.support_phone,
+            whatsapp_number: updates.whatsapp_number,
+            email: updates.email,
+            paystack_public_key: updates.paystack_public_key,
+            paystack_secret_key: updates.paystack_secret_key,
+            datamart_api_key: updates.datamart_api_key,
+            datamart_api_url: updates.datamart_api_url,
+            announcement_text: updates.announcement_text,
+            announcement_active: updates.announcement_active,
+            updated_at: new Date().toISOString(),
+          };
+          // Filter out undefined keys
+          Object.keys(legacyPayload).forEach((k) => legacyPayload[k] === undefined && delete legacyPayload[k]);
+          const retryRes = await supabaseAdmin.from("settings").upsert(legacyPayload).select().single();
+          data = retryRes.data;
+        }
+
+        if (data) {
+          globalStore.__bmgh_settings = {
+            ...globalStore.__bmgh_settings!,
+            ...(data as Settings),
+            ...updates,
+          };
+          return globalStore.__bmgh_settings;
         }
       } catch (err) {
         console.error("Supabase updateSettings error:", err);

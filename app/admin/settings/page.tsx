@@ -27,6 +27,7 @@ export default function AdminSettingsPage() {
   const [storeName, setStoreName] = useState("");
   const [supportPhone, setSupportPhone] = useState("");
   const [whatsappNumber, setWhatsappNumber] = useState("");
+  const [whatsappChannelUrl, setWhatsappChannelUrl] = useState("");
   const [email, setEmail] = useState("");
   const [paystackPublicKey, setPaystackPublicKey] = useState("");
   const [paystackSecretKey, setPaystackSecretKey] = useState("");
@@ -81,6 +82,7 @@ export default function AdminSettingsPage() {
         setStoreName(s.store_name || "BundleMartGh");
         setSupportPhone(s.support_phone || "");
         setWhatsappNumber(s.whatsapp_number || "");
+        setWhatsappChannelUrl(s.whatsapp_channel_url || "");
         setEmail(s.email || "");
         setPaystackPublicKey(s.paystack_public_key || "");
         setPaystackSecretKey(s.paystack_secret_key || "");
@@ -115,6 +117,7 @@ export default function AdminSettingsPage() {
         store_name: storeName.trim(),
         support_phone: supportPhone.trim(),
         whatsapp_number: whatsappNumber.trim(),
+        whatsapp_channel_url: whatsappChannelUrl.trim(),
         email: email.trim(),
         paystack_public_key: paystackPublicKey.trim(),
         datamart_api_key: datamartApiKey.trim(),
@@ -244,6 +247,22 @@ export default function AdminSettingsPage() {
                   placeholder="233551234567"
                   className="w-full px-3.5 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white font-medium focus:outline-none focus:ring-2 focus:ring-emerald-500"
                 />
+              </div>
+
+              <div>
+                <label className="block text-slate-400 font-semibold mb-1">
+                  WhatsApp Channel URL (Direct Channel Link)
+                </label>
+                <input
+                  type="url"
+                  value={whatsappChannelUrl}
+                  onChange={(e) => setWhatsappChannelUrl(e.target.value)}
+                  placeholder="https://whatsapp.com/channel/..."
+                  className="w-full px-3.5 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white font-medium focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+                <span className="text-[10px] text-slate-500 mt-1 block">
+                  Floating WhatsApp button opens this channel link directly
+                </span>
               </div>
 
               <div>

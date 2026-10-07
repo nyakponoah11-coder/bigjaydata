@@ -46,6 +46,7 @@ CREATE TABLE public.settings (
     store_name TEXT NOT NULL DEFAULT 'BundleMartGh',
     support_phone TEXT NOT NULL DEFAULT '+233 55 123 4567',
     whatsapp_number TEXT NOT NULL DEFAULT '233551234567',
+    whatsapp_channel_url TEXT DEFAULT '',
     email TEXT NOT NULL DEFAULT 'support@bundlemartgh.com',
     paystack_public_key TEXT DEFAULT '',
     paystack_secret_key TEXT DEFAULT '',
@@ -53,9 +54,23 @@ CREATE TABLE public.settings (
     datamart_api_url TEXT DEFAULT 'https://api.datamartgh.shop/api/developer',
     announcement_text TEXT DEFAULT '⚡ Instant Delivery Guarantee: MTN, Telecel & AT packages delivered in under 60 seconds! 24/7 Automated.',
     announcement_active BOOLEAN NOT NULL DEFAULT true,
+    gemini_api_key TEXT DEFAULT '',
+    gemini_model TEXT DEFAULT 'gemini-2.5-flash',
+    grok_api_key TEXT DEFAULT '',
+    grok_model TEXT DEFAULT 'grok-2-latest',
+    openai_api_key TEXT DEFAULT '',
+    openai_model TEXT DEFAULT 'gpt-4o-mini',
     created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
 );
+
+ALTER TABLE public.settings ADD COLUMN IF NOT EXISTS whatsapp_channel_url TEXT DEFAULT '';
+ALTER TABLE public.settings ADD COLUMN IF NOT EXISTS gemini_api_key TEXT DEFAULT '';
+ALTER TABLE public.settings ADD COLUMN IF NOT EXISTS gemini_model TEXT DEFAULT 'gemini-2.5-flash';
+ALTER TABLE public.settings ADD COLUMN IF NOT EXISTS grok_api_key TEXT DEFAULT '';
+ALTER TABLE public.settings ADD COLUMN IF NOT EXISTS grok_model TEXT DEFAULT 'grok-2-latest';
+ALTER TABLE public.settings ADD COLUMN IF NOT EXISTS openai_api_key TEXT DEFAULT '';
+ALTER TABLE public.settings ADD COLUMN IF NOT EXISTS openai_model TEXT DEFAULT 'gpt-4o-mini';
 
 -- 4. MESSAGES TABLE
 CREATE TABLE public.messages (

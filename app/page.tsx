@@ -8,6 +8,7 @@ import CommentsMarquee from "@/components/CommentsMarquee";
 import NetworkSelectionSection from "@/components/NetworkSelectionSection";
 import HowToBuyAccordion from "@/components/HowToBuyAccordion";
 import BackgroundVideo from "@/components/BackgroundVideo";
+import HeroActionButtons from "@/components/HeroActionButtons";
 import {
   Zap,
   ShieldCheck,
@@ -82,23 +83,12 @@ export default async function HomePage() {
               The fastest, cheapest, and most trusted mobile data portal in Ghana. Buy MTN, Telecel, and AT data packages at discounted rates with automatic delivery.
             </p>
 
-            {/* Quick CTA buttons - side-by-side */}
-            <div className="relative mt-7 sm:mt-8 w-full max-w-md sm:max-w-lg mx-auto grid grid-cols-2 gap-2.5 sm:gap-4">
-              <a
-                href="#networks"
-                className="w-full py-3 sm:py-3.5 px-2.5 sm:px-6 rounded-2xl bg-gradient-to-r from-amber-400 to-yellow-500 hover:from-amber-500 hover:to-yellow-600 text-slate-950 font-black text-xs sm:text-base shadow-lg shadow-amber-500/30 flex items-center justify-center gap-1.5 sm:gap-2 transition-all transform active:scale-95"
-              >
-                <Zap className="w-4 h-4 fill-current text-slate-950 shrink-0" />
-                <span className="truncate">Buy Data Bundles Now</span>
-              </a>
-              <Link
-                href="/track"
-                className="w-full py-3 sm:py-3.5 px-2.5 sm:px-6 rounded-2xl bg-slate-800/90 hover:bg-slate-800 border border-slate-700 text-white font-bold text-xs sm:text-base shadow-sm flex items-center justify-center gap-1.5 sm:gap-2 hover:border-slate-500 transition-all transform active:scale-95"
-              >
-                <span className="truncate">Track Existing Order</span>
-                <ArrowRight className="w-4 h-4 text-slate-400 shrink-0" />
-              </Link>
-            </div>
+            {/* 3 Action Buttons: BUY | TRACK | HELP */}
+            <HeroActionButtons
+              storeName={settings.store_name}
+              whatsappNumber={settings.whatsapp_number}
+              whatsappChannelUrl={settings.whatsapp_channel_url}
+            />
           </div>
         </div>
       </section>
@@ -161,9 +151,10 @@ export default async function HomePage() {
         </div>
       </section>
 
-      {/* FLOATING WHATSAPP & LIVE CHAT WIDGET */}
+      {/* FLOATING WHATSAPP CHANNEL WIDGET */}
       <WhatsAppButton
         whatsappNumber={settings.whatsapp_number}
+        whatsappChannelUrl={settings.whatsapp_channel_url}
         storeName={settings.store_name}
       />
 
