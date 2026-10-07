@@ -132,7 +132,6 @@ export async function sendDataMartDelivery(params: DataMartDeliveryParams): Prom
       "Content-Type": "application/json",
       "X-API-Key": apiKey,
       "x-api-key": apiKey,
-      "Authorization": `Bearer ${apiKey}`,
       "X-Idempotency-Key": idempotencyKey,
       "User-Agent": "BundleMartGh/1.0",
       "Accept": "application/json",
@@ -273,7 +272,6 @@ export async function testDataMartConnection(customApiKey?: string, customApiUrl
       "Content-Type": "application/json",
       "X-API-Key": apiKey,
       "x-api-key": apiKey,
-      "Authorization": `Bearer ${apiKey}`,
       "X-Idempotency-Key": crypto.randomUUID(),
       "User-Agent": "BundleMartGh/1.0",
       "Accept": "application/json",
@@ -299,9 +297,10 @@ export async function testDataMartConnection(customApiKey?: string, customApiUrl
 
       if (balRes.ok && (balData?.status === "success" || balData?.balance !== undefined || balData?.data?.balance !== undefined)) {
         const bal = balData?.balance ?? balData?.data?.balance ?? balData?.currentBalance ?? "Active";
+        const accountOwner = balData?.data?.user?.name ? ` [${balData.data.user.name.trim()}]` : "";
         return {
           success: true,
-          message: `Connected to DataMart! Reseller Wallet Balance: GHS ${Number(bal) ? Number(bal).toFixed(2) : bal}`,
+          message: `Connected to DataMart${accountOwner}! Reseller Wallet Balance: GHS ${Number(bal) ? Number(bal).toFixed(2) : bal}`,
           status: 200,
           details: balData,
         };
