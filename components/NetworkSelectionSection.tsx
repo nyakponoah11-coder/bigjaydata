@@ -67,14 +67,14 @@ export default function NetworkSelectionSection({ products }: Props) {
     <section id="networks" className="py-8 sm:py-12 max-w-4xl lg:max-w-5xl xl:max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 w-full">
       {/* Section Header on Laptop/Desktop */}
       <div className="text-center max-w-2xl mx-auto mb-6 sm:mb-8">
-        <span className="text-[11px] font-black uppercase tracking-wider text-amber-600 bg-amber-50 border border-amber-200/60 px-3 py-1 rounded-full inline-flex items-center gap-1.5">
-          <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+        <span className="text-[11px] font-black uppercase tracking-wider text-amber-400 bg-amber-950/80 border border-amber-400/30 px-3 py-1 rounded-full inline-flex items-center gap-1.5 shadow-sm">
+          <Sparkles className="w-3.5 h-3.5 text-amber-400" />
           Select Telecom Network
         </span>
-        <h2 className="mt-2 text-2xl sm:text-3xl lg:text-4xl font-extrabold text-slate-900 tracking-tight">
+        <h2 className="mt-2 text-2xl sm:text-3xl lg:text-4xl font-extrabold text-white tracking-tight">
           Choose Your Mobile Network
         </h2>
-        <p className="mt-1 text-xs sm:text-sm text-slate-600">
+        <p className="mt-1 text-xs sm:text-sm text-slate-300 font-medium">
           Instant automated line crediting on all networks. Select a network to view available bundle options.
         </p>
       </div>

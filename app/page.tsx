@@ -7,6 +7,7 @@ import WhatsAppButton from "@/components/WhatsAppButton";
 import CommentsMarquee from "@/components/CommentsMarquee";
 import NetworkSelectionSection from "@/components/NetworkSelectionSection";
 import HowToBuyAccordion from "@/components/HowToBuyAccordion";
+import BackgroundVideo from "@/components/BackgroundVideo";
 import {
   Zap,
   ShieldCheck,
@@ -39,26 +40,17 @@ export default async function HomePage() {
   });
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#070b14] text-slate-100 relative">
-      {/* Background Video from Pinterest */}
-      <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
-        <video
-          autoPlay
-          loop
-          muted
-          playsInline
-          className="w-full h-full object-cover opacity-30 filter brightness-90 contrast-125"
-        >
-          <source src="/bg-video.mp4" type="video/mp4" />
-        </video>
-        <div className="absolute inset-0 bg-[#070b14]/80 backdrop-blur-[2px]" />
-      </div>
+    <div className="min-h-screen flex flex-col text-slate-100 relative">
+      {/* Background Video from Pinterest (Auto-playing, looped, and visible) */}
+      <BackgroundVideo />
 
-      {/* Navigation */}
-      <Navbar
-        storeName={settings.store_name}
-        whatsappNumber={settings.whatsapp_number}
-      />
+      {/* Main Page Content Layer */}
+      <div className="relative z-10 flex flex-col flex-1">
+        {/* Navigation */}
+        <Navbar
+          storeName={settings.store_name}
+          whatsappNumber={settings.whatsapp_number}
+        />
 
       {/* Customer Comments Cards with Avatars (Comes First) */}
       <CommentsMarquee />
@@ -182,6 +174,8 @@ export default async function HomePage() {
         whatsappNumber={settings.whatsapp_number}
         email={settings.email}
       />
+      </div>
     </div>
   );
 }
+
