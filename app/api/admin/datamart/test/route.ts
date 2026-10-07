@@ -4,9 +4,9 @@ import { testDataMartConnection } from "@/lib/datamart";
 export async function POST(request: Request) {
   try {
     const body = await request.json().catch(() => ({}));
-    const { api_key } = body;
+    const { api_key, api_url } = body;
 
-    const result = await testDataMartConnection(api_key);
+    const result = await testDataMartConnection(api_key, api_url);
     return NextResponse.json(result);
   } catch (error: any) {
     return NextResponse.json(

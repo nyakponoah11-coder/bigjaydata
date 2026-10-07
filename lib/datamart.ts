@@ -61,19 +61,29 @@ export function formatGhanaPhone(phone: string): string {
 }
 
 /**
- * Resolves DataMart purchase endpoint URL.
- * Overrides any obsolete datamartgh.com domains with the official api.datamartgh.shop domain.
+ * Resolves DataMart developer base URL.
+ * Official developer API router is mounted at: https://api.datamartgh.shop/api/developer
  */
-export function resolvePurchaseUrl(configuredUrl?: string): string {
+export function resolveDeveloperBaseUrl(configuredUrl?: string): string {
   let base = (configuredUrl || "").trim();
-  // Sanitize any legacy .com URL or empty string
   if (!base || base.includes("datamartgh.com")) {
-    return "https://api.datamartgh.shop/api/purchase";
+    return "https://api.datamartgh.shop/api/developer";
   }
   base = base.replace(/\/$/, "");
-  if (base.endsWith("/purchase")) return base;
-  if (base.endsWith("/api")) return `${base}/purchase`;
-  return `${base}/api/purchase`;
+  if (base.endsWith("/purchase")) base = base.replace(/\/purchase$/, "");
+  if (base.endsWith("/developer")) return base;
+  if (base.endsWith("/api")) return `${base}/developer`;
+  if (!base.includes("/developer")) return `${base}/api/developer`;
+  return base;
+}
+
+/**
+ * Resolves DataMart purchase endpoint URL.
+ * Routes to: https://api.datamartgh.shop/api/developer/purchase
+ */
+export function resolvePurchaseUrl(configuredUrl?: string): string {
+  const base = resolveDeveloperBaseUrl(configuredUrl);
+  return `${base}/purchase`;
 }
 
 /**
@@ -237,9 +247,9 @@ export async function sendDataMartDelivery(params: DataMartDeliveryParams): Prom
 }
 
 /**
- * Diagnostic tool: Tests connectivity and API key validity against DataMart
+ * Diagnostic tool: Tests connectivity and API key validity against DataMart developer API
  */
-export async function testDataMartConnection(customApiKey?: string): Promise<{
+export async function testDataMartConnection(customApiKey?: string, customApiUrl?: string): Promise<{
   success: boolean;
   message: string;
   status: number;
@@ -248,7 +258,8 @@ export async function testDataMartConnection(customApiKey?: string): Promise<{
   try {
     const settings = await db.getSettings();
     const apiKey = (customApiKey || settings.datamart_api_key || process.env.DATAMART_API_KEY || "").trim();
-    const purchaseUrl = resolvePurchaseUrl(settings.datamart_api_url || process.env.DATAMART_API_URL);
+    const devBaseUrl = resolveDeveloperBaseUrl(customApiUrl || settings.datamart_api_url || process.env.DATAMART_API_URL);
+    const purchaseUrl = resolvePurchaseUrl(customApiUrl || settings.datamart_api_url || process.env.DATAMART_API_URL);
 
     if (!apiKey) {
       return {
@@ -268,7 +279,47 @@ export async function testDataMartConnection(customApiKey?: string): Promise<{
       "Accept": "application/json",
     };
 
-    // Make lightweight request to purchase endpoint with test payload
+    // 1. Primary check: Query developer wallet balance
+    try {
+      const balRes = await fetch(`${devBaseUrl}/balance`, {
+        method: "GET",
+        headers: testHeaders,
+        cache: "no-store",
+      });
+
+      const balText = await balRes.text();
+      let balData: any = null;
+      try {
+        balData = JSON.parse(balText);
+      } catch {
+        balData = { raw: balText };
+      }
+
+      console.log(`[DataMart Test] Balance check status ${balRes.status}:`, balText);
+
+      if (balRes.ok && (balData?.status === "success" || balData?.balance !== undefined || balData?.data?.balance !== undefined)) {
+        const bal = balData?.balance ?? balData?.data?.balance ?? balData?.currentBalance ?? "Active";
+        return {
+          success: true,
+          message: `Connected to DataMart! Reseller Wallet Balance: GHS ${Number(bal) ? Number(bal).toFixed(2) : bal}`,
+          status: 200,
+          details: balData,
+        };
+      }
+
+      if (balRes.status === 401 || balRes.status === 403 || balData?.message?.toLowerCase().includes("invalid") || balData?.message?.toLowerCase().includes("inactive")) {
+        return {
+          success: false,
+          message: balData?.message || "DataMart rejected API key: Invalid or inactive API key.",
+          status: balRes.status,
+          details: balData,
+        };
+      }
+    } catch (balErr) {
+      console.warn("[DataMart Test] Balance probe error:", balErr);
+    }
+
+    // 2. Secondary check: Probe purchase endpoint
     const response = await fetch(purchaseUrl, {
       method: "POST",
       headers: testHeaders,
@@ -288,8 +339,7 @@ export async function testDataMartConnection(customApiKey?: string): Promise<{
       data = { raw: text };
     }
 
-    // If key is invalid, DataMart typically returns 401, 403, or unauthorized
-    if (response.status === 401 || response.status === 403 || data?.message?.toLowerCase().includes("unauthorized") || data?.message?.toLowerCase().includes("invalid api")) {
+    if (response.status === 401 || response.status === 403 || data?.message?.toLowerCase().includes("unauthorized") || data?.message?.toLowerCase().includes("invalid")) {
       return {
         success: false,
         message: data?.message || "DataMart rejected API Key (Invalid or unauthorized).",
@@ -298,7 +348,6 @@ export async function testDataMartConnection(customApiKey?: string): Promise<{
       };
     }
 
-    // If DataMart returns Insufficient wallet balance or rate limit or success, the key IS valid and authenticated!
     if (
       data?.status === "success" ||
       data?.message?.toLowerCase().includes("balance") ||
@@ -336,9 +385,8 @@ export async function checkDataMartOrderStatus(orderReference: string): Promise<
   try {
     const settings = await db.getSettings();
     const apiKey = (settings.datamart_api_key || process.env.DATAMART_API_KEY || "").trim();
-    const rawUrl = (settings.datamart_api_url || process.env.DATAMART_API_URL || "https://api.datamartgh.shop/api").replace(/\/$/, "");
-    const base = rawUrl.includes("datamartgh.com") ? "https://api.datamartgh.shop/api" : rawUrl;
-    const statusUrl = `${base.replace(/\/$/, "")}/order-status/${encodeURIComponent(orderReference)}`;
+    const devBase = resolveDeveloperBaseUrl(settings.datamart_api_url || process.env.DATAMART_API_URL);
+    const statusUrl = `${devBase}/order-status/${encodeURIComponent(orderReference)}`;
 
     if (!apiKey) {
       return { status: "error", message: "Missing API Key" };
@@ -349,6 +397,7 @@ export async function checkDataMartOrderStatus(orderReference: string): Promise<
       headers: {
         "X-API-Key": apiKey,
         "x-api-key": apiKey,
+        "Accept": "application/json",
       },
     });
 
@@ -395,15 +444,8 @@ export interface DeliveryTrackerData {
 }
 
 export function resolveDeliveryTrackerUrl(configuredUrl?: string): string {
-  let base = (configuredUrl || "").trim();
-  if (!base || base.includes("datamartgh.com")) {
-    return "https://api.datamartgh.shop/api/delivery-tracker";
-  }
-  base = base.replace(/\/$/, "");
-  if (base.endsWith("/delivery-tracker")) return base;
-  if (base.endsWith("/purchase")) return base.replace(/\/purchase$/, "/delivery-tracker");
-  if (base.endsWith("/api")) return `${base}/delivery-tracker`;
-  return `${base}/api/delivery-tracker`;
+  const base = resolveDeveloperBaseUrl(configuredUrl);
+  return `${base}/delivery-tracker`;
 }
 
 /**
@@ -413,7 +455,7 @@ export function resolveDeliveryTrackerUrl(configuredUrl?: string): string {
 export async function fetchDeliveryTracker(): Promise<DeliveryTrackerData> {
   const settings = await db.getSettings();
   const apiKey = (settings.datamart_api_key || process.env.DATAMART_API_KEY || "").trim();
-  const configuredUrl = (settings.datamart_api_url || process.env.DATAMART_API_URL || "https://api.datamartgh.shop/api").trim().replace(/\/$/, "");
+  const configuredUrl = (settings.datamart_api_url || process.env.DATAMART_API_URL || "https://api.datamartgh.shop/api/developer").trim().replace(/\/$/, "");
 
   if (!apiKey) {
     return {
@@ -431,11 +473,9 @@ export async function fetchDeliveryTracker(): Promise<DeliveryTrackerData> {
 
   // Candidate URLs to query on DataMart server
   const candidateUrls = [
+    `${resolveDeveloperBaseUrl(configuredUrl)}/delivery-tracker`,
+    "https://api.datamartgh.shop/api/developer/delivery-tracker",
     `${configuredUrl}/delivery-tracker`,
-    `${configuredUrl.replace(/\/api$/, "")}/delivery-tracker`,
-    `${configuredUrl.replace(/\/api$/, "")}/api/delivery-tracker`,
-    "https://api.datamartgh.shop/api/delivery-tracker",
-    "https://api.datamartgh.shop/delivery-tracker",
   ];
 
   const uniqueUrls = Array.from(new Set(candidateUrls));

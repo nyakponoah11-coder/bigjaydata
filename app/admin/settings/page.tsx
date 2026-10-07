@@ -50,7 +50,10 @@ export default function AdminSettingsPage() {
       const res = await fetch("/api/admin/datamart/test", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ api_key: datamartApiKey.trim() }),
+        body: JSON.stringify({
+          api_key: datamartApiKey.trim(),
+          api_url: datamartApiUrl.trim(),
+        }),
       });
       const data = await res.json();
       setTestResult({
@@ -83,7 +86,9 @@ export default function AdminSettingsPage() {
         setPaystackSecretKey(s.paystack_secret_key || "");
         setDatamartApiKey(s.datamart_api_key || "");
         const rawDmUrl = s.datamart_api_url || "";
-        const cleanDmUrl = !rawDmUrl || rawDmUrl.includes("datamartgh.com") ? "https://api.datamartgh.shop/api" : rawDmUrl;
+        const cleanDmUrl = !rawDmUrl || rawDmUrl.includes("datamartgh.com") || rawDmUrl === "https://api.datamartgh.shop/api" || rawDmUrl === "https://api.datamartgh.shop"
+          ? "https://api.datamartgh.shop/api/developer"
+          : rawDmUrl;
         setDatamartApiUrl(cleanDmUrl);
         setAnnouncementText(s.announcement_text || "");
         setAnnouncementActive(s.announcement_active !== false);
@@ -321,7 +326,7 @@ export default function AdminSettingsPage() {
                   type="text"
                   value={datamartApiUrl}
                   onChange={(e) => setDatamartApiUrl(e.target.value)}
-                  placeholder="https://api.datamartgh.shop/api"
+                  placeholder="https://api.datamartgh.shop/api/developer"
                   className="w-full px-3.5 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500"
                 />
               </div>

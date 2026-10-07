@@ -50,7 +50,7 @@ CREATE TABLE public.settings (
     paystack_public_key TEXT DEFAULT '',
     paystack_secret_key TEXT DEFAULT '',
     datamart_api_key TEXT DEFAULT '',
-    datamart_api_url TEXT DEFAULT 'https://api.datamartgh.com/v1',
+    datamart_api_url TEXT DEFAULT 'https://api.datamartgh.shop/api/developer',
     announcement_text TEXT DEFAULT '⚡ Instant Delivery Guarantee: MTN, Telecel & AT packages delivered in under 60 seconds! 24/7 Automated.',
     announcement_active BOOLEAN NOT NULL DEFAULT true,
     created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
@@ -111,7 +111,7 @@ INSERT INTO public.settings (
     '',
     '',
     '',
-    'https://api.datamartgh.shop/api',
+    'https://api.datamartgh.shop/api/developer',
     '⚡ Instant automated delivery active! MTN, Telecel & AT packages arrive in under 60 seconds.',
     true
 ) ON CONFLICT (id) DO UPDATE SET
