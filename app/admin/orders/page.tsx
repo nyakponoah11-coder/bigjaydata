@@ -353,6 +353,14 @@ export default function AdminOrdersPage() {
                           >
                             {deliveryStatus === "delivered" ? "✓ Delivered" : deliveryStatus === "pending" || deliveryStatus === "processing" ? "⏳ In Progress" : "✕ Failed"}
                           </span>
+                          {deliveryStatus === "failed" && (o.datamart_response?.message || o.datamart_response?.error) && (
+                            <span
+                              className="block text-[10px] text-red-400 font-medium max-w-[160px] truncate mt-0.5"
+                              title={o.datamart_response?.message || o.datamart_response?.error}
+                            >
+                              ⚠️ {o.datamart_response?.message || o.datamart_response?.error}
+                            </span>
+                          )}
                         </td>
                         <td className="py-3 text-slate-400">
                           {new Date(o.created_at).toLocaleString([], {

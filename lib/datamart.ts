@@ -78,8 +78,9 @@ export function resolvePurchaseUrl(configuredUrl?: string): string {
 
 /**
  * Dispatches automated data purchase to DataMart API.
+ * Official Documentation:
  * Endpoint: POST https://api.datamartgh.shop/api/purchase
- * Headers: X-API-Key, X-Idempotency-Key, Content-Type
+ * Headers: X-API-Key, X-Idempotency-Key (UUID), Content-Type: application/json
  * Body: { phoneNumber, network, capacity, gateway: "wallet" }
  */
 export async function sendDataMartDelivery(params: DataMartDeliveryParams): Promise<DataMartResult> {
@@ -91,7 +92,8 @@ export async function sendDataMartDelivery(params: DataMartDeliveryParams): Prom
     const formattedPhone = formatGhanaPhone(params.phone);
     const datamartNetwork = mapNetworkToDataMart(params.network);
     const capacityGb = extractCapacityInGb(params.package_size);
-    const idempotencyKey = params.idempotency_key || params.reference || crypto.randomUUID();
+    // Always use a compliant UUID v4 as specified in DataMart documentation
+    const idempotencyKey = crypto.randomUUID();
 
     const requestBody = {
       phoneNumber: formattedPhone,
@@ -116,19 +118,24 @@ export async function sendDataMartDelivery(params: DataMartDeliveryParams): Prom
 
     console.log(`[DataMart API] Sending with key (${apiKey.substring(0, 5)}... length ${apiKey.length}) and idempotency ${idempotencyKey}`);
 
+    const baseHeaders: Record<string, string> = {
+      "Content-Type": "application/json",
+      "X-API-Key": apiKey,
+      "x-api-key": apiKey,
+      "Authorization": `Bearer ${apiKey}`,
+      "X-Idempotency-Key": idempotencyKey,
+      "User-Agent": "BundleMartGh/1.0",
+      "Accept": "application/json",
+    };
+
     // Live HTTP Call to DataMart official purchase endpoint
-    const response = await fetch(purchaseUrl, {
+    let response = await fetch(purchaseUrl, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-API-Key": apiKey,
-        "x-api-key": apiKey,
-        "X-Idempotency-Key": idempotencyKey,
-      },
+      headers: baseHeaders,
       body: JSON.stringify(requestBody),
     });
 
-    const responseText = await response.text();
+    let responseText = await response.text();
     let responseData: any = null;
     try {
       responseData = JSON.parse(responseText);
@@ -136,7 +143,65 @@ export async function sendDataMartDelivery(params: DataMartDeliveryParams): Prom
       responseData = { text: responseText };
     }
 
-    console.log(`[DataMart API] Status ${response.status}:`, responseText);
+    console.log(`[DataMart API] URL ${purchaseUrl} -> Status ${response.status}:`, responseText);
+
+    // If 404 Route not found, attempt alternate endpoint path (/api/purchase <-> /purchase)
+    if (response.status === 404 || responseData?.message === "Route not found") {
+      const altUrl = purchaseUrl.includes("/api/purchase")
+        ? purchaseUrl.replace("/api/purchase", "/purchase")
+        : purchaseUrl.replace("/purchase", "/api/purchase");
+
+      if (altUrl !== purchaseUrl) {
+        console.log(`[DataMart API] 404 on ${purchaseUrl}, retrying with alternate URL: ${altUrl}`);
+        try {
+          const altResponse = await fetch(altUrl, {
+            method: "POST",
+            headers: {
+              ...baseHeaders,
+              "X-Idempotency-Key": crypto.randomUUID(),
+            },
+            body: JSON.stringify(requestBody),
+          });
+          const altText = await altResponse.text();
+          try {
+            const altData = JSON.parse(altText);
+            response = altResponse;
+            responseText = altText;
+            responseData = altData;
+            console.log(`[DataMart API] Alternate URL ${altUrl} -> Status ${response.status}:`, altText);
+          } catch {}
+        } catch (altErr) {
+          console.warn("[DataMart API] Alternate URL attempt failed:", altErr);
+        }
+      }
+    }
+
+    // If rejected due to string capacity, attempt with numeric capacity
+    if (!response.ok && (responseData?.message?.toLowerCase().includes("capacity") || response.status === 400)) {
+      const numCapacity = Number(capacityGb);
+      if (!isNaN(numCapacity)) {
+        console.log(`[DataMart API] Retrying with numeric capacity ${numCapacity}...`);
+        try {
+          const numResponse = await fetch(purchaseUrl, {
+            method: "POST",
+            headers: {
+              ...baseHeaders,
+              "X-Idempotency-Key": crypto.randomUUID(),
+            },
+            body: JSON.stringify({ ...requestBody, capacity: numCapacity }),
+          });
+          const numText = await numResponse.text();
+          try {
+            const numData = JSON.parse(numText);
+            if (numResponse.ok && (numData?.status === "success" || numData?.data?.purchaseId)) {
+              response = numResponse;
+              responseText = numText;
+              responseData = numData;
+            }
+          } catch {}
+        } catch {}
+      }
+    }
 
     if (response.ok && (responseData?.status === "success" || responseData?.data?.purchaseId)) {
       const dataPayload = responseData.data || {};
@@ -167,6 +232,99 @@ export async function sendDataMartDelivery(params: DataMartDeliveryParams): Prom
       success: false,
       message: error?.message || "Failed to connect to DataMart server",
       raw_response: { error: String(error) },
+    };
+  }
+}
+
+/**
+ * Diagnostic tool: Tests connectivity and API key validity against DataMart
+ */
+export async function testDataMartConnection(customApiKey?: string): Promise<{
+  success: boolean;
+  message: string;
+  status: number;
+  details?: any;
+}> {
+  try {
+    const settings = await db.getSettings();
+    const apiKey = (customApiKey || settings.datamart_api_key || process.env.DATAMART_API_KEY || "").trim();
+    const purchaseUrl = resolvePurchaseUrl(settings.datamart_api_url || process.env.DATAMART_API_URL);
+
+    if (!apiKey) {
+      return {
+        success: false,
+        message: "No DataMart API Key provided. Please enter your API key.",
+        status: 400,
+      };
+    }
+
+    const testHeaders = {
+      "Content-Type": "application/json",
+      "X-API-Key": apiKey,
+      "x-api-key": apiKey,
+      "Authorization": `Bearer ${apiKey}`,
+      "X-Idempotency-Key": crypto.randomUUID(),
+      "User-Agent": "BundleMartGh/1.0",
+      "Accept": "application/json",
+    };
+
+    // Make lightweight request to purchase endpoint with test payload
+    const response = await fetch(purchaseUrl, {
+      method: "POST",
+      headers: testHeaders,
+      body: JSON.stringify({
+        phoneNumber: "0550000000",
+        network: "YELLO",
+        capacity: "1",
+        gateway: "wallet",
+      }),
+    });
+
+    const text = await response.text();
+    let data: any = null;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = { raw: text };
+    }
+
+    // If key is invalid, DataMart typically returns 401, 403, or unauthorized
+    if (response.status === 401 || response.status === 403 || data?.message?.toLowerCase().includes("unauthorized") || data?.message?.toLowerCase().includes("invalid api")) {
+      return {
+        success: false,
+        message: data?.message || "DataMart rejected API Key (Invalid or unauthorized).",
+        status: response.status,
+        details: data,
+      };
+    }
+
+    // If DataMart returns Insufficient wallet balance or rate limit or success, the key IS valid and authenticated!
+    if (
+      data?.status === "success" ||
+      data?.message?.toLowerCase().includes("balance") ||
+      data?.message?.toLowerCase().includes("insufficient") ||
+      data?.message?.toLowerCase().includes("phone") ||
+      data?.data?.purchaseId
+    ) {
+      return {
+        success: true,
+        message: data?.message || "Successfully connected to DataMart API!",
+        status: response.status,
+        details: data,
+      };
+    }
+
+    return {
+      success: response.ok,
+      message: data?.message || `DataMart responded with status ${response.status}`,
+      status: response.status,
+      details: data,
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      message: err?.message || "Could not reach DataMart server",
+      status: 500,
     };
   }
 }

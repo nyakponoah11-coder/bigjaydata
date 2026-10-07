@@ -86,7 +86,7 @@ export async function PATCH(request: Request) {
       );
 
       return NextResponse.json({
-        success: true,
+        success: dmResult.success,
         message: dmResult.message,
         order: updated,
       });

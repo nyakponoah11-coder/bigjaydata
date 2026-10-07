@@ -35,6 +35,38 @@ export default function AdminSettingsPage() {
   const [announcementText, setAnnouncementText] = useState("");
   const [announcementActive, setAnnouncementActive] = useState(true);
 
+  // DataMart Connection Testing
+  const [testingDataMart, setTestingDataMart] = useState(false);
+  const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
+
+  const handleTestDataMart = async () => {
+    if (!datamartApiKey.trim()) {
+      setTestResult({ success: false, message: "Please enter your DataMart API key first." });
+      return;
+    }
+    setTestingDataMart(true);
+    setTestResult(null);
+    try {
+      const res = await fetch("/api/admin/datamart/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ api_key: datamartApiKey.trim() }),
+      });
+      const data = await res.json();
+      setTestResult({
+        success: data.success,
+        message: data.message || (data.success ? "Connection successful!" : "Connection failed"),
+      });
+    } catch (err: any) {
+      setTestResult({
+        success: false,
+        message: err?.message || "Failed to contact diagnostic server",
+      });
+    } finally {
+      setTestingDataMart(false);
+    }
+  };
+
   const fetchSettings = async () => {
     setLoading(true);
     try {
@@ -293,6 +325,45 @@ export default function AdminSettingsPage() {
                   className="w-full px-3.5 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500"
                 />
               </div>
+            </div>
+
+            {/* Test Connection Button & Status */}
+            <div className="pt-2 border-t border-slate-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <button
+                type="button"
+                onClick={handleTestDataMart}
+                disabled={testingDataMart}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-950/60 hover:bg-emerald-900 border border-emerald-800 text-emerald-300 rounded-xl text-xs font-bold transition-all disabled:opacity-50"
+              >
+                {testingDataMart ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Verifying DataMart Key...</span>
+                  </>
+                ) : (
+                  <>
+                    <Server className="w-3.5 h-3.5" />
+                    <span>Test DataMart API Connection</span>
+                  </>
+                )}
+              </button>
+
+              {testResult && (
+                <div
+                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-2 ${
+                    testResult.success
+                      ? "bg-emerald-950 text-emerald-300 border border-emerald-800"
+                      : "bg-red-950 text-red-300 border border-red-800"
+                  }`}
+                >
+                  {testResult.success ? (
+                    <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
+                  ) : (
+                    <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
+                  )}
+                  <span>{testResult.message}</span>
+                </div>
+              )}
             </div>
           </div>
 

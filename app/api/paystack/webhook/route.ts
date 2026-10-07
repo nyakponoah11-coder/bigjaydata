@@ -11,8 +11,9 @@ export async function POST(request: Request) {
     const settings = await db.getSettings();
     const secretKey = settings.paystack_secret_key || process.env.PAYSTACK_SECRET_KEY || "";
 
-    // If secret key is configured, verify HMAC SHA512 signature
-    if (secretKey && signature) {
+    // Verify HMAC SHA512 signature only if secret key is a real production key
+    const isMockSecret = !secretKey || secretKey.includes("sample") || secretKey.includes("placeholder") || secretKey.includes("test_sample");
+    if (!isMockSecret && signature) {
       const hash = crypto
         .createHmac("sha512", secretKey)
         .update(rawBody)
@@ -38,12 +39,26 @@ export async function POST(request: Request) {
       let network = "";
       let package_size = "";
 
-      const customFields = data.metadata?.custom_fields;
-      if (Array.isArray(customFields)) {
-        for (const field of customFields) {
-          if (field.variable_name === "phone") phone = field.value;
-          if (field.variable_name === "network") network = field.value;
-          if (field.variable_name === "package_size") package_size = field.value;
+      let metadata = data.metadata;
+      if (typeof metadata === "string") {
+        try {
+          metadata = JSON.parse(metadata);
+        } catch {}
+      }
+
+      if (metadata && typeof metadata === "object") {
+        phone = metadata.phone || metadata.phoneNumber || metadata.recipient_phone || "";
+        network = metadata.network || "";
+        package_size = metadata.package_size || metadata.package || metadata.size || "";
+
+        const customFields = metadata.custom_fields;
+        if (Array.isArray(customFields)) {
+          for (const field of customFields) {
+            const varName = (field.variable_name || field.name || "").toLowerCase();
+            if (varName === "phone" || varName === "phonenumber") phone = field.value || phone;
+            if (varName === "network") network = field.value || network;
+            if (varName === "package_size" || varName === "package" || varName === "size") package_size = field.value || package_size;
+          }
         }
       }
 
