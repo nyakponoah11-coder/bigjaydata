@@ -61,7 +61,7 @@ let initialSettings: Settings = {
   paystack_public_key: process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY || "",
   paystack_secret_key: process.env.PAYSTACK_SECRET_KEY || "",
   datamart_api_key: process.env.DATAMART_API_KEY || "",
-  datamart_api_url: process.env.DATAMART_API_URL || "https://api.datamartgh.com/v1",
+  datamart_api_url: process.env.DATAMART_API_URL || "https://api.datamartgh.shop/api",
   announcement_text: "⚡ Instant Delivery Guarantee: MTN, Telecel & AT packages delivered in under 60 seconds! 24/7 Automated.",
   announcement_active: true,
   created_at: new Date().toISOString(),

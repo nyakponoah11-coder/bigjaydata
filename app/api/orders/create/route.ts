@@ -55,6 +55,7 @@ export async function POST(request: Request) {
         package_size: order.package_size,
         phone: order.phone,
         reference: order.reference,
+        idempotency_key: order.reference,
       });
     } catch (dmErr: any) {
       console.error("[DataMart] Direct dispatch error:", dmErr);

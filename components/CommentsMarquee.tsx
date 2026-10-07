@@ -24,29 +24,44 @@ const COMMENTS = [
 
 export default function CommentsMarquee() {
   return (
-    <div className="relative w-full mb-6 sm:mb-8 bg-amber-200/80 dark:bg-amber-950/40 border border-amber-300/90 dark:border-amber-700/60 rounded-full py-1.5 px-3 sm:px-4 overflow-hidden shadow-inner">
-      <div className="flex items-center gap-2.5">
-        {/* Live Tag Pill */}
-        <span className="shrink-0 flex items-center gap-1.5 bg-amber-500 text-slate-950 px-2.5 py-0.5 rounded-full text-[10px] sm:text-xs font-black uppercase tracking-wider shadow-xs">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse" />
-          Recent Orders
+    <div className="w-full bg-amber-50/90 dark:bg-slate-900/90 border-b border-amber-200/80 dark:border-slate-800 py-1.5 sm:py-2 px-3 sm:px-4 overflow-hidden relative shadow-xs backdrop-blur-xs">
+      <div className="flex items-center gap-2.5 sm:gap-3">
+        {/* Tag Pill */}
+        <span className="shrink-0 flex items-center gap-1.5 bg-amber-500 text-slate-950 px-2.5 py-0.5 rounded-full text-[10px] sm:text-[11px] font-black uppercase tracking-wider shadow-xs">
+          <MessageSquare className="w-3 h-3 fill-slate-950 shrink-0" />
+          <span>Reviews</span>
         </span>
 
-        {/* Rolling Marquee text with same animation & speed as Announcement banner */}
+        {/* Circular Non-Stop Seamless Rolling Marquee */}
         <div className="relative w-full overflow-hidden whitespace-nowrap">
-          <div className="inline-block animate-marquee pl-4">
-            <span className="inline-flex items-center gap-6 sm:gap-8 text-xs sm:text-sm font-medium text-slate-800 dark:text-amber-100">
+          <div className="animate-marquee-seamless flex items-center">
+            {/* First Loop */}
+            <div className="flex shrink-0 items-center gap-6 sm:gap-8 pr-6 sm:pr-8">
               {COMMENTS.map((c, i) => (
-                <span key={i} className="inline-flex items-center gap-1.5">
-                  <span className="font-extrabold text-slate-950 dark:text-white">{c.name}</span>
-                  <span className="text-[10px] font-bold px-1.5 py-0.2 rounded-full bg-amber-400 text-slate-950 shrink-0">
+                <span key={`a-${i}`} className="inline-flex items-center gap-1.5 text-xs text-slate-700 dark:text-slate-200">
+                  <span className="font-bold text-slate-900 dark:text-white">{c.name}</span>
+                  <span className="text-[10px] font-bold px-1.5 py-0.2 rounded-full bg-amber-200 dark:bg-amber-900/60 text-amber-900 dark:text-amber-200 shrink-0">
                     {c.package}
                   </span>
-                  <span className="text-slate-700 dark:text-amber-200/90 font-normal">"{c.text}"</span>
-                  <span className="text-amber-500 font-black ml-2">•</span>
+                  <span className="text-slate-600 dark:text-slate-300 font-normal">"{c.text}"</span>
+                  <span className="text-amber-500 font-bold ml-2">•</span>
                 </span>
               ))}
-            </span>
+            </div>
+
+            {/* Cloned Loop for continuous circular animation that never stops */}
+            <div className="flex shrink-0 items-center gap-6 sm:gap-8 pr-6 sm:pr-8" aria-hidden="true">
+              {COMMENTS.map((c, i) => (
+                <span key={`b-${i}`} className="inline-flex items-center gap-1.5 text-xs text-slate-700 dark:text-slate-200">
+                  <span className="font-bold text-slate-900 dark:text-white">{c.name}</span>
+                  <span className="text-[10px] font-bold px-1.5 py-0.2 rounded-full bg-amber-200 dark:bg-amber-900/60 text-amber-900 dark:text-amber-200 shrink-0">
+                    {c.package}
+                  </span>
+                  <span className="text-slate-600 dark:text-slate-300 font-normal">"{c.text}"</span>
+                  <span className="text-amber-500 font-bold ml-2">•</span>
+                </span>
+              ))}
+            </div>
           </div>
         </div>
       </div>

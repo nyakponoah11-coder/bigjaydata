@@ -287,7 +287,7 @@ export default function AdminSettingsPage() {
                   type="text"
                   value={datamartApiUrl}
                   onChange={(e) => setDatamartApiUrl(e.target.value)}
-                  placeholder="https://api.datamartgh.com/v1"
+                  placeholder="https://api.datamartgh.shop/api"
                   className="w-full px-3.5 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500"
                 />
               </div>

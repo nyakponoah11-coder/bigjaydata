@@ -6,13 +6,25 @@
     100% { transform: translateX(-100%); }
   }
 
+  @keyframes marquee-seamless {
+    0% { transform: translateX(0%); }
+    100% { transform: translateX(-50%); }
+  }
+
   .animate-marquee {
     display: inline-block;
     white-space: nowrap;
     animation: marquee 25s linear infinite;
   }
 
-  .animate-marquee:hover {
+  .animate-marquee-seamless {
+    display: flex;
+    width: max-content;
+    animation: marquee-seamless 45s linear infinite;
+  }
+
+  .animate-marquee:hover,
+  .animate-marquee-seamless:hover {
     animation-play-state: paused;
   }
 }

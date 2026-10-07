@@ -110,6 +110,9 @@ export default async function HomePage() {
         whatsappNumber={settings.whatsapp_number}
       />
 
+      {/* Comments Bar (Circular Non-Stop Stream between Navbar and Hero Card) */}
+      <CommentsMarquee />
+
       {/* Hero Section */}
       <section className="relative overflow-hidden pt-8 pb-12 lg:pt-14 lg:pb-16 bg-gradient-to-b from-white via-slate-50 to-slate-100 border-b border-slate-200/60">
         {/* Subtle decorative glow */}
@@ -120,9 +123,6 @@ export default async function HomePage() {
           <div className="max-w-4xl mx-auto rounded-3xl bg-gradient-to-b from-amber-100/90 via-yellow-50/85 to-amber-50/90 border-2 border-amber-300 shadow-xl shadow-amber-500/10 p-6 sm:p-10 lg:p-12 text-center relative overflow-hidden backdrop-blur-sm">
             {/* Subtle top glow highlight */}
             <div className="absolute -top-24 left-1/2 -translate-x-1/2 w-96 h-48 bg-gradient-to-b from-amber-300/40 to-transparent blur-2xl pointer-events-none" />
-
-            {/* Comments Marquee at the Top of the Card */}
-            <CommentsMarquee />
 
             {/* Dynamic Store Headline */}
             <h1 className="relative text-3xl sm:text-5xl lg:text-6xl font-extrabold text-slate-900 tracking-tight max-w-3xl mx-auto leading-tight sm:leading-tight">

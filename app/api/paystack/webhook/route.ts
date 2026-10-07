@@ -64,6 +64,7 @@ export async function POST(request: Request) {
           package_size: existingOrder.package_size,
           phone: existingOrder.phone,
           reference: existingOrder.reference,
+          idempotency_key: existingOrder.reference,
         });
 
         await db.updateOrderStatus(
@@ -90,6 +91,7 @@ export async function POST(request: Request) {
           package_size,
           phone,
           reference,
+          idempotency_key: reference,
         });
 
         await db.updateOrderStatus(
