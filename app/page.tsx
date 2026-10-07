@@ -39,7 +39,21 @@ export default async function HomePage() {
   });
 
   return (
-    <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900">
+    <div className="min-h-screen flex flex-col bg-[#070b14] text-slate-100 relative">
+      {/* Background Video from Pinterest */}
+      <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
+        <video
+          autoPlay
+          loop
+          muted
+          playsInline
+          className="w-full h-full object-cover opacity-30 filter brightness-90 contrast-125"
+        >
+          <source src="/bg-video.mp4" type="video/mp4" />
+        </video>
+        <div className="absolute inset-0 bg-[#070b14]/80 backdrop-blur-[2px]" />
+      </div>
+
       {/* Navigation */}
       <Navbar
         storeName={settings.store_name}
@@ -56,26 +70,23 @@ export default async function HomePage() {
       />
 
       {/* Hero Section */}
-      <section className="relative overflow-hidden pt-8 pb-12 lg:pt-14 lg:pb-16 bg-gradient-to-b from-white via-slate-50 to-slate-100 border-b border-slate-200/60">
-        {/* Subtle decorative glow */}
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full max-w-7xl h-96 bg-gradient-to-tr from-amber-500/10 via-yellow-400/10 to-amber-600/5 blur-3xl pointer-events-none -z-10" />
-
+      <section className="relative overflow-hidden pt-8 pb-12 lg:pt-14 lg:pb-16 border-b border-slate-800/80">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          {/* Yellow Hero Card */}
-          <div className="max-w-4xl mx-auto rounded-3xl bg-gradient-to-b from-amber-100/90 via-yellow-50/85 to-amber-50/90 border-2 border-amber-300 shadow-xl shadow-amber-500/10 p-6 sm:p-10 lg:p-12 text-center relative overflow-hidden backdrop-blur-sm">
+          {/* Hero Card */}
+          <div className="max-w-4xl mx-auto rounded-3xl bg-slate-900/85 border-2 border-amber-400/40 shadow-2xl shadow-amber-500/10 p-6 sm:p-10 lg:p-12 text-center relative overflow-hidden backdrop-blur-md">
             {/* Subtle top glow highlight */}
-            <div className="absolute -top-24 left-1/2 -translate-x-1/2 w-96 h-48 bg-gradient-to-b from-amber-300/40 to-transparent blur-2xl pointer-events-none" />
+            <div className="absolute -top-24 left-1/2 -translate-x-1/2 w-96 h-48 bg-gradient-to-b from-amber-400/20 to-transparent blur-2xl pointer-events-none" />
 
             {/* Dynamic Store Headline */}
-            <h1 className="relative text-3xl sm:text-5xl lg:text-6xl font-extrabold text-slate-900 tracking-tight max-w-3xl mx-auto leading-tight sm:leading-tight">
+            <h1 className="relative text-3xl sm:text-5xl lg:text-6xl font-extrabold text-white tracking-tight max-w-3xl mx-auto leading-tight sm:leading-tight">
               Get High-Speed Data On <br className="hidden sm:inline" />
-              <span className="bg-gradient-to-r from-amber-600 via-yellow-600 to-amber-700 bg-clip-text text-transparent">
+              <span className="bg-gradient-to-r from-amber-400 via-yellow-400 to-amber-500 bg-clip-text text-transparent">
                 {settings.store_name}
               </span>
             </h1>
 
             {/* Subtext */}
-            <p className="relative mt-4 sm:mt-5 text-sm sm:text-base lg:text-lg text-slate-700 max-w-2xl mx-auto leading-relaxed font-medium">
+            <p className="relative mt-4 sm:mt-5 text-sm sm:text-base lg:text-lg text-slate-300 max-w-2xl mx-auto leading-relaxed font-medium">
               The fastest, cheapest, and most trusted mobile data portal in Ghana. Buy MTN, Telecel, and AT data packages at discounted rates with automatic delivery.
             </p>
 
@@ -83,24 +94,24 @@ export default async function HomePage() {
             <div className="relative mt-7 sm:mt-8 w-full max-w-md sm:max-w-lg mx-auto grid grid-cols-2 gap-2.5 sm:gap-4">
               <a
                 href="#networks"
-                className="w-full py-3 sm:py-3.5 px-2.5 sm:px-6 rounded-2xl bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-600 hover:to-yellow-600 text-slate-950 font-bold text-xs sm:text-base shadow-lg shadow-amber-500/30 flex items-center justify-center gap-1.5 sm:gap-2 transition-all transform active:scale-95"
+                className="w-full py-3 sm:py-3.5 px-2.5 sm:px-6 rounded-2xl bg-gradient-to-r from-amber-400 to-yellow-500 hover:from-amber-500 hover:to-yellow-600 text-slate-950 font-black text-xs sm:text-base shadow-lg shadow-amber-500/30 flex items-center justify-center gap-1.5 sm:gap-2 transition-all transform active:scale-95"
               >
                 <Zap className="w-4 h-4 fill-current text-slate-950 shrink-0" />
                 <span className="truncate">Buy Data Bundles Now</span>
               </a>
               <Link
                 href="/track"
-                className="w-full py-3 sm:py-3.5 px-2.5 sm:px-6 rounded-2xl bg-white hover:bg-slate-50 border border-slate-300 text-slate-800 font-bold text-xs sm:text-base shadow-sm flex items-center justify-center gap-1.5 sm:gap-2 hover:border-slate-400 transition-all transform active:scale-95"
+                className="w-full py-3 sm:py-3.5 px-2.5 sm:px-6 rounded-2xl bg-slate-800/90 hover:bg-slate-800 border border-slate-700 text-white font-bold text-xs sm:text-base shadow-sm flex items-center justify-center gap-1.5 sm:gap-2 hover:border-slate-500 transition-all transform active:scale-95"
               >
                 <span className="truncate">Track Existing Order</span>
-                <ArrowRight className="w-4 h-4 text-slate-500 shrink-0" />
+                <ArrowRight className="w-4 h-4 text-slate-400 shrink-0" />
               </Link>
             </div>
           </div>
         </div>
       </section>
 
-      {/* LAPTOP-FRIENDLY & MOBILE-OPTIMIZED NETWORK CARDS */}
+      {/* LAPTOP-FRIENDLY & SOLID BLACK NETWORK CARDS */}
       <NetworkSelectionSection
         products={products}
         settings={settings}
@@ -110,47 +121,47 @@ export default async function HomePage() {
       <HowToBuyAccordion storeName={settings.store_name} />
 
       {/* WHY CUSTOMERS LOVE US - POSITIONED DIRECTLY ABOVE FOOTER */}
-      <section className="py-10 sm:py-14 bg-white border-y border-slate-200/80">
+      <section className="py-10 sm:py-14 bg-slate-900/80 border-y border-slate-800/80 backdrop-blur-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center max-w-2xl mx-auto mb-8 sm:mb-10">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-600 bg-emerald-50 px-2.5 py-0.5 rounded-full">
+            <span className="text-[11px] font-black uppercase tracking-wider text-emerald-400 bg-emerald-950/80 border border-emerald-500/30 px-3 py-1 rounded-full">
               Why Customers Love Us
             </span>
-            <h2 className="mt-2 text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
+            <h2 className="mt-2 text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
               Built for Speed, Reliability & Savings
             </h2>
-            <p className="mt-1 text-xs sm:text-sm text-slate-600">
+            <p className="mt-1 text-xs sm:text-sm text-slate-400">
               No signups, no complicated steps. Enter your number, pay, and receive your bundle immediately.
             </p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6">
-            <div className="p-4 sm:p-5 rounded-2xl bg-slate-50 border border-slate-200/80 shadow-xs hover:shadow-md transition-shadow">
-              <div className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center mb-3">
-                <Zap className="w-4 h-4" />
+            <div className="p-5 sm:p-6 rounded-2xl bg-slate-950/90 border border-slate-800 shadow-lg">
+              <div className="w-10 h-10 rounded-xl bg-emerald-950 border border-emerald-500/30 text-emerald-400 flex items-center justify-center mb-3">
+                <Zap className="w-5 h-5" />
               </div>
-              <h3 className="text-base font-bold text-slate-900 mb-1">Automated Fast Delivery</h3>
-              <p className="text-xs text-slate-600 leading-relaxed">
+              <h3 className="text-base font-bold text-white mb-1">Automated Fast Delivery</h3>
+              <p className="text-xs text-slate-400 leading-relaxed">
                 Direct integration with high-speed telecom gateways. As soon as payment completes, your bundle is pushed instantly to your phone.
               </p>
             </div>
 
-            <div className="p-4 sm:p-5 rounded-2xl bg-slate-50 border border-slate-200/80 shadow-xs hover:shadow-md transition-shadow">
-              <div className="w-9 h-9 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center mb-3">
-                <TrendingDown className="w-4 h-4" />
+            <div className="p-5 sm:p-6 rounded-2xl bg-slate-950/90 border border-slate-800 shadow-lg">
+              <div className="w-10 h-10 rounded-xl bg-amber-950 border border-amber-500/30 text-amber-400 flex items-center justify-center mb-3">
+                <TrendingDown className="w-5 h-5" />
               </div>
-              <h3 className="text-base font-bold text-slate-900 mb-1">Unbeatable Cheap Prices</h3>
-              <p className="text-xs text-slate-600 leading-relaxed">
+              <h3 className="text-base font-bold text-white mb-1">Unbeatable Cheap Prices</h3>
+              <p className="text-xs text-slate-400 leading-relaxed">
                 Save significantly compared to buying standard data on telecom shortcodes. Wholesale rates passed directly to you.
               </p>
             </div>
 
-            <div className="p-4 sm:p-5 rounded-2xl bg-slate-50 border border-slate-200/80 shadow-xs hover:shadow-md transition-shadow">
-              <div className="w-9 h-9 rounded-xl bg-teal-100 text-teal-700 flex items-center justify-center mb-3">
-                <Headphones className="w-4 h-4" />
+            <div className="p-5 sm:p-6 rounded-2xl bg-slate-950/90 border border-slate-800 shadow-lg">
+              <div className="w-10 h-10 rounded-xl bg-teal-950 border border-teal-500/30 text-teal-400 flex items-center justify-center mb-3">
+                <Headphones className="w-5 h-5" />
               </div>
-              <h3 className="text-base font-bold text-slate-900 mb-1">24/7 Live Support</h3>
-              <p className="text-xs text-slate-600 leading-relaxed">
+              <h3 className="text-base font-bold text-white mb-1">24/7 Live Support</h3>
+              <p className="text-xs text-slate-400 leading-relaxed">
                 Have questions or need assistance? Our dedicated team is online around the clock on WhatsApp and Live Chat to assist you.
               </p>
             </div>

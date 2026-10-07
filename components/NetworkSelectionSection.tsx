@@ -97,7 +97,7 @@ export default function NetworkSelectionSection({ products }: Props) {
             <Link
               key={net.key}
               href={`/buy/${net.key}`}
-              className={`group block rounded-3xl border-2 transition-all duration-300 overflow-hidden shadow-lg hover:shadow-2xl ${net.accentBorder} bg-gradient-to-r ${net.glowColor} via-slate-900 to-slate-900/95 p-4 sm:p-6 lg:p-7 hover:scale-[1.01] active:scale-[0.99] relative`}
+              className={`group block rounded-3xl border-2 transition-all duration-300 overflow-hidden shadow-xl hover:shadow-2xl ${net.accentBorder} bg-slate-950 p-4 sm:p-6 lg:p-7 hover:scale-[1.01] active:scale-[0.99] relative`}
             >
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 lg:gap-6">
                 {/* Left: Circle Logo and Info */}
