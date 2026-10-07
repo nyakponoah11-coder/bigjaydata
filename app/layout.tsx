@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import SocialProofPopup from "@/components/SocialProofPopup";
 
 export const metadata: Metadata = {
   title: "BundleMartGh | Instant Mobile Data Bundles in Ghana",
@@ -22,7 +21,6 @@ export default function RootLayout({
     <html lang="en" className="h-full antialiased scroll-smooth">
       <body className="min-h-full flex flex-col bg-slate-50 text-slate-900 selection:bg-emerald-500 selection:text-white">
         {children}
-        <SocialProofPopup />
       </body>
     </html>
   );
