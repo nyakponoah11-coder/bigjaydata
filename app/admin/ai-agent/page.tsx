@@ -49,7 +49,7 @@ export default function AdminAIAgentPage() {
   const [geminiTestStatus, setGeminiTestStatus] = useState<{ success: boolean; message: string } | null>(null);
 
   const [grokKey, setGrokKey] = useState("");
-  const [grokModel, setGrokModel] = useState("grok-2-latest");
+  const [grokModel, setGrokModel] = useState("llama-3.3-70b-versatile");
   const [showGrokKey, setShowGrokKey] = useState(false);
   const [testingGrok, setTestingGrok] = useState(false);
   const [grokTestStatus, setGrokTestStatus] = useState<{ success: boolean; message: string } | null>(null);
@@ -93,8 +93,8 @@ export default function AdminAIAgentPage() {
       if (data.success && data.settings) {
         setGeminiKey(data.settings.gemini_api_key || "");
         setGeminiModel(data.settings.gemini_model || "gemini-3.8-flash");
-        setGrokKey(data.settings.grok_api_key || "");
-        setGrokModel(data.settings.grok_model || "grok-2-latest");
+        setGrokKey(data.settings.groq_api_key || data.settings.grok_api_key || "");
+        setGrokModel(data.settings.groq_model || data.settings.grok_model || "llama-3.3-70b-versatile");
         setOpenaiKey(data.settings.openai_api_key || "");
         setOpenaiModel(data.settings.openai_model || "gpt-4o-mini");
       }
@@ -119,6 +119,8 @@ export default function AdminAIAgentPage() {
           action: "save",
           gemini_api_key: geminiKey.trim(),
           gemini_model: geminiModel.trim(),
+          groq_api_key: grokKey.trim(),
+          groq_model: grokModel.trim(),
           grok_api_key: grokKey.trim(),
           grok_model: grokModel.trim(),
           openai_api_key: openaiKey.trim(),
@@ -134,8 +136,10 @@ export default function AdminAIAgentPage() {
       if (data.settings) {
         if (data.settings.gemini_api_key !== undefined) setGeminiKey(data.settings.gemini_api_key);
         if (data.settings.gemini_model !== undefined) setGeminiModel(data.settings.gemini_model);
-        if (data.settings.grok_api_key !== undefined) setGrokKey(data.settings.grok_api_key);
-        if (data.settings.grok_model !== undefined) setGrokModel(data.settings.grok_model);
+        const savedGroq = data.settings.groq_api_key || data.settings.grok_api_key;
+        if (savedGroq !== undefined) setGrokKey(savedGroq);
+        const savedGroqModel = data.settings.groq_model || data.settings.grok_model;
+        if (savedGroqModel !== undefined) setGrokModel(savedGroqModel);
         if (data.settings.openai_api_key !== undefined) setOpenaiKey(data.settings.openai_api_key);
         if (data.settings.openai_model !== undefined) setOpenaiModel(data.settings.openai_model);
       }
@@ -149,7 +153,7 @@ export default function AdminAIAgentPage() {
     }
   };
 
-  const handleTestProvider = async (provider: "gemini" | "grok" | "openai") => {
+  const handleTestProvider = async (provider: "gemini" | "groq" | "grok" | "openai") => {
     let key = "";
     let model = "";
 
@@ -158,7 +162,7 @@ export default function AdminAIAgentPage() {
       model = geminiModel;
       setTestingGemini(true);
       setGeminiTestStatus(null);
-    } else if (provider === "grok") {
+    } else if (provider === "groq" || provider === "grok") {
       key = grokKey;
       model = grokModel;
       setTestingGrok(true);
@@ -335,11 +339,11 @@ export default function AdminAIAgentPage() {
                     </div>
                     <div className="p-2.5 rounded-xl bg-slate-900 border border-blue-500/40 text-blue-300 font-bold flex items-center gap-2">
                       <span className="w-5 h-5 rounded-full bg-blue-400/20 text-blue-300 flex items-center justify-center text-[10px]">2</span>
-                      <span>xAI Grok (Fallback)</span>
+                      <span>Groq Cloud (Fallback 1)</span>
                     </div>
                     <div className="p-2.5 rounded-xl bg-slate-900 border border-emerald-500/40 text-emerald-300 font-bold flex items-center gap-2">
                       <span className="w-5 h-5 rounded-full bg-emerald-400/20 text-emerald-300 flex items-center justify-center text-[10px]">3</span>
-                      <span>OpenAI (Fallback)</span>
+                      <span>OpenAI (Fallback 2)</span>
                     </div>
                     <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-700 text-slate-400 font-bold flex items-center gap-2">
                       <span className="w-5 h-5 rounded-full bg-slate-800 text-slate-400 flex items-center justify-center text-[10px]">4</span>
@@ -347,7 +351,7 @@ export default function AdminAIAgentPage() {
                     </div>
                   </div>
                   <p className="text-[11px] text-slate-400 mt-2">
-                    💡 If Gemini hits a rate-limit/quota, the system automatically falls over to Grok, then OpenAI. Customers never get stuck or see an error.
+                    💡 If Gemini hits a rate-limit/quota, the system automatically falls over to Groq, then OpenAI. Customers never get stuck or see an error.
                   </p>
                 </div>
               </div>
@@ -512,7 +516,7 @@ export default function AdminAIAgentPage() {
               </div>
             </div>
 
-            {/* PROVIDER 2: xAI GROK */}
+            {/* PROVIDER 2: GROQ CLOUD LPU */}
             <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-4 relative overflow-hidden">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-4">
                 <div className="flex items-center gap-3">
@@ -521,26 +525,26 @@ export default function AdminAIAgentPage() {
                   </div>
                   <div>
                     <h3 className="font-extrabold text-white text-base flex items-center gap-2">
-                      <span>xAI Grok</span>
+                      <span>Groq (GroqCloud LPU)</span>
                       <span className="text-[10px] font-black uppercase text-blue-400 bg-blue-950/80 border border-blue-400/40 px-2 py-0.5 rounded-full">
                         Secondary / Fallback 1
                       </span>
                     </h3>
                     <p className="text-xs text-slate-400">
-                      Engaging, natural customer service conversational model.
+                      Lightning-fast inference powered by Groq LPU (Llama 3.3 70B & 8B). Free tier available.
                     </p>
                   </div>
                 </div>
 
-                {/* Direct Link to xAI Console */}
+                {/* Direct Link to Groq Console */}
                 <a
-                  href="https://console.x.ai/"
+                  href="https://console.groq.com/keys"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-blue-400 text-xs font-bold border border-blue-400/30 hover:border-blue-400 transition-colors shrink-0"
                 >
                   <ExternalLink className="w-3.5 h-3.5" />
-                  <span>Get Grok API Key ↗</span>
+                  <span>Get Free Groq API Key ↗</span>
                 </a>
               </div>
 
@@ -548,7 +552,7 @@ export default function AdminAIAgentPage() {
                 <div className="sm:col-span-2">
                   <div className="flex items-center justify-between mb-1">
                     <label className="text-slate-300 font-bold">
-                      xAI Grok API Key
+                      Groq API Key
                     </label>
                     {grokKey ? (
                       <span className="text-[10px] font-black text-emerald-400 bg-emerald-950/80 border border-emerald-800/80 px-2 py-0.5 rounded-full flex items-center gap-1">
@@ -563,7 +567,7 @@ export default function AdminAIAgentPage() {
                       type={showGrokKey ? "text" : "password"}
                       value={grokKey}
                       onChange={(e) => setGrokKey(e.target.value)}
-                      placeholder="xai-..."
+                      placeholder="gsk_..."
                       className="w-full px-3.5 py-2.5 pr-10 bg-slate-800 border border-slate-700 rounded-xl text-white font-mono text-xs focus:outline-none focus:ring-2 focus:ring-blue-400"
                     />
                     <button
@@ -592,10 +596,16 @@ export default function AdminAIAgentPage() {
 
                 <div>
                   <label className="block text-slate-300 font-bold mb-1">
-                    Grok Model
+                    Groq Model
                   </label>
                   <select
-                    value={["grok-2-latest", "grok-2", "grok-beta", "grok-vision-beta"].includes(grokModel) ? grokModel : "custom"}
+                    value={[
+                      "llama-3.3-70b-versatile",
+                      "llama-3.1-8b-instant",
+                      "llama-3.2-3b-preview",
+                      "mixtral-8x7b-32768",
+                      "grok-2-latest",
+                    ].includes(grokModel) ? grokModel : "custom"}
                     onChange={(e) => {
                       if (e.target.value !== "custom") {
                         setGrokModel(e.target.value);
@@ -603,10 +613,11 @@ export default function AdminAIAgentPage() {
                     }}
                     className="w-full px-3.5 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white font-medium focus:outline-none focus:ring-2 focus:ring-blue-400"
                   >
-                    <option value="grok-2-latest">grok-2-latest (Recommended)</option>
-                    <option value="grok-2">grok-2</option>
-                    <option value="grok-beta">grok-beta</option>
-                    <option value="grok-vision-beta">grok-vision-beta</option>
+                    <option value="llama-3.3-70b-versatile">llama-3.3-70b-versatile (Recommended • Ultra Fast)</option>
+                    <option value="llama-3.1-8b-instant">llama-3.1-8b-instant (Lightning Speed)</option>
+                    <option value="llama-3.2-3b-preview">llama-3.2-3b-preview</option>
+                    <option value="mixtral-8x7b-32768">mixtral-8x7b-32768</option>
+                    <option value="grok-2-latest">grok-2-latest (xAI Grok fallback)</option>
                     <option value="custom">✏️ Enter Custom Model Name...</option>
                   </select>
 
@@ -614,9 +625,9 @@ export default function AdminAIAgentPage() {
                     type="text"
                     value={grokModel}
                     onChange={(e) => setGrokModel(e.target.value)}
-                    placeholder="e.g. grok-2-latest"
+                    placeholder="e.g. llama-3.3-70b-versatile"
                     className="mt-2 w-full px-3 py-1.5 bg-slate-800/80 border border-slate-700/80 rounded-lg text-blue-300 font-mono text-[11px] focus:outline-none focus:ring-1 focus:ring-blue-400"
-                    title="Active model string sent to xAI API"
+                    title="Active model string sent to Groq API"
                   />
                   <span className="text-[10px] text-slate-500 mt-0.5 block">
                     Active API Model: <span className="text-blue-400 font-mono font-bold">{grokModel}</span>
@@ -627,12 +638,12 @@ export default function AdminAIAgentPage() {
               <div className="flex items-center justify-between pt-2">
                 <button
                   type="button"
-                  onClick={() => handleTestProvider("grok")}
+                  onClick={() => handleTestProvider("groq")}
                   disabled={testingGrok || !grokKey.trim()}
                   className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white text-xs font-bold border border-slate-700 transition-colors flex items-center gap-2 disabled:opacity-40"
                 >
                   {testingGrok ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5 text-blue-400" />}
-                  <span>Test Grok Connection</span>
+                  <span>Test Groq Connection</span>
                 </button>
 
                 {grokTestStatus && (

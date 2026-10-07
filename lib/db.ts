@@ -68,6 +68,8 @@ export interface Settings {
   announcement_active: boolean;
   gemini_api_key?: string;
   gemini_model?: string;
+  groq_api_key?: string;
+  groq_model?: string;
   grok_api_key?: string;
   grok_model?: string;
   openai_api_key?: string;
@@ -132,8 +134,10 @@ let initialSettings: Settings = {
   announcement_active: true,
   gemini_api_key: process.env.GEMINI_API_KEY || "",
   gemini_model: "gemini-3.8-flash",
-  grok_api_key: process.env.GROK_API_KEY || "",
-  grok_model: "grok-2-latest",
+  groq_api_key: process.env.GROQ_API_KEY || process.env.GROK_API_KEY || "",
+  groq_model: "llama-3.3-70b-versatile",
+  grok_api_key: process.env.GROK_API_KEY || process.env.GROQ_API_KEY || "",
+  grok_model: "llama-3.3-70b-versatile",
   openai_api_key: process.env.OPENAI_API_KEY || "",
   openai_model: "gpt-4o-mini",
   created_at: new Date().toISOString(),
@@ -305,8 +309,22 @@ export const db = {
     if (safeUpdates.gemini_api_key && safeUpdates.gemini_api_key.includes("••••")) {
       delete safeUpdates.gemini_api_key;
     }
+    if (safeUpdates.groq_api_key && safeUpdates.groq_api_key.includes("••••")) {
+      delete safeUpdates.groq_api_key;
+    }
     if (safeUpdates.grok_api_key && safeUpdates.grok_api_key.includes("••••")) {
       delete safeUpdates.grok_api_key;
+    }
+    // Mirror groq & grok
+    if (safeUpdates.groq_api_key && !safeUpdates.grok_api_key) {
+      safeUpdates.grok_api_key = safeUpdates.groq_api_key;
+    } else if (safeUpdates.grok_api_key && !safeUpdates.groq_api_key) {
+      safeUpdates.groq_api_key = safeUpdates.grok_api_key;
+    }
+    if (safeUpdates.groq_model && !safeUpdates.grok_model) {
+      safeUpdates.grok_model = safeUpdates.groq_model;
+    } else if (safeUpdates.grok_model && !safeUpdates.groq_model) {
+      safeUpdates.groq_model = safeUpdates.grok_model;
     }
     if (safeUpdates.openai_api_key && safeUpdates.openai_api_key.includes("••••")) {
       delete safeUpdates.openai_api_key;

@@ -8,7 +8,7 @@ export interface ChatMessageParam {
 export interface AIResponse {
   success: boolean;
   reply: string;
-  provider: "gemini" | "grok" | "openai" | "local";
+  provider: "gemini" | "groq" | "grok" | "openai" | "local";
   modelUsed: string;
   error?: string;
 }
@@ -173,22 +173,38 @@ async function callGemini(
 }
 
 /**
- * 2. Call xAI Grok API
+ * 2. Call Groq Cloud LPU API (or xAI Grok if xAI key provided)
  */
-async function callGrok(
+async function callGroqOrGrok(
   systemPrompt: string,
   userMessage: string,
   history: ChatMessageParam[],
   apiKey: string,
-  model = "grok-2-latest"
+  model = "llama-3.3-70b-versatile"
 ): Promise<{ reply: string; model: string }> {
-  const modelsToTry = [model, "grok-beta"];
+  const isXaiKey = apiKey.startsWith("xai-") || model.toLowerCase().includes("grok");
+
+  // Models to try
+  const groqModels = Array.from(
+    new Set([
+      model,
+      "llama-3.3-70b-versatile",
+      "llama-3.1-8b-instant",
+      "llama-3.2-3b-preview",
+      "mixtral-8x7b-32768",
+    ])
+  );
+  const xaiModels = Array.from(new Set([model, "grok-2-latest", "grok-beta"]));
+
+  const primaryUrl = isXaiKey
+    ? "https://api.x.ai/v1/chat/completions"
+    : "https://api.groq.com/openai/v1/chat/completions";
+  const modelsToTry = isXaiKey ? xaiModels : groqModels;
+
   let lastError = "";
 
   for (const mod of modelsToTry) {
     try {
-      const url = "https://api.x.ai/v1/chat/completions";
-
       const messages: Array<{ role: string; content: string }> = [
         { role: "system", content: systemPrompt },
       ];
@@ -202,7 +218,7 @@ async function callGrok(
 
       messages.push({ role: "user", content: userMessage });
 
-      const res = await fetch(url, {
+      const res = await fetch(primaryUrl, {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${apiKey}`,
@@ -218,7 +234,7 @@ async function callGrok(
 
       if (!res.ok) {
         const errText = await res.text();
-        lastError = `Grok (${mod}) status ${res.status}: ${errText.substring(0, 150)}`;
+        lastError = `${isXaiKey ? "xAI" : "Groq"} (${mod}) status ${res.status}: ${errText.substring(0, 150)}`;
         console.warn(`[AI Rotator] ${lastError}`);
         continue;
       }
@@ -229,12 +245,12 @@ async function callGrok(
         return { reply: text.trim(), model: mod };
       }
     } catch (e: any) {
-      lastError = e?.message || "Grok network error";
-      console.warn(`[AI Rotator] Grok exception on ${mod}:`, lastError);
+      lastError = e?.message || `${isXaiKey ? "xAI" : "Groq"} network error`;
+      console.warn(`[AI Rotator] ${isXaiKey ? "xAI" : "Groq"} exception on ${mod}:`, lastError);
     }
   }
 
-  throw new Error(`Grok rotation failed: ${lastError}`);
+  throw new Error(`${isXaiKey ? "xAI Grok" : "Groq"} rotation failed: ${lastError}`);
 }
 
 /**
@@ -455,27 +471,34 @@ export async function askCustomerSupportAI(params: {
     }
   }
 
-  // 2. PRIORITY 2: xAI Grok
-  const grokKey = (settings.grok_api_key || process.env.GROK_API_KEY || "").trim();
-  if (grokKey) {
+  // 2. PRIORITY 2: Groq Cloud LPU (or xAI Grok)
+  const groqKey = (
+    settings.groq_api_key ||
+    settings.grok_api_key ||
+    process.env.GROQ_API_KEY ||
+    process.env.GROK_API_KEY ||
+    ""
+  ).trim();
+  if (groqKey) {
     try {
-      console.log(`[AI Rotator] Rotating to Secondary: xAI Grok (${settings.grok_model || "grok-2-latest"})...`);
-      const res = await callGrok(
+      const groqModel = settings.groq_model || settings.grok_model || "llama-3.3-70b-versatile";
+      console.log(`[AI Rotator] Rotating to Secondary: Groq Cloud (${groqModel})...`);
+      const res = await callGroqOrGrok(
         systemPrompt,
         params.userMessage,
         normalizedHistory,
-        grokKey,
-        settings.grok_model || "grok-2-latest"
+        groqKey,
+        groqModel
       );
       return {
         success: true,
         reply: res.reply,
-        provider: "grok",
+        provider: "groq",
         modelUsed: res.model,
       };
     } catch (err: any) {
-      console.warn("[AI Rotator] Grok exhausted / failed, rotating to OpenAI:", err.message);
-      errors.push(`Grok: ${err.message}`);
+      console.warn("[AI Rotator] Groq exhausted / failed, rotating to OpenAI:", err.message);
+      errors.push(`Groq: ${err.message}`);
     }
   }
 
@@ -519,7 +542,7 @@ export async function askCustomerSupportAI(params: {
  * Diagnostic tool: Test individual provider credentials
  */
 export async function testAIProvider(
-  provider: "gemini" | "grok" | "openai",
+  provider: "gemini" | "groq" | "grok" | "openai",
   apiKey: string,
   model?: string
 ): Promise<{ success: boolean; message: string; modelUsed?: string }> {
@@ -537,10 +560,12 @@ export async function testAIProvider(
       return { success: true, message: `Connected to Google Gemini (${res.model})! Reply: "${res.reply}"`, modelUsed: res.model };
     }
 
-    if (provider === "grok") {
-      const targetModel = model || "grok-2-latest";
-      const res = await callGrok("You are a helpful assistant.", testPrompt, [], cleanKey, targetModel);
-      return { success: true, message: `Connected to xAI Grok (${res.model})! Reply: "${res.reply}"`, modelUsed: res.model };
+    if (provider === "groq" || provider === "grok") {
+      const isXaiKey = cleanKey.startsWith("xai-") || (model && model.toLowerCase().includes("grok"));
+      const targetModel = model || (isXaiKey ? "grok-2-latest" : "llama-3.3-70b-versatile");
+      const res = await callGroqOrGrok("You are a helpful assistant.", testPrompt, [], cleanKey, targetModel);
+      const name = isXaiKey ? "xAI Grok" : "Groq Cloud";
+      return { success: true, message: `Connected to ${name} (${res.model})! Reply: "${res.reply}"`, modelUsed: res.model };
     }
 
     if (provider === "openai") {
