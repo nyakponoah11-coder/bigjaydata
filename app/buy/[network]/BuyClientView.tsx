@@ -117,43 +117,43 @@ export default function BuyClientView({ network, products, settings }: Props) {
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5 sm:gap-4">
             {activeProducts.map((pkg) => (
               <div
                 key={pkg.id}
                 onClick={() => handleSelect(pkg)}
-                className={`group bg-white rounded-3xl p-6 border-2 border-slate-200/90 ${theme.borderHover} shadow-xs hover:shadow-xl transition-all duration-200 flex flex-col justify-between cursor-pointer transform hover:-translate-y-1 relative`}
+                className={`group bg-white rounded-2xl p-4 sm:p-5 border border-slate-200/90 ${theme.borderHover} shadow-xs hover:shadow-lg transition-all duration-200 flex flex-col justify-between cursor-pointer transform hover:-translate-y-0.5 relative`}
               >
                 {/* Size and badge */}
                 <div>
-                  <div className="flex items-start justify-between gap-2 mb-3">
-                    <span className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight group-hover:text-emerald-700 transition-colors">
+                  <div className="flex items-start justify-between gap-2 mb-1.5">
+                    <span className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight group-hover:text-emerald-700 transition-colors">
                       {pkg.size}
                     </span>
-                    <span className={`text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full ${theme.badgeColor}`}>
+                    <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${theme.badgeColor}`}>
                       No Expiry
                     </span>
                   </div>
 
-                  <p className="text-xs text-slate-500 mb-6">
-                    {network.toUpperCase()} High-Speed Internet Bundle with instant crediting.
+                  <p className="text-xs text-slate-500 mb-3">
+                    {network.toUpperCase()} High-Speed Internet • Instant auto-delivery
                   </p>
                 </div>
 
                 {/* Price and CTA */}
-                <div className="pt-4 border-t border-slate-100">
-                  <div className="flex items-baseline justify-between mb-4">
-                    <span className="text-xs text-slate-400 font-medium">Price</span>
-                    <div className="text-2xl font-black text-slate-900">
+                <div className="pt-3 border-t border-slate-100">
+                  <div className="flex items-baseline justify-between mb-2.5">
+                    <span className="text-[11px] text-slate-400 font-medium">Price</span>
+                    <div className="text-xl font-black text-slate-900">
                       GHS {pkg.price.toFixed(2)}
                     </div>
                   </div>
 
                   <button
                     type="button"
-                    className={`w-full py-3 px-4 rounded-xl font-bold text-xs shadow-sm flex items-center justify-center gap-2 transition-all group-hover:shadow-md ${theme.selectBtn}`}
+                    className={`w-full py-2.5 px-3.5 rounded-xl font-bold text-xs shadow-xs flex items-center justify-center gap-1.5 transition-all group-hover:shadow-sm ${theme.selectBtn}`}
                   >
-                    <span>Buy {pkg.size} Now</span>
+                    <span>Buy {pkg.size}</span>
                     <ArrowRight className="w-3.5 h-3.5" />
                   </button>
                 </div>

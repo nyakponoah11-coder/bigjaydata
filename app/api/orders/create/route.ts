@@ -14,28 +14,47 @@ export async function POST(request: Request) {
       );
     }
 
-    // 1. Create order in Supabase / DB with status 'pending'
-    const newOrder = await db.createOrder({
-      reference,
-      network: network.toLowerCase(),
-      package_size,
-      phone,
-      amount: Number(amount),
-      paystack_ref: paystack_ref || null,
-      status: "pending",
-      datamart_response: { status: "pending", initiated_at: new Date().toISOString() },
-    });
+    // 1. Check if order already exists (e.g. created by Paystack webhook)
+    let order = await db.getOrderByReference(reference);
 
-    console.log(`[Order Created] ${reference} - Pending DataMart dispatch`);
+    if (!order) {
+      try {
+        order = await db.createOrder({
+          reference,
+          network: network.toLowerCase(),
+          package_size,
+          phone,
+          amount: Number(amount),
+          paystack_ref: paystack_ref || null,
+          status: "pending",
+          datamart_response: { status: "pending", initiated_at: new Date().toISOString() },
+        });
+      } catch (insertErr: any) {
+        // If race condition where webhook inserted it simultaneously
+        order = await db.getOrderByReference(reference);
+        if (!order) throw insertErr;
+      }
+    }
 
-    // 2. Immediately call DataMart API to deliver data
+    console.log(`[Order Ready] ${reference} - Current status: ${order.status}`);
+
+    // If already delivered (e.g. by webhook dispatch), return success immediately
+    if (order.status === "delivered") {
+      return NextResponse.json({
+        success: true,
+        order,
+        delivery: order.datamart_response,
+      });
+    }
+
+    // 2. Immediately call DataMart API to deliver data if still pending
     let deliveryResult;
     try {
       deliveryResult = await sendDataMartDelivery({
-        network,
-        package_size,
-        phone,
-        reference,
+        network: order.network,
+        package_size: order.package_size,
+        phone: order.phone,
+        reference: order.reference,
       });
     } catch (dmErr: any) {
       console.error("[DataMart] Direct dispatch error:", dmErr);
@@ -49,14 +68,14 @@ export async function POST(request: Request) {
     // 3. Update order status based on DataMart result
     const finalStatus = deliveryResult.success ? "delivered" : "failed";
     const updatedOrder = await db.updateOrderStatus(
-      newOrder.id,
+      order.id,
       finalStatus,
       deliveryResult.raw_response || deliveryResult
     );
 
     return NextResponse.json({
       success: true,
-      order: updatedOrder || newOrder,
+      order: updatedOrder || order,
       delivery: deliveryResult,
     });
   } catch (error: any) {

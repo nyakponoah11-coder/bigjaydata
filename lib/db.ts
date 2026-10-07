@@ -395,6 +395,15 @@ export const db = {
           .select()
           .single();
         if (error) {
+          if (
+            error.code === "23505" ||
+            error.message?.includes("orders_reference_key") ||
+            error.message?.includes("duplicate key")
+          ) {
+            console.log("Order already exists in Supabase (webhook race condition), fetching existing:", orderData.reference);
+            const existing = await this.getOrderByReference(orderData.reference);
+            if (existing) return existing;
+          }
           console.error("Supabase createOrder error:", error);
           throw new Error(error.message);
         }
@@ -404,10 +413,24 @@ export const db = {
           return ord;
         }
       } catch (err: any) {
+        if (
+          err?.code === "23505" ||
+          err?.message?.includes("orders_reference_key") ||
+          err?.message?.includes("duplicate key")
+        ) {
+          console.log("Caught duplicate key exception in createOrder, returning existing:", orderData.reference);
+          const existing = await this.getOrderByReference(orderData.reference);
+          if (existing) return existing;
+        }
         console.error("Supabase createOrder exception:", err?.message || err);
         throw err;
       }
     }
+
+    const existingMemory = (globalStore.__bmgh_orders || []).find(
+      (o) => o.reference.toLowerCase() === orderData.reference.trim().toLowerCase()
+    );
+    if (existingMemory) return existingMemory;
 
     const newOrder: Order = {
       ...orderData,
