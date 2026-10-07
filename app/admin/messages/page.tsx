@@ -17,6 +17,7 @@ import {
   X,
   CornerDownRight,
   ShieldCheck,
+  Bot,
 } from "lucide-react";
 
 export default function AdminMessagesPage() {
@@ -208,6 +209,26 @@ export default function AdminMessagesPage() {
                           Click to Enlarge
                         </div>
                       </div>
+                    </div>
+                  )}
+
+                  {/* AI Assistant Instant Reply */}
+                  {m.ai_reply && (
+                    <div className="p-3.5 bg-slate-950/80 border border-amber-800/40 rounded-2xl space-y-1">
+                      <div className="flex items-center justify-between text-[11px] text-amber-400 font-bold">
+                        <span className="flex items-center gap-1.5">
+                          <Bot className="w-3.5 h-3.5 text-amber-400" />
+                          AI Assistant Instant Reply:
+                        </span>
+                        {m.ai_replied_at && (
+                          <span className="text-slate-500 font-normal">
+                            {new Date(m.ai_replied_at).toLocaleString()}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-slate-300 leading-relaxed whitespace-pre-wrap">
+                        {m.ai_reply}
+                      </p>
                     </div>
                   )}
 

@@ -91,15 +91,30 @@ export default function HelpClientView({
       setCustomerName(savedName);
       setCustomerPhone(savedPhone);
 
-      // Load initial welcome message
-      const initialWelcome: ChatMessage = {
-        id: "welcome-1",
-        sender: "ai",
-        text: `Hello bossu! 👋 Welcome to ${storeName} Help & Live Support Room.\n\nHow can we help you today? You can:\n• Type your message or questions below\n• Attach screenshots (MoMo debit SMS, receipts, or errors)\n• Ask about bundle prices or track an order reference\n\nOur AI responds instantly, and our human admin team monitors all messages right here!`,
-        timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-      };
+      // Load cached chat history or fallback to initial welcome message
+      const cachedChat = localStorage.getItem("bmgh_help_chat_" + sId);
+      let initialLoaded = false;
+      if (cachedChat) {
+        try {
+          const parsed = JSON.parse(cachedChat);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setMessages(parsed);
+            initialLoaded = true;
+          }
+        } catch {
+          // ignore parsing error
+        }
+      }
 
-      setMessages([initialWelcome]);
+      if (!initialLoaded) {
+        const initialWelcome: ChatMessage = {
+          id: "welcome-1",
+          sender: "ai",
+          text: `Hello bossu! 👋 Welcome to ${storeName} Help & Live Support Room.\n\nHow can we help you today? You can:\n• Type your message or questions below\n• Attach screenshots (MoMo debit SMS, receipts, or errors)\n• Ask about bundle prices or track an order reference\n\nOur AI responds instantly, and our human admin team monitors all messages right here!`,
+          timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        };
+        setMessages([initialWelcome]);
+      }
 
       // Fetch existing messages for this session
       fetchExistingMessages(sId, true);
@@ -126,6 +141,18 @@ export default function HelpClientView({
             timestamp: new Date(m.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
           });
 
+          // If AI has replied to this message
+          if (m.ai_reply) {
+            loaded.push({
+              id: `ai-reply-${m.id}`,
+              sender: "ai",
+              text: m.ai_reply,
+              timestamp: m.ai_replied_at
+                ? new Date(m.ai_replied_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+                : "Just now",
+            });
+          }
+
           // If admin has replied to this message, add admin bubble right after it
           if (m.reply) {
             loaded.push({
@@ -139,24 +166,38 @@ export default function HelpClientView({
           }
         });
 
-        // Compute signature to check if anything actually changed
-        const signature = loaded.map((m) => `${m.id}_${m.text}_${m.timestamp}`).join("|");
+        // Compute signature to check if anything actually changed on server
+        const signature = loaded.map((m) => `${m.id}_${m.text}`).join("|");
         if (signature === prevMessagesSig.current && !isInitial) {
           // No changes from server: DO NOT update state and do not scroll
           return;
         }
         prevMessagesSig.current = signature;
 
-        if (loaded.length > 0) {
-          setMessages((prev) => {
-            const welcome = prev.find((x) => x.id === "welcome-1");
-            return welcome ? [welcome, ...loaded] : loaded;
-          });
+        setMessages((prev) => {
+          const welcome = prev.find((x) => x.id === "welcome-1");
 
-          // Only scroll internal chat container if user has not scrolled up to read past history
-          if (!isUserScrolledUpRef.current || isInitial) {
-            setTimeout(() => scrollToBottom(!isInitial), 60);
+          // CRITICAL: NEVER wipe out active user or AI messages from screen!
+          // Filter out any messages currently in state that aren't yet matched in loaded
+          const uncommitted = prev.filter(
+            (p) =>
+              p.id !== "welcome-1" &&
+              !loaded.some(
+                (l) => l.id === p.id || (l.sender === p.sender && l.text.trim() === p.text.trim())
+              )
+          );
+
+          const combined = welcome ? [welcome, ...loaded, ...uncommitted] : [...loaded, ...uncommitted];
+
+          if (typeof window !== "undefined" && sId) {
+            localStorage.setItem("bmgh_help_chat_" + sId, JSON.stringify(combined));
           }
+          return combined;
+        });
+
+        // Only scroll internal chat container if user has not scrolled up to read past history
+        if (!isUserScrolledUpRef.current || isInitial) {
+          setTimeout(() => scrollToBottom(!isInitial), 60);
         }
       }
     } catch (err) {
@@ -214,7 +255,13 @@ export default function HelpClientView({
       timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
     };
 
-    setMessages((prev) => [...prev, userMsg]);
+    setMessages((prev) => {
+      const next = [...prev, userMsg];
+      if (typeof window !== "undefined" && sessionId) {
+        localStorage.setItem("bmgh_help_chat_" + sessionId, JSON.stringify(next));
+      }
+      return next;
+    });
     setInput("");
     setImagePreview(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
@@ -225,7 +272,7 @@ export default function HelpClientView({
 
     try {
       // 1. Save to messages table for Admin Dashboard review
-      await fetch("/api/messages", {
+      const msgRes = await fetch("/api/messages", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -236,6 +283,8 @@ export default function HelpClientView({
           session_id: sessionId,
         }),
       });
+      const msgData = await msgRes.json().catch(() => ({}));
+      const savedMsgId = msgData?.message?.id;
 
       // 2. Fetch AI response if there's text so customer gets instant help
       if (userText) {
@@ -253,15 +302,36 @@ export default function HelpClientView({
           }),
         });
 
-        const aiData = await aiRes.json();
+        const aiData = await aiRes.json().catch(() => ({}));
         if (aiData.reply) {
           const aiMsg: ChatMessage = {
-            id: "ai-" + Date.now(),
+            id: "ai-" + (savedMsgId || Date.now()),
             sender: "ai",
             text: aiData.reply,
             timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
           };
-          setMessages((prev) => [...prev, aiMsg]);
+
+          setMessages((prev) => {
+            const next = [...prev, aiMsg];
+            if (typeof window !== "undefined" && sessionId) {
+              localStorage.setItem("bmgh_help_chat_" + sessionId, JSON.stringify(next));
+            }
+            return next;
+          });
+
+          // Save AI reply to server so it permanently attaches to the message in database!
+          if (savedMsgId) {
+            fetch("/api/messages", {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                id: savedMsgId,
+                action: "ai_reply",
+                ai_reply: aiData.reply,
+              }),
+            }).catch(console.error);
+          }
+
           if (!isUserScrolledUpRef.current) {
             setTimeout(() => scrollToBottom(true), 50);
           }
@@ -269,15 +339,21 @@ export default function HelpClientView({
       }
     } catch (err: any) {
       console.error(err);
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: "err-" + Date.now(),
-          sender: "ai",
-          text: "Your message was sent to our admin team! You can also reach us immediately on WhatsApp if urgent.",
-          timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-        },
-      ]);
+      setMessages((prev) => {
+        const next: ChatMessage[] = [
+          ...prev,
+          {
+            id: "err-" + Date.now(),
+            sender: "ai",
+            text: "Your message was sent to our admin team! You can also reach us immediately on WhatsApp if urgent.",
+            timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+          },
+        ];
+        if (typeof window !== "undefined" && sessionId) {
+          localStorage.setItem("bmgh_help_chat_" + sessionId, JSON.stringify(next));
+        }
+        return next;
+      });
       if (!isUserScrolledUpRef.current) {
         setTimeout(() => scrollToBottom(true), 50);
       }

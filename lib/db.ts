@@ -86,6 +86,8 @@ export interface Message {
   image_url?: string;
   reply?: string;
   replied_at?: string;
+  ai_reply?: string;
+  ai_replied_at?: string;
   session_id?: string;
   is_read: boolean;
   created_at: string;
@@ -873,6 +875,39 @@ export const db = {
       msg.reply = replyText;
       msg.replied_at = replied_at;
       msg.is_read = true;
+      saveToDisk();
+      return msg;
+    }
+    return null;
+  },
+
+  async saveAIReply(id: string, aiReplyText: string): Promise<Message | null> {
+    const ai_replied_at = new Date().toISOString();
+    if (isSupabaseConfigured && supabaseAdmin) {
+      try {
+        const { data, error } = await supabaseAdmin
+          .from("messages")
+          .update({ ai_reply: aiReplyText, ai_replied_at })
+          .eq("id", id)
+          .select()
+          .single();
+        if (!error && data) {
+          const m = globalStore.__bmgh_messages!.find((x) => x.id === id);
+          if (m) {
+            m.ai_reply = aiReplyText;
+            m.ai_replied_at = ai_replied_at;
+          }
+          saveToDisk();
+          return data as Message;
+        }
+      } catch (err) {
+        console.error("Supabase saveAIReply error:", err);
+      }
+    }
+    const msg = globalStore.__bmgh_messages!.find((m) => m.id === id);
+    if (msg) {
+      msg.ai_reply = aiReplyText;
+      msg.ai_replied_at = ai_replied_at;
       saveToDisk();
       return msg;
     }

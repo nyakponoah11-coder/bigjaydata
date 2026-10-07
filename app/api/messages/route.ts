@@ -59,6 +59,15 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ success: true, message: updated });
     }
 
+    if (action === "ai_reply") {
+      const aiReplyText = (reply || body.ai_reply || "").trim();
+      if (!aiReplyText) {
+        return NextResponse.json({ success: false, message: "AI Reply text is required" }, { status: 400 });
+      }
+      const updated = await db.saveAIReply(id, aiReplyText);
+      return NextResponse.json({ success: true, message: updated });
+    }
+
     await db.markMessageRead(id);
     return NextResponse.json({ success: true });
   } catch (error: any) {
