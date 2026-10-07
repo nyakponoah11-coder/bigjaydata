@@ -142,8 +142,17 @@ export default function AdminSettingsPage() {
         throw new Error(data.message || "Failed to update settings");
       }
 
-      setNotice("Settings saved successfully! Frontend updated in realtime.");
-      setTimeout(() => setNotice(""), 4000);
+      if (data.settings) {
+        setSettings(data.settings);
+        if (data.settings.whatsapp_channel_url !== undefined) {
+          setWhatsappChannelUrl(data.settings.whatsapp_channel_url);
+        }
+      }
+
+      setNotice(
+        `Settings saved successfully! WhatsApp Channel (${whatsappChannelUrl.trim() ? "Channel URL Active" : "Direct Chat"}) updated.`
+      );
+      setTimeout(() => setNotice(""), 6000);
     } catch (err: any) {
       setError(err?.message || "Could not save settings");
     } finally {
@@ -249,20 +258,69 @@ export default function AdminSettingsPage() {
                 />
               </div>
 
-              <div>
-                <label className="block text-slate-400 font-semibold mb-1">
-                  WhatsApp Channel URL (Direct Channel Link)
-                </label>
-                <input
-                  type="url"
-                  value={whatsappChannelUrl}
-                  onChange={(e) => setWhatsappChannelUrl(e.target.value)}
-                  placeholder="https://whatsapp.com/channel/..."
-                  className="w-full px-3.5 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white font-medium focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                />
-                <span className="text-[10px] text-slate-500 mt-1 block">
-                  Floating WhatsApp button opens this channel link directly
-                </span>
+              <div className="sm:col-span-2 bg-slate-950/60 border border-slate-800 rounded-2xl p-4 space-y-2.5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <label className="text-slate-300 font-bold text-xs flex items-center gap-1.5">
+                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-400"></span>
+                    WhatsApp Channel URL (Direct Channel Link)
+                  </label>
+                  {whatsappChannelUrl.trim() ? (
+                    <span className="inline-flex items-center gap-1 text-[10px] bg-emerald-500/20 text-emerald-300 font-bold px-2.5 py-0.5 rounded-full border border-emerald-500/30">
+                      <CheckCircle className="w-3 h-3 text-emerald-400" />
+                      Channel Configured
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 text-[10px] bg-amber-500/10 text-amber-400 font-bold px-2.5 py-0.5 rounded-full border border-amber-500/20">
+                      Not Configured (Using wa.me Chat)
+                    </span>
+                  )}
+                </div>
+
+                <div className="relative">
+                  <input
+                    type="url"
+                    value={whatsappChannelUrl}
+                    onChange={(e) => setWhatsappChannelUrl(e.target.value)}
+                    placeholder="https://whatsapp.com/channel/..."
+                    className="w-full px-3.5 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white font-mono text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+
+                {whatsappChannelUrl.trim() ? (
+                  <div className="p-3 bg-emerald-950/30 border border-emerald-500/30 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div className="space-y-0.5 min-w-0">
+                      <p className="text-[11px] font-bold text-emerald-300 flex items-center gap-1.5">
+                        <CheckCircle className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                        Channel link is active & saved
+                      </p>
+                      <p className="text-[11px] text-slate-300 font-mono truncate max-w-md">
+                        {whatsappChannelUrl.trim()}
+                      </p>
+                      <p className="text-[10px] text-emerald-400/80">
+                        The floating WhatsApp button on the frontend links directly to this WhatsApp Channel.
+                      </p>
+                    </div>
+
+                    <a
+                      href={
+                        whatsappChannelUrl.trim().startsWith("http")
+                          ? whatsappChannelUrl.trim()
+                          : `https://${whatsappChannelUrl.trim()}`
+                      }
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600/30 hover:bg-emerald-600/50 border border-emerald-500/40 text-emerald-200 rounded-lg text-xs font-bold transition-all shrink-0 self-start sm:self-center"
+                    >
+                      <span>Open / Test Channel Link</span>
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </a>
+                  </div>
+                ) : (
+                  <p className="text-[10px] text-slate-400 flex items-center gap-1">
+                    <AlertCircle className="w-3 h-3 text-amber-400 shrink-0" />
+                    Paste your WhatsApp Channel URL (e.g. from WhatsApp Channel invite link) and click &quot;Save All Settings&quot; below.
+                  </p>
+                )}
               </div>
 
               <div>
@@ -428,17 +486,36 @@ export default function AdminSettingsPage() {
           </div>
 
           {/* SAVE BUTTON */}
-          <div className="pt-2 flex justify-end">
+          <div className="pt-2 flex flex-col sm:flex-row items-center justify-end gap-4 border-t border-slate-800/80 pt-4">
+            {notice && (
+              <div className="flex items-center gap-2 text-emerald-400 bg-emerald-950/80 border border-emerald-800 px-4 py-2 rounded-xl text-xs font-bold animate-in fade-in">
+                <CheckCircle className="w-4 h-4 shrink-0 text-emerald-400" />
+                <span>{notice}</span>
+              </div>
+            )}
             <button
               type="submit"
               disabled={saving}
-              className="py-3 px-8 bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-sm rounded-2xl shadow-xl shadow-emerald-600/30 flex items-center gap-2 transition-all disabled:opacity-50"
+              className="w-full sm:w-auto py-3 px-8 bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-sm rounded-2xl shadow-xl shadow-emerald-600/30 flex items-center justify-center gap-2 transition-all disabled:opacity-50 cursor-pointer"
             >
               {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
               Save All Settings
             </button>
           </div>
         </form>
+
+        {/* Floating Toast Notification for Immediate Feedback on any scroll position */}
+        {notice && (
+          <div className="fixed bottom-6 right-6 z-50 p-4 bg-emerald-950/95 border-2 border-emerald-500 text-emerald-200 text-xs sm:text-sm font-bold rounded-2xl shadow-2xl flex items-center gap-3 backdrop-blur-md animate-in slide-in-from-bottom-5">
+            <CheckCircle className="w-5 h-5 text-emerald-400 shrink-0" />
+            <div>
+              <p className="text-white font-black">{notice}</p>
+              <p className="text-[11px] text-emerald-300/80 font-normal">
+                Frontend floating WhatsApp button is updated in real time.
+              </p>
+            </div>
+          </div>
+        )}
       </div>
     </AdminLayout>
   );

@@ -52,7 +52,29 @@ export default function HelpClientView({
   const [fullImageModal, setFullImageModal] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const chatContainerRef = useRef<HTMLDivElement>(null);
+  const isUserScrolledUpRef = useRef(false);
+  const prevMessagesSig = useRef("");
+
+  // Helper to scroll internal chat container only - NEVER scrolls the outer page or window!
+  const scrollToBottom = (smooth = true) => {
+    const el = chatContainerRef.current;
+    if (el) {
+      el.scrollTo({
+        top: el.scrollHeight,
+        behavior: smooth ? "smooth" : "auto",
+      });
+    }
+  };
+
+  // Monitor chat container scroll so manual user scrolling is preserved
+  const handleChatScroll = () => {
+    const el = chatContainerRef.current;
+    if (!el) return;
+    const distanceToBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    // If user is more than 70px above bottom, they have deliberately scrolled up to read past history
+    isUserScrolledUpRef.current = distanceToBottom > 70;
+  };
 
   // Initialize or restore session ID & details
   useEffect(() => {
@@ -80,11 +102,11 @@ export default function HelpClientView({
       setMessages([initialWelcome]);
 
       // Fetch existing messages for this session
-      fetchExistingMessages(sId);
+      fetchExistingMessages(sId, true);
     }
   }, [storeName]);
 
-  const fetchExistingMessages = async (sId: string) => {
+  const fetchExistingMessages = async (sId: string, isInitial = false) => {
     try {
       const res = await fetch(`/api/messages?sessionId=${encodeURIComponent(sId)}`);
       const data = await res.json();
@@ -117,11 +139,24 @@ export default function HelpClientView({
           }
         });
 
+        // Compute signature to check if anything actually changed
+        const signature = loaded.map((m) => `${m.id}_${m.text}_${m.timestamp}`).join("|");
+        if (signature === prevMessagesSig.current && !isInitial) {
+          // No changes from server: DO NOT update state and do not scroll
+          return;
+        }
+        prevMessagesSig.current = signature;
+
         if (loaded.length > 0) {
           setMessages((prev) => {
             const welcome = prev.find((x) => x.id === "welcome-1");
             return welcome ? [welcome, ...loaded] : loaded;
           });
+
+          // Only scroll internal chat container if user has not scrolled up to read past history
+          if (!isUserScrolledUpRef.current || isInitial) {
+            setTimeout(() => scrollToBottom(!isInitial), 60);
+          }
         }
       }
     } catch (err) {
@@ -129,19 +164,14 @@ export default function HelpClientView({
     }
   };
 
-  // Poll for admin replies every 6 seconds
+  // Poll for admin replies every 6 seconds without disrupting scroll
   useEffect(() => {
     if (!sessionId) return;
     const interval = setInterval(() => {
-      fetchExistingMessages(sessionId);
+      fetchExistingMessages(sessionId, false);
     }, 6000);
     return () => clearInterval(interval);
   }, [sessionId]);
-
-  // Scroll to bottom whenever messages update
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, imagePreview, loading]);
 
   // Handle Image File Selection
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -190,6 +220,9 @@ export default function HelpClientView({
     if (fileInputRef.current) fileInputRef.current.value = "";
     setLoading(true);
 
+    isUserScrolledUpRef.current = false;
+    setTimeout(() => scrollToBottom(true), 40);
+
     try {
       // 1. Save to messages table for Admin Dashboard review
       await fetch("/api/messages", {
@@ -229,6 +262,9 @@ export default function HelpClientView({
             timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
           };
           setMessages((prev) => [...prev, aiMsg]);
+          if (!isUserScrolledUpRef.current) {
+            setTimeout(() => scrollToBottom(true), 50);
+          }
         }
       }
     } catch (err: any) {
@@ -242,12 +278,22 @@ export default function HelpClientView({
           timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
         },
       ]);
+      if (!isUserScrolledUpRef.current) {
+        setTimeout(() => scrollToBottom(true), 50);
+      }
     } finally {
       setLoading(false);
     }
   };
 
-  const channelLink = whatsappChannelUrl || `https://wa.me/${whatsappNumber.replace(/[^0-9]/g, "")}`;
+  const cleanNumber = (whatsappNumber || "233551234567").replace(/[^0-9]/g, "");
+  const rawChannel = (whatsappChannelUrl || "").trim();
+  const formattedChannel = rawChannel
+    ? rawChannel.startsWith("http://") || rawChannel.startsWith("https://")
+      ? rawChannel
+      : `https://${rawChannel}`
+    : "";
+  const channelLink = formattedChannel || `https://wa.me/${cleanNumber}`;
 
   const quickPrompts = [
     { label: "💰 MTN Prices", prompt: "What are the rates for MTN data bundles?" },
@@ -274,9 +320,10 @@ export default function HelpClientView({
             target="_blank"
             rel="noopener noreferrer"
             className="py-1.5 px-3 bg-emerald-600/90 hover:bg-emerald-600 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm shadow-emerald-900/30"
+            title={formattedChannel ? "Join WhatsApp Channel" : "WhatsApp Care"}
           >
             <MessageCircle className="w-3.5 h-3.5 fill-current" />
-            <span>WhatsApp Care</span>
+            <span>{formattedChannel ? "WhatsApp Channel" : "WhatsApp Care"}</span>
           </a>
 
           <Link
@@ -366,7 +413,11 @@ export default function HelpClientView({
         )}
 
         {/* CHAT MESSAGES SCROLL AREA */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4 bg-gradient-to-b from-slate-950 via-[#0a111e] to-slate-950">
+        <div
+          ref={chatContainerRef}
+          onScroll={handleChatScroll}
+          className="flex-1 overflow-y-auto overscroll-contain p-4 sm:p-5 space-y-4 bg-gradient-to-b from-slate-950 via-[#0a111e] to-slate-950"
+        >
           {messages.map((m) => {
             const isUser = m.sender === "user";
             const isAdmin = m.sender === "admin";
@@ -438,8 +489,6 @@ export default function HelpClientView({
               <span>Thinking & saving message...</span>
             </div>
           )}
-
-          <div ref={messagesEndRef} />
         </div>
 
         {/* QUICK SUGGESTIONS CHIPS */}

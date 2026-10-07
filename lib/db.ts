@@ -1,4 +1,6 @@
 import { supabaseAdmin, isSupabaseConfigured } from "./supabase";
+import fs from "fs";
+import path from "path";
 
 export interface Product {
   id: string;
@@ -195,6 +197,23 @@ let initialMessages: Message[] = [
 ];
 
 // Persistent global cache in Node environment
+const DATA_DIR = path.join(process.cwd(), "data");
+const STORE_FILE = path.join(DATA_DIR, "store.json");
+
+function loadFromDisk(): any {
+  try {
+    if (typeof window === "undefined" && fs.existsSync(STORE_FILE)) {
+      const raw = fs.readFileSync(STORE_FILE, "utf-8");
+      return JSON.parse(raw);
+    }
+  } catch (err) {
+    console.warn("Failed to load local store from disk:", err);
+  }
+  return null;
+}
+
+const diskData = loadFromDisk();
+
 const globalStore = globalThis as unknown as {
   __bmgh_products?: Product[];
   __bmgh_settings?: Settings;
@@ -204,12 +223,37 @@ const globalStore = globalThis as unknown as {
   __bmgh_voucher_claims?: VoucherClaim[];
 };
 
-if (!globalStore.__bmgh_products) globalStore.__bmgh_products = initialProducts;
-if (!globalStore.__bmgh_settings) globalStore.__bmgh_settings = initialSettings;
-if (!globalStore.__bmgh_orders) globalStore.__bmgh_orders = initialOrders;
-if (!globalStore.__bmgh_messages) globalStore.__bmgh_messages = initialMessages;
-if (!globalStore.__bmgh_vouchers) globalStore.__bmgh_vouchers = [];
-if (!globalStore.__bmgh_voucher_claims) globalStore.__bmgh_voucher_claims = [];
+function saveToDisk() {
+  try {
+    if (typeof window === "undefined") {
+      if (!fs.existsSync(DATA_DIR)) {
+        fs.mkdirSync(DATA_DIR, { recursive: true });
+      }
+      const dataToSave = {
+        settings: globalStore.__bmgh_settings,
+        products: globalStore.__bmgh_products,
+        orders: globalStore.__bmgh_orders,
+        messages: globalStore.__bmgh_messages,
+        vouchers: globalStore.__bmgh_vouchers,
+        voucher_claims: globalStore.__bmgh_voucher_claims,
+      };
+      fs.writeFileSync(STORE_FILE, JSON.stringify(dataToSave, null, 2), "utf-8");
+    }
+  } catch (err) {
+    console.warn("Failed to save local store to disk:", err);
+  }
+}
+
+if (!globalStore.__bmgh_products) globalStore.__bmgh_products = diskData?.products || initialProducts;
+if (!globalStore.__bmgh_settings) {
+  globalStore.__bmgh_settings = diskData?.settings
+    ? { ...initialSettings, ...diskData.settings }
+    : initialSettings;
+}
+if (!globalStore.__bmgh_orders) globalStore.__bmgh_orders = diskData?.orders || initialOrders;
+if (!globalStore.__bmgh_messages) globalStore.__bmgh_messages = diskData?.messages || initialMessages;
+if (!globalStore.__bmgh_vouchers) globalStore.__bmgh_vouchers = diskData?.vouchers || [];
+if (!globalStore.__bmgh_voucher_claims) globalStore.__bmgh_voucher_claims = diskData?.voucher_claims || [];
 
 export const db = {
   // SETTINGS
@@ -217,7 +261,14 @@ export const db = {
     if (isSupabaseConfigured && supabaseAdmin) {
       try {
         const { data, error } = await supabaseAdmin.from("settings").select("*").eq("id", "default").single();
-        if (!error && data) return data as Settings;
+        if (!error && data) {
+          const merged = { ...globalStore.__bmgh_settings, ...data };
+          // Preserve whatsapp_channel_url if configured locally or in db
+          if (data.whatsapp_channel_url !== undefined) merged.whatsapp_channel_url = data.whatsapp_channel_url;
+          globalStore.__bmgh_settings = merged;
+          saveToDisk();
+          return merged as Settings;
+        }
       } catch (err) {
         console.error("Supabase getSettings error:", err);
       }
@@ -243,6 +294,7 @@ export const db = {
             store_name: updates.store_name,
             support_phone: updates.support_phone,
             whatsapp_number: updates.whatsapp_number,
+            whatsapp_channel_url: updates.whatsapp_channel_url,
             email: updates.email,
             paystack_public_key: updates.paystack_public_key,
             paystack_secret_key: updates.paystack_secret_key,
@@ -264,6 +316,7 @@ export const db = {
             ...(data as Settings),
             ...updates,
           };
+          saveToDisk();
           return globalStore.__bmgh_settings;
         }
       } catch (err) {
@@ -275,6 +328,7 @@ export const db = {
       ...updates,
       updated_at: new Date().toISOString(),
     };
+    saveToDisk();
     return globalStore.__bmgh_settings;
   },
 
@@ -322,6 +376,7 @@ export const db = {
         if (data) {
           const created = data as Product;
           globalStore.__bmgh_products = [created, ...(globalStore.__bmgh_products || [])];
+          saveToDisk();
           return created;
         }
       } catch (err: any) {
@@ -336,6 +391,7 @@ export const db = {
       created_at: new Date().toISOString(),
     };
     globalStore.__bmgh_products = [newProduct, ...(globalStore.__bmgh_products || [])];
+    saveToDisk();
     return newProduct;
   },
 
@@ -363,6 +419,7 @@ export const db = {
           const updated = data as Product;
           const idx = (globalStore.__bmgh_products || []).findIndex((p) => p.id === id);
           if (idx !== -1) globalStore.__bmgh_products![idx] = updated;
+          saveToDisk();
           return updated;
         }
       } catch (err: any) {
@@ -374,6 +431,7 @@ export const db = {
     const index = (globalStore.__bmgh_products || []).findIndex((p) => p.id === id);
     if (index === -1) return null;
     globalStore.__bmgh_products![index] = { ...globalStore.__bmgh_products![index], ...updates };
+    saveToDisk();
     return globalStore.__bmgh_products![index];
   },
 
@@ -386,6 +444,7 @@ export const db = {
           throw new Error(error.message);
         }
         globalStore.__bmgh_products = (globalStore.__bmgh_products || []).filter((p) => p.id !== id);
+        saveToDisk();
         return true;
       } catch (err: any) {
         console.error("Supabase deleteProduct exception:", err?.message || err);
@@ -396,6 +455,7 @@ export const db = {
     const index = (globalStore.__bmgh_products || []).findIndex((p) => p.id === id);
     if (index === -1) return false;
     globalStore.__bmgh_products!.splice(index, 1);
+    saveToDisk();
     return true;
   },
 
@@ -572,6 +632,7 @@ export const db = {
         if (data) {
           const ord = normalizeOrder(data as Order);
           globalStore.__bmgh_orders = [ord, ...(globalStore.__bmgh_orders || [])];
+          saveToDisk();
           return ord;
         }
       } catch (err: any) {
@@ -604,6 +665,7 @@ export const db = {
     });
 
     globalStore.__bmgh_orders!.unshift(newOrder);
+    saveToDisk();
     return newOrder;
   },
 
@@ -647,7 +709,15 @@ export const db = {
           error = fallbackRes.error;
         }
 
-        if (!error && data) return normalizeOrder(data as Order);
+        if (!error && data) {
+          const ord = normalizeOrder(data as Order);
+          const idx = (globalStore.__bmgh_orders || []).findIndex(
+            (o) => o.id === ord.id || o.reference.toLowerCase() === ord.reference.toLowerCase()
+          );
+          if (idx !== -1) globalStore.__bmgh_orders![idx] = ord;
+          saveToDisk();
+          return ord;
+        }
       } catch (err) {
         console.error("Supabase updateOrderStatus error:", err);
       }
@@ -661,6 +731,7 @@ export const db = {
     if (targetDeliveryStatus) order.delivery_status = targetDeliveryStatus;
     if (targetPaymentStatus) order.payment_status = targetPaymentStatus;
     if (datamartResponse) order.datamart_response = datamartResponse;
+    saveToDisk();
     return normalizeOrder(order);
   },
 
@@ -696,13 +767,18 @@ export const db = {
     if (isSupabaseConfigured && supabaseAdmin) {
       try {
         const { data, error } = await supabaseAdmin.from("messages").insert([newMsg]).select().single();
-        if (!error && data) return data as Message;
+        if (!error && data) {
+          globalStore.__bmgh_messages!.unshift(data as Message);
+          saveToDisk();
+          return data as Message;
+        }
       } catch (err) {
         console.error("Supabase createMessage error:", err);
       }
     }
 
     globalStore.__bmgh_messages!.unshift(newMsg);
+    saveToDisk();
     return newMsg;
   },
 
@@ -716,7 +792,16 @@ export const db = {
           .eq("id", id)
           .select()
           .single();
-        if (!error && data) return data as Message;
+        if (!error && data) {
+          const m = globalStore.__bmgh_messages!.find((x) => x.id === id);
+          if (m) {
+            m.reply = replyText;
+            m.replied_at = replied_at;
+            m.is_read = true;
+          }
+          saveToDisk();
+          return data as Message;
+        }
       } catch (err) {
         console.error("Supabase replyMessage error:", err);
       }
@@ -726,6 +811,7 @@ export const db = {
       msg.reply = replyText;
       msg.replied_at = replied_at;
       msg.is_read = true;
+      saveToDisk();
       return msg;
     }
     return null;
@@ -735,13 +821,13 @@ export const db = {
     if (isSupabaseConfigured && supabaseAdmin) {
       try {
         await supabaseAdmin.from("messages").update({ is_read: true }).eq("id", id);
-        return true;
       } catch (err) {
         console.error("Supabase markMessageRead error:", err);
       }
     }
     const msg = globalStore.__bmgh_messages!.find((m) => m.id === id);
     if (msg) msg.is_read = true;
+    saveToDisk();
     return true;
   },
 
@@ -801,7 +887,12 @@ export const db = {
     if (isSupabaseConfigured && supabaseAdmin) {
       try {
         const { data, error } = await supabaseAdmin.from("vouchers").insert([newVoucher]).select().single();
-        if (!error && data) return data as Voucher;
+        if (!error && data) {
+          if (!globalStore.__bmgh_vouchers) globalStore.__bmgh_vouchers = [];
+          globalStore.__bmgh_vouchers.unshift(data as Voucher);
+          saveToDisk();
+          return data as Voucher;
+        }
       } catch (err) {
         console.error("Supabase createVoucher error:", err);
       }
@@ -809,6 +900,7 @@ export const db = {
 
     if (!globalStore.__bmgh_vouchers) globalStore.__bmgh_vouchers = [];
     globalStore.__bmgh_vouchers.unshift(newVoucher);
+    saveToDisk();
     return newVoucher;
   },
 
@@ -822,6 +914,7 @@ export const db = {
     }
     const v = (globalStore.__bmgh_vouchers || []).find((x) => x.id === id);
     if (v) v.is_active = is_active;
+    saveToDisk();
     return true;
   },
 
@@ -836,6 +929,7 @@ export const db = {
     (globalStore.__bmgh_vouchers || []).forEach((v) => {
       v.is_active = is_active;
     });
+    saveToDisk();
     return true;
   },
 
@@ -850,6 +944,7 @@ export const db = {
     if (globalStore.__bmgh_vouchers) {
       globalStore.__bmgh_vouchers = globalStore.__bmgh_vouchers.filter((x) => x.id !== id);
     }
+    saveToDisk();
     return true;
   },
 

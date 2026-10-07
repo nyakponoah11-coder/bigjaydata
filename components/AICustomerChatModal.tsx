@@ -52,15 +52,17 @@ export default function AICustomerChatModal({
   ]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const chatAreaRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (isOpen) {
       setTimeout(() => {
         inputRef.current?.focus();
-        scrollRef.current?.scrollIntoView({ behavior: "smooth" });
-      }, 100);
+        if (chatAreaRef.current) {
+          chatAreaRef.current.scrollTop = chatAreaRef.current.scrollHeight;
+        }
+      }, 50);
     }
   }, [isOpen, messages]);
 
@@ -169,7 +171,7 @@ export default function AICustomerChatModal({
         </div>
 
         {/* MESSAGES SCROLL AREA */}
-        <div className="flex-1 p-4 sm:p-5 overflow-y-auto space-y-4 text-xs sm:text-sm font-sans">
+        <div ref={chatAreaRef} className="flex-1 p-4 sm:p-5 overflow-y-auto overscroll-contain space-y-4 text-xs sm:text-sm font-sans">
           {messages.map((m) => (
             <div
               key={m.id}
@@ -202,8 +204,6 @@ export default function AICustomerChatModal({
               <span>AI assistant is typing...</span>
             </div>
           )}
-
-          <div ref={scrollRef} />
         </div>
 
         {/* QUICK SUGGESTIONS CAROUSEL */}
