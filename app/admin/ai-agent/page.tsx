@@ -2,6 +2,7 @@
 
 import React, { useState, useRef, useEffect } from "react";
 import AdminLayout from "@/components/AdminLayout";
+import Link from "next/link";
 import {
   Bot,
   Send,
@@ -21,6 +22,7 @@ import {
   Save,
   MessageSquare,
   Zap,
+  BrainCircuit,
 } from "lucide-react";
 
 interface ChatMessage {
@@ -301,6 +303,13 @@ export default function AdminAIAgentPage() {
               <MessageSquare className="w-3.5 h-3.5" />
               <span>Live Test Playground</span>
             </button>
+            <Link
+              href="/admin/ai-instructions"
+              className="px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/25"
+            >
+              <BrainCircuit className="w-3.5 h-3.5 text-emerald-400" />
+              <span>AI Instructions & Training</span>
+            </Link>
           </div>
         </div>
 

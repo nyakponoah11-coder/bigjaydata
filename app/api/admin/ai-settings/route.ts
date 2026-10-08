@@ -39,6 +39,8 @@ export async function GET() {
         openai_api_key_masked: maskKey(settings.openai_api_key),
         openai_model: settings.openai_model || "gpt-4o-mini",
         openai_configured: Boolean(settings.openai_api_key),
+
+        ai_system_instructions: settings.ai_system_instructions || "",
       },
     });
   } catch (err: any) {
@@ -95,6 +97,10 @@ export async function POST(request: Request) {
     }
     if (body.openai_model !== undefined) updates.openai_model = (body.openai_model || "gpt-4o-mini").trim();
 
+    if (body.ai_system_instructions !== undefined) {
+      updates.ai_system_instructions = String(body.ai_system_instructions || "");
+    }
+
     const saved = await db.updateSettings(updates);
     const maskKey = (k?: string) => {
       if (!k || k.length < 8) return k ? "••••••••" : "";
@@ -106,7 +112,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       success: true,
-      message: "AI keys and model rotation configuration successfully saved!",
+      message: "AI configuration and instructions successfully saved!",
       settings: {
         gemini_api_key: saved.gemini_api_key || "",
         gemini_api_key_masked: maskKey(saved.gemini_api_key),
@@ -127,6 +133,8 @@ export async function POST(request: Request) {
         openai_api_key_masked: maskKey(saved.openai_api_key),
         openai_model: saved.openai_model || "gpt-4o-mini",
         openai_configured: Boolean(saved.openai_api_key),
+
+        ai_system_instructions: saved.ai_system_instructions || "",
       },
     });
   } catch (err: any) {

@@ -94,6 +94,7 @@ export interface Settings {
   grok_model?: string;
   openai_api_key?: string;
   openai_model?: string;
+  ai_system_instructions?: string;
   created_at?: string;
   updated_at?: string;
 }
@@ -162,6 +163,7 @@ let initialSettings: Settings = {
   grok_model: "llama-3.3-70b-versatile",
   openai_api_key: process.env.OPENAI_API_KEY || "",
   openai_model: "gpt-4o-mini",
+  ai_system_instructions: "",
   created_at: new Date().toISOString(),
   updated_at: new Date().toISOString(),
 };
@@ -342,6 +344,28 @@ export const db = {
           if (data.openai_model) merged.openai_model = data.openai_model;
           else if (globalStore.__bmgh_settings?.openai_model) merged.openai_model = globalStore.__bmgh_settings.openai_model;
 
+          if (data.ai_system_instructions !== undefined && data.ai_system_instructions !== null) {
+            merged.ai_system_instructions = String(data.ai_system_instructions);
+          } else if (globalStore.__bmgh_settings?.ai_system_instructions) {
+            merged.ai_system_instructions = globalStore.__bmgh_settings.ai_system_instructions;
+          }
+
+          // Check fallback config row in Supabase so AI instructions never disappear across restarts
+          if (!merged.ai_system_instructions) {
+            try {
+              const { data: aiRow } = await supabaseAdmin
+                .from("settings")
+                .select("announcement_text")
+                .eq("id", "ai_instructions_config")
+                .maybeSingle();
+              if (aiRow?.announcement_text && String(aiRow.announcement_text).trim()) {
+                merged.ai_system_instructions = String(aiRow.announcement_text).trim();
+              }
+            } catch (aiErr) {
+              // ignore
+            }
+          }
+
           globalStore.__bmgh_settings = merged;
           saveToDisk();
           return merged;
@@ -397,6 +421,18 @@ export const db = {
           }
         }
 
+        // Save AI instructions to dedicated config row so it NEVER disappears even if schema is old
+        if (safeUpdates.ai_system_instructions !== undefined) {
+          try {
+            await supabaseAdmin.from("settings").upsert({
+              id: "ai_instructions_config",
+              announcement_text: safeUpdates.ai_system_instructions,
+            });
+          } catch (aiErr) {
+            console.warn("AI instructions backup row save error:", aiErr);
+          }
+        }
+
         const payload = { id: "default", ...safeUpdates, updated_at: new Date().toISOString() };
         let { data, error } = await supabaseAdmin
           .from("settings")
@@ -429,6 +465,7 @@ export const db = {
 
         if (data) {
           const prevChan = globalStore.__bmgh_settings?.whatsapp_channel_url || "";
+          const prevAI = globalStore.__bmgh_settings?.ai_system_instructions || "";
           globalStore.__bmgh_settings = {
             ...globalStore.__bmgh_settings!,
             ...(data as Settings),
@@ -436,6 +473,9 @@ export const db = {
           };
           if (!globalStore.__bmgh_settings.whatsapp_channel_url && prevChan && safeUpdates.whatsapp_channel_url === undefined) {
             globalStore.__bmgh_settings.whatsapp_channel_url = prevChan;
+          }
+          if (!globalStore.__bmgh_settings.ai_system_instructions && prevAI && safeUpdates.ai_system_instructions === undefined) {
+            globalStore.__bmgh_settings.ai_system_instructions = prevAI;
           }
           saveToDisk();
           return globalStore.__bmgh_settings;

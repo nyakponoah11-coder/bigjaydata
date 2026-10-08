@@ -71,6 +71,7 @@ ALTER TABLE public.settings ADD COLUMN IF NOT EXISTS grok_api_key TEXT DEFAULT '
 ALTER TABLE public.settings ADD COLUMN IF NOT EXISTS grok_model TEXT DEFAULT 'grok-2-latest';
 ALTER TABLE public.settings ADD COLUMN IF NOT EXISTS openai_api_key TEXT DEFAULT '';
 ALTER TABLE public.settings ADD COLUMN IF NOT EXISTS openai_model TEXT DEFAULT 'gpt-4o-mini';
+ALTER TABLE public.settings ADD COLUMN IF NOT EXISTS ai_system_instructions TEXT DEFAULT '';
 
 -- 4. MESSAGES TABLE
 CREATE TABLE IF NOT EXISTS public.messages (
