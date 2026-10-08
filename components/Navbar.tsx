@@ -108,22 +108,8 @@ export default function Navbar({
               </span>
             </Link>
 
-            {/* Right Side: Menu Toggle Button & Quick WhatsApp Channel Link */}
+            {/* Right Side: Menu Toggle Button */}
             <div className="flex items-center gap-2.5">
-              {resolvedChannelLink && (
-                <a
-                  href={resolvedChannelLink}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="hidden sm:inline-flex items-center gap-2 px-3 py-2 rounded-2xl bg-[#25D366]/15 hover:bg-[#25D366]/25 border border-[#25D366]/30 text-emerald-800 dark:text-emerald-300 font-bold text-xs transition-all shadow-xs"
-                >
-                  <svg className="w-4 h-4 fill-current text-[#25D366]" viewBox="0 0 24 24">
-                    <path d="M12.031 6.172c-3.181 0-5.767 2.586-5.768 5.766-.001 1.298.38 2.27 1.019 3.287l-.711 2.598 2.664-.699c.97.53 1.769.82 2.8.82 3.181 0 5.767-2.586 5.768-5.766 0-3.18-2.586-5.766-5.772-5.766zm3.392 8.244c-.144.405-.837.774-1.17.824-.312.045-.697.07-1.127-.069-.272-.089-.623-.223-1.077-.421-1.921-.838-3.17-2.775-3.266-2.903-.095-.128-.778-1.034-.778-1.97 0-.936.491-1.398.666-1.589.175-.19.382-.238.51-.238.127 0 .254.001.365.006.118.005.277-.045.433.332.162.392.553 1.349.602 1.448.049.099.082.215.016.345-.065.13-.098.211-.194.323-.096.112-.204.25-.291.336-.098.096-.2.201-.086.397.114.195.508.839 1.09 1.358.749.668 1.38.874 1.576.972.196.098.311.082.426-.049.115-.131.491-.571.622-.767.131-.196.262-.164.442-.098.18.065 1.144.539 1.34.637.196.098.327.147.376.23.049.082.049.477-.095.882z" />
-                  </svg>
-                  <span>WhatsApp Channel</span>
-                </a>
-              )}
-
               <button
                 onClick={() => setIsOpen(!isOpen)}
                 className="flex items-center gap-2 px-3.5 py-2 rounded-2xl bg-slate-900 hover:bg-slate-800 text-white dark:bg-slate-800 dark:hover:bg-slate-700 transition-all shadow-md group border border-slate-800 dark:border-slate-700"
