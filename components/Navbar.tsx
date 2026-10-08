@@ -33,16 +33,28 @@ export default function Navbar({
   const [channelUrl, setChannelUrl] = useState(whatsappChannelUrl || "");
   const pathname = usePathname();
 
-  // Load WhatsApp channel URL from prop and fetch latest from settings
+  // Load WhatsApp channel URL from prop, localStorage cache, and fetch latest from settings
   useEffect(() => {
     if (whatsappChannelUrl) {
       setChannelUrl(whatsappChannelUrl);
     }
-    fetch("/api/settings")
+    // Check localStorage cache so link NEVER disappears even if server is cold starting
+    try {
+      const cached = localStorage.getItem("bigjay_whatsapp_channel_url");
+      if (cached && !whatsappChannelUrl) {
+        setChannelUrl(cached);
+      }
+    } catch {}
+
+    fetch("/api/settings", { cache: "no-store" })
       .then((r) => r.json())
       .then((d) => {
-        if (d?.settings?.whatsapp_channel_url) {
-          setChannelUrl(d.settings.whatsapp_channel_url);
+        if (d?.settings?.whatsapp_channel_url && String(d.settings.whatsapp_channel_url).trim()) {
+          const fresh = String(d.settings.whatsapp_channel_url).trim();
+          setChannelUrl(fresh);
+          try {
+            localStorage.setItem("bigjay_whatsapp_channel_url", fresh);
+          } catch {}
         }
       })
       .catch(() => {});
@@ -58,9 +70,35 @@ export default function Navbar({
 
   const directChannelUrl = sanitizeUrl(channelUrl);
 
+  const isValidChannelUrl = (url?: string) => {
+    if (!url) return false;
+    const clean = url.trim().toLowerCase();
+    if (
+      clean.includes("...") ||
+      clean === "https://whatsapp.com/channel" ||
+      clean === "https://whatsapp.com/channel/" ||
+      clean === "http://whatsapp.com/channel"
+    ) {
+      return false;
+    }
+    return clean.includes("whatsapp.com/channel/") || clean.includes("chat.whatsapp.com/");
+  };
+
+  const handleOpenChannel = (e: React.MouseEvent<HTMLAnchorElement>) => {
+    if (!directChannelUrl || !isValidChannelUrl(directChannelUrl)) {
+      e.preventDefault();
+      alert("WhatsApp Channel link is not yet configured in Admin Settings. Please use WhatsApp Support below to chat directly with us!");
+      return;
+    }
+    // Delay closing drawer so browser navigation is not interrupted on mobile
+    setTimeout(() => {
+      setIsOpen(false);
+    }, 400);
+  };
+
   // CRITICAL: The WhatsApp Channel MUST ONLY link to the channel URL provided in admin settings.
   // It must NEVER link to the WhatsApp phone number!
-  const resolvedChannelLink = directChannelUrl || "https://whatsapp.com/channel/";
+  const resolvedChannelLink = directChannelUrl;
 
   // Close drawer on route change
   useEffect(() => {
@@ -208,7 +246,7 @@ export default function Navbar({
                   href={resolvedChannelLink}
                   target="_blank"
                   rel="noopener noreferrer"
-                  onClick={() => setIsOpen(false)}
+                  onClick={handleOpenChannel}
                   className="flex items-center justify-center gap-2.5 w-full py-3.5 px-4 rounded-2xl bg-[#25D366] hover:bg-[#20ba59] text-slate-950 font-black text-xs tracking-wide shadow-lg shadow-emerald-500/20 transition-all hover:scale-[1.02] active:scale-95 group"
                 >
                   <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">

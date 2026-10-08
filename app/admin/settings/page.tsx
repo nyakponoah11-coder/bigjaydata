@@ -168,7 +168,17 @@ export default function AdminSettingsPage() {
         setStoreName(s.store_name || "BundleMartGh");
         setSupportPhone(s.support_phone || "");
         setWhatsappNumber(s.whatsapp_number || "");
-        setWhatsappChannelUrl(s.whatsapp_channel_url || "");
+        let chanUrl = s.whatsapp_channel_url || "";
+        if (!chanUrl) {
+          try {
+            chanUrl = localStorage.getItem("bigjay_whatsapp_channel_url") || "";
+          } catch {}
+        } else {
+          try {
+            localStorage.setItem("bigjay_whatsapp_channel_url", chanUrl);
+          } catch {}
+        }
+        setWhatsappChannelUrl(chanUrl);
         setEmail(s.email || "");
         setPaystackPublicKey(s.paystack_public_key || "");
         setPaystackSecretKey(s.paystack_secret_key || "");
@@ -260,6 +270,11 @@ export default function AdminSettingsPage() {
         }
         if (data.settings.whatsapp_channel_url !== undefined) {
           setWhatsappChannelUrl(data.settings.whatsapp_channel_url);
+          try {
+            if (data.settings.whatsapp_channel_url) {
+              localStorage.setItem("bigjay_whatsapp_channel_url", data.settings.whatsapp_channel_url);
+            }
+          } catch {}
         }
         if (data.settings.gemini_api_key !== undefined) {
           setGeminiApiKey(data.settings.gemini_api_key);

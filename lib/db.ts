@@ -296,6 +296,22 @@ export const db = {
             merged.whatsapp_channel_url = globalStore.__bmgh_settings.whatsapp_channel_url;
           }
 
+          // Check backup config row in Supabase so link never disappears across container restarts
+          if (!merged.whatsapp_channel_url) {
+            try {
+              const { data: bRow } = await supabaseAdmin
+                .from("settings")
+                .select("store_name")
+                .eq("id", "whatsapp_channel_config")
+                .maybeSingle();
+              if (bRow?.store_name && String(bRow.store_name).trim()) {
+                merged.whatsapp_channel_url = String(bRow.store_name).trim();
+              }
+            } catch (bErr) {
+              // ignore
+            }
+          }
+
           if (data.announcement_text && String(data.announcement_text).trim()) {
             merged.announcement_text = String(data.announcement_text).trim();
           } else if (globalStore.__bmgh_settings?.announcement_text) {
@@ -369,6 +385,18 @@ export const db = {
 
     if (isSupabaseConfigured && supabaseAdmin) {
       try {
+        // Save WhatsApp channel url to dedicated config row so it NEVER disappears even if schema is old
+        if (safeUpdates.whatsapp_channel_url !== undefined) {
+          try {
+            await supabaseAdmin.from("settings").upsert({
+              id: "whatsapp_channel_config",
+              store_name: safeUpdates.whatsapp_channel_url.trim(),
+            });
+          } catch (bErr) {
+            console.warn("Channel backup row save error:", bErr);
+          }
+        }
+
         const payload = { id: "default", ...safeUpdates, updated_at: new Date().toISOString() };
         let { data, error } = await supabaseAdmin
           .from("settings")
@@ -384,7 +412,6 @@ export const db = {
             store_name: safeUpdates.store_name,
             support_phone: safeUpdates.support_phone,
             whatsapp_number: safeUpdates.whatsapp_number,
-            whatsapp_channel_url: safeUpdates.whatsapp_channel_url,
             email: safeUpdates.email,
             paystack_public_key: safeUpdates.paystack_public_key,
             paystack_secret_key: safeUpdates.paystack_secret_key,
@@ -392,12 +419,6 @@ export const db = {
             datamart_api_url: safeUpdates.datamart_api_url,
             announcement_text: safeUpdates.announcement_text,
             announcement_active: safeUpdates.announcement_active,
-            gemini_api_key: safeUpdates.gemini_api_key,
-            gemini_model: safeUpdates.gemini_model,
-            grok_api_key: safeUpdates.grok_api_key,
-            grok_model: safeUpdates.grok_model,
-            openai_api_key: safeUpdates.openai_api_key,
-            openai_model: safeUpdates.openai_model,
             updated_at: new Date().toISOString(),
           };
           // Filter out undefined keys
@@ -407,11 +428,15 @@ export const db = {
         }
 
         if (data) {
+          const prevChan = globalStore.__bmgh_settings?.whatsapp_channel_url || "";
           globalStore.__bmgh_settings = {
             ...globalStore.__bmgh_settings!,
             ...(data as Settings),
             ...safeUpdates,
           };
+          if (!globalStore.__bmgh_settings.whatsapp_channel_url && prevChan && safeUpdates.whatsapp_channel_url === undefined) {
+            globalStore.__bmgh_settings.whatsapp_channel_url = prevChan;
+          }
           saveToDisk();
           return globalStore.__bmgh_settings;
         }
