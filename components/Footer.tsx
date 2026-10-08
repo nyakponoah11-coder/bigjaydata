@@ -145,7 +145,7 @@ export default function Footer({
               Secured with <span className="font-semibold text-emerald-400">Paystack</span>
             </span>
             <span>•</span>
-            <span className="text-slate-300 font-medium">Built by Stoney</span>
+            <span className="text-slate-300 font-medium">Built by Stony</span>
           </div>
         </div>
       </div>

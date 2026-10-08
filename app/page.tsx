@@ -9,6 +9,7 @@ import NetworkSelectionSection from "@/components/NetworkSelectionSection";
 import HowToBuyAccordion from "@/components/HowToBuyAccordion";
 import BackgroundVideo from "@/components/BackgroundVideo";
 import HeroActionButtons from "@/components/HeroActionButtons";
+import DownloadAppBanner from "@/components/DownloadAppBanner";
 import {
   Zap,
   ShieldCheck,
@@ -93,6 +94,9 @@ export default async function HomePage() {
           </div>
         </div>
       </section>
+
+      {/* MOBILE APP / APK INSTALL BANNER (ANDROID & IPHONE) */}
+      <DownloadAppBanner storeName={settings.store_name} />
 
       {/* LAPTOP-FRIENDLY & SOLID BLACK NETWORK CARDS */}
       <NetworkSelectionSection
