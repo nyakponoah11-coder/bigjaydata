@@ -24,6 +24,7 @@ import {
   Layers,
 } from "lucide-react";
 
+export const dynamic = "force-dynamic";
 export const revalidate = 0; // Dynamic on every request to reflect admin settings immediately
 
 export default async function HomePage() {

@@ -252,6 +252,12 @@ export default function AdminSettingsPage() {
 
       if (data.settings) {
         setSettings(data.settings);
+        if (data.settings.announcement_text !== undefined) {
+          setAnnouncementText(data.settings.announcement_text);
+        }
+        if (data.settings.announcement_active !== undefined) {
+          setAnnouncementActive(data.settings.announcement_active !== false);
+        }
         if (data.settings.whatsapp_channel_url !== undefined) {
           setWhatsappChannelUrl(data.settings.whatsapp_channel_url);
         }

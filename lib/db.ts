@@ -289,11 +289,23 @@ export const db = {
         const { data, error } = await supabaseAdmin.from("settings").select("*").eq("id", "default").single();
         if (!error && data) {
           const merged: Settings = { ...globalStore.__bmgh_settings, ...data };
-          // Preserve channel url and AI keys if configured locally
+          // Preserve channel url, announcement, and AI keys if configured locally
           if (data.whatsapp_channel_url && String(data.whatsapp_channel_url).trim()) {
             merged.whatsapp_channel_url = String(data.whatsapp_channel_url).trim();
           } else if (globalStore.__bmgh_settings?.whatsapp_channel_url) {
             merged.whatsapp_channel_url = globalStore.__bmgh_settings.whatsapp_channel_url;
+          }
+
+          if (data.announcement_text && String(data.announcement_text).trim()) {
+            merged.announcement_text = String(data.announcement_text).trim();
+          } else if (globalStore.__bmgh_settings?.announcement_text) {
+            merged.announcement_text = globalStore.__bmgh_settings.announcement_text;
+          }
+
+          if (data.announcement_active !== undefined && data.announcement_active !== null) {
+            merged.announcement_active = Boolean(data.announcement_active);
+          } else if (globalStore.__bmgh_settings?.announcement_active !== undefined) {
+            merged.announcement_active = globalStore.__bmgh_settings.announcement_active;
           }
 
           if (data.gemini_api_key) merged.gemini_api_key = data.gemini_api_key;
