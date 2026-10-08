@@ -24,8 +24,13 @@ export async function POST(request: Request) {
       reference: order.reference,
     });
 
-    const newStatus = deliveryResult.success ? "delivered" : "failed";
-    const updated = await db.updateOrderStatus(order.id, newStatus, deliveryResult.raw_response || deliveryResult);
+    const newStatus = deliveryResult.success ? (deliveryResult.status || "processing") : "failed";
+    const updated = await db.updateOrderStatus(
+      order.id,
+      newStatus,
+      deliveryResult.raw_response || deliveryResult,
+      { delivery_status: newStatus }
+    );
 
     return NextResponse.json({
       success: deliveryResult.success,

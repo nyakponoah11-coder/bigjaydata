@@ -69,7 +69,7 @@ export async function POST(request: Request) {
     }
 
     // 3. Update order status based on DataMart result (Payment is 100% paid, delivery is separate)
-    const finalDeliveryStatus = deliveryResult.success ? "delivered" : "failed";
+    const finalDeliveryStatus = deliveryResult.success ? (deliveryResult.status || "processing") : "failed";
     const updatedOrder = await db.updateOrderStatus(
       order.id,
       finalDeliveryStatus,

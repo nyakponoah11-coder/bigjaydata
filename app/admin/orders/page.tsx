@@ -73,6 +73,53 @@ export default function AdminOrdersPage() {
     fetchOrders();
   };
 
+  const getDeliveryBadgeConfig = (status: string) => {
+    const s = (status || "").toLowerCase().trim();
+    switch (s) {
+      case "completed":
+      case "delivered":
+        return {
+          label: "✓ Completed",
+          className: "bg-emerald-950 text-emerald-400 border border-emerald-800",
+        };
+      case "processing":
+        return {
+          label: "⚡ Processing",
+          className: "bg-amber-950 text-amber-300 border border-amber-800 animate-pulse",
+        };
+      case "waiting":
+        return {
+          label: "⏳ Waiting",
+          className: "bg-blue-950 text-blue-300 border border-blue-800",
+        };
+      case "pending":
+        return {
+          label: "⏳ Pending",
+          className: "bg-sky-950 text-sky-400 border border-sky-800",
+        };
+      case "failed":
+        return {
+          label: "✕ Failed",
+          className: "bg-red-950 text-red-400 border border-red-800",
+        };
+      case "refunded":
+        return {
+          label: "↩ Refunded",
+          className: "bg-purple-950 text-purple-300 border border-purple-800",
+        };
+      case "cancelled":
+        return {
+          label: "🚫 Cancelled",
+          className: "bg-slate-800 text-slate-400 border border-slate-700",
+        };
+      default:
+        return {
+          label: s ? s.toUpperCase() : "PENDING",
+          className: "bg-slate-800 text-slate-400 border border-slate-700",
+        };
+    }
+  };
+
   const handleUpdateDeliveryStatus = async (orderId: string, delivery_status: string) => {
     // 1. Optimistic instant UI update
     setOrders((prev) =>
@@ -81,7 +128,7 @@ export default function AdminOrdersPage() {
           ? {
               ...o,
               delivery_status: delivery_status as any,
-              status: delivery_status === "delivered" ? "delivered" : o.status,
+              status: delivery_status as any,
             }
           : o
       )
@@ -92,7 +139,7 @@ export default function AdminOrdersPage() {
           ? {
               ...prev,
               delivery_status: delivery_status as any,
-              status: delivery_status === "delivered" ? "delivered" : prev.status,
+              status: delivery_status as any,
             }
           : null
       );
@@ -119,6 +166,57 @@ export default function AdminOrdersPage() {
     } catch (e) {
       console.error(e);
       fetchOrders();
+    }
+  };
+
+  const handleSyncDataMart = async (order: Order) => {
+    try {
+      setActionNotice(`Querying live DataMart status for ${order.reference}...`);
+      const res = await fetch("/api/admin/orders", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ order_id: order.id, sync_datamart: true }),
+      });
+      const data = await res.json();
+      if (data.success && data.order) {
+        setActionNotice(`DataMart status for ${order.reference}: ${data.order.delivery_status.toUpperCase()}`);
+        setOrders((prev) => prev.map((o) => (o.id === order.id ? data.order : o)));
+        if (selectedOrder && selectedOrder.id === order.id) {
+          setSelectedOrder(data.order);
+        }
+        setTimeout(() => setActionNotice(""), 3500);
+      } else {
+        setActionNotice(data.message || "Failed to sync order with DataMart");
+        setTimeout(() => setActionNotice(""), 3500);
+      }
+    } catch (e) {
+      console.error(e);
+      setActionNotice("Failed to sync order with DataMart");
+      setTimeout(() => setActionNotice(""), 3500);
+    }
+  };
+
+  const handleSyncAllActive = async () => {
+    try {
+      setActionNotice("Checking DataMart gateway for all active orders...");
+      const res = await fetch("/api/admin/orders", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sync_all_active: true }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setActionNotice(data.message || "All active orders synchronized with DataMart!");
+        if (data.orders) setOrders(data.orders);
+        setTimeout(() => setActionNotice(""), 4000);
+      } else {
+        setActionNotice(data.message || "Failed to sync with DataMart");
+        setTimeout(() => setActionNotice(""), 3500);
+      }
+    } catch (e) {
+      console.error(e);
+      setActionNotice("Network error syncing with DataMart");
+      setTimeout(() => setActionNotice(""), 3500);
     }
   };
 
@@ -211,7 +309,16 @@ export default function AdminOrdersPage() {
             </p>
           </div>
 
-          <div className="flex items-center gap-2.5">
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={handleSyncAllActive}
+              className="py-2 px-3 bg-sky-950/80 hover:bg-sky-900 border border-sky-800 rounded-xl text-xs font-semibold text-sky-300 flex items-center gap-1.5 transition-colors shadow-sm"
+              title="Sync all active orders live with DataMart"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              <span>Sync DataMart Live</span>
+            </button>
+
             <button
               onClick={() => setIsDirectBuyOpen(true)}
               className="py-2 px-3.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-slate-950 font-black rounded-xl text-xs flex items-center gap-2 shadow-lg shadow-amber-500/20 transition-all hover:scale-105"
@@ -275,9 +382,13 @@ export default function AdminOrdersPage() {
                 className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer"
               >
                 <option value="all">All Delivery Statuses</option>
-                <option value="delivered">Delivered</option>
-                <option value="pending">In Progress / Pending</option>
-                <option value="failed">Failed / Delayed</option>
+                <option value="completed">Completed / Delivered</option>
+                <option value="processing">Processing</option>
+                <option value="waiting">Waiting</option>
+                <option value="pending">Pending</option>
+                <option value="failed">Failed</option>
+                <option value="refunded">Refunded</option>
+                <option value="cancelled">Cancelled</option>
               </select>
             </div>
 
@@ -385,17 +496,16 @@ export default function AdminOrdersPage() {
                         </td>
                         {/* 2. SEPARATE DELIVERY STATUS BADGE */}
                         <td className="py-3">
-                          <span
-                            className={`px-2 py-0.5 rounded-full font-bold uppercase text-[10px] inline-flex items-center gap-1 ${
-                              deliveryStatus === "delivered"
-                                ? "bg-emerald-950 text-emerald-400 border border-emerald-800"
-                                : deliveryStatus === "pending" || deliveryStatus === "processing"
-                                ? "bg-sky-950 text-sky-400 border border-sky-800"
-                                : "bg-red-950 text-red-400 border border-red-800"
-                            }`}
-                          >
-                            {deliveryStatus === "delivered" ? "✓ Delivered" : deliveryStatus === "pending" || deliveryStatus === "processing" ? "⏳ In Progress" : "✕ Failed"}
-                          </span>
+                          {(() => {
+                            const badge = getDeliveryBadgeConfig(deliveryStatus);
+                            return (
+                              <span
+                                className={`px-2 py-0.5 rounded-full font-bold uppercase text-[10px] inline-flex items-center gap-1 border ${badge.className}`}
+                              >
+                                {badge.label}
+                              </span>
+                            );
+                          })()}
                           {deliveryStatus === "failed" && (o.datamart_response?.message || o.datamart_response?.error) && (
                             <span
                               className="block text-[10px] text-red-400 font-medium max-w-[160px] truncate mt-0.5"
@@ -414,27 +524,30 @@ export default function AdminOrdersPage() {
                           })}
                         </td>
                         <td className="py-3 text-right pr-4 space-x-1 whitespace-nowrap">
-                          {/* Quick Delivered Delivery Button */}
-                          {deliveryStatus !== "delivered" && (
-                            <button
-                              onClick={() => handleUpdateDeliveryStatus(o.id, "delivered")}
-                              className="p-1.5 bg-emerald-950/60 hover:bg-emerald-900 border border-emerald-800 text-emerald-300 rounded-lg transition-colors"
-                              title="Mark Delivery as Delivered"
-                            >
-                              <CheckCircle className="w-3.5 h-3.5" />
-                            </button>
-                          )}
+                          {/* Sync Live from DataMart */}
+                          <button
+                            onClick={() => handleSyncDataMart(o)}
+                            className="p-1.5 bg-sky-950/70 hover:bg-sky-900 border border-sky-800 text-sky-300 rounded-lg transition-colors"
+                            title="Query Live DataMart Status"
+                          >
+                            <RefreshCw className="w-3.5 h-3.5" />
+                          </button>
 
-                          {/* Quick Failed Delivery Button */}
-                          {deliveryStatus !== "failed" && (
-                            <button
-                              onClick={() => handleUpdateDeliveryStatus(o.id, "failed")}
-                              className="p-1.5 bg-red-950/60 hover:bg-red-900 border border-red-800 text-red-300 rounded-lg transition-colors"
-                              title="Mark Delivery as Failed"
-                            >
-                              <XCircle className="w-3.5 h-3.5" />
-                            </button>
-                          )}
+                          {/* Quick Manual Delivery Status Selector */}
+                          <select
+                            value={deliveryStatus === "delivered" ? "completed" : deliveryStatus}
+                            onChange={(e) => handleUpdateDeliveryStatus(o.id, e.target.value)}
+                            className="p-1 bg-slate-950 hover:bg-slate-900 border border-slate-700 rounded-lg text-[10px] font-semibold text-slate-300 focus:outline-none cursor-pointer"
+                            title="Change Delivery Status Manually"
+                          >
+                            <option value="completed">✓ Completed</option>
+                            <option value="processing">⚡ Processing</option>
+                            <option value="waiting">⏳ Waiting</option>
+                            <option value="pending">⏳ Pending</option>
+                            <option value="failed">✕ Failed</option>
+                            <option value="refunded">↩ Refunded</option>
+                            <option value="cancelled">🚫 Cancelled</option>
+                          </select>
 
                           {/* Resend to DataMart */}
                           <button
@@ -442,7 +555,7 @@ export default function AdminOrdersPage() {
                             className="p-1.5 bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700 rounded-lg transition-colors"
                             title="Resend to DataMart"
                           >
-                            <RefreshCw className="w-3.5 h-3.5" />
+                            <Zap className="w-3.5 h-3.5" />
                           </button>
 
                           {/* Send SMS Modal Trigger */}
@@ -563,39 +676,67 @@ export default function AdminOrdersPage() {
                 </div>
 
                 {/* 2. SEPARATE DELIVERY STATUS IN MODAL */}
-                <div className="bg-slate-800/70 p-3.5 rounded-xl border border-slate-700/60">
-                  <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-slate-400 font-semibold">Delivery Status</span>
-                    <span
-                      className={`px-2 py-0.5 rounded-full font-bold uppercase text-[10px] ${
-                        selectedOrder.delivery_status === "delivered"
-                          ? "bg-emerald-950 text-emerald-400 border border-emerald-800"
-                          : selectedOrder.delivery_status === "pending" || selectedOrder.delivery_status === "processing"
-                          ? "bg-sky-950 text-sky-400 border border-sky-800"
-                          : "bg-red-950 text-red-400 border border-red-800"
-                      }`}
-                    >
-                      {selectedOrder.delivery_status || "pending"}
-                    </span>
+                <div className="bg-slate-800/70 p-3.5 rounded-xl border border-slate-700/60 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-slate-400 font-semibold text-xs block">Delivery Status</span>
+                      <span className="text-[10px] text-slate-500">Live matched with DataMart</span>
+                    </div>
+                    {(() => {
+                      const badge = getDeliveryBadgeConfig(selectedOrder.delivery_status);
+                      return (
+                        <span
+                          className={`px-2.5 py-0.5 rounded-full font-bold uppercase text-[10px] border ${badge.className}`}
+                        >
+                          {badge.label}
+                        </span>
+                      );
+                    })()}
                   </div>
-                  <div className="flex items-center gap-1.5 mt-2">
+
+                  {/* Manual Status Buttons for all 7 values */}
+                  <div>
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
+                      Set Status Manually:
+                    </span>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                      {[
+                        { id: "completed", label: "Completed" },
+                        { id: "processing", label: "Processing" },
+                        { id: "waiting", label: "Waiting" },
+                        { id: "pending", label: "Pending" },
+                        { id: "failed", label: "Failed" },
+                        { id: "refunded", label: "Refunded" },
+                        { id: "cancelled", label: "Cancelled" },
+                      ].map((item) => {
+                        const isCurrent =
+                          (selectedOrder.delivery_status || "").toLowerCase() === item.id ||
+                          (item.id === "completed" && selectedOrder.delivery_status === "delivered");
+                        return (
+                          <button
+                            key={item.id}
+                            onClick={() => handleUpdateDeliveryStatus(selectedOrder.id, item.id)}
+                            className={`px-2 py-1.5 rounded-lg text-[10px] font-bold uppercase transition-all ${
+                              isCurrent
+                                ? "bg-emerald-600 text-white shadow-sm ring-1 ring-emerald-400"
+                                : "bg-slate-900 hover:bg-slate-950 text-slate-300 border border-slate-700/70"
+                            }`}
+                          >
+                            {item.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Live Sync Action */}
+                  <div className="pt-2 border-t border-slate-700/60">
                     <button
-                      onClick={() => handleUpdateDeliveryStatus(selectedOrder.id, "delivered")}
-                      className="px-2 py-1 bg-emerald-900/60 hover:bg-emerald-800 border border-emerald-700 text-emerald-300 rounded-md text-[10px] font-bold"
+                      onClick={() => handleSyncDataMart(selectedOrder)}
+                      className="w-full py-2 px-3 bg-sky-950/80 hover:bg-sky-900 border border-sky-800 text-sky-300 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors"
                     >
-                      Set Delivered
-                    </button>
-                    <button
-                      onClick={() => handleUpdateDeliveryStatus(selectedOrder.id, "processing")}
-                      className="px-2 py-1 bg-sky-900/60 hover:bg-sky-800 border border-sky-700 text-sky-300 rounded-md text-[10px] font-bold"
-                    >
-                      Set Processing
-                    </button>
-                    <button
-                      onClick={() => handleUpdateDeliveryStatus(selectedOrder.id, "failed")}
-                      className="px-2 py-1 bg-red-900/60 hover:bg-red-800 border border-red-700 text-red-300 rounded-md text-[10px] font-bold"
-                    >
-                      Set Failed
+                      <RefreshCw className="w-3.5 h-3.5" />
+                      Sync Live with DataMart API
                     </button>
                   </div>
                 </div>

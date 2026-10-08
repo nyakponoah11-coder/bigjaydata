@@ -82,7 +82,7 @@ export async function POST(request: Request) {
           idempotency_key: existingOrder.reference,
         });
 
-        const finalDelivery = deliveryResult.success ? "delivered" : "failed";
+        const finalDelivery = deliveryResult.success ? (deliveryResult.status || "processing") : "failed";
         await db.updateOrderStatus(
           existingOrder.id,
           finalDelivery,
@@ -116,7 +116,7 @@ export async function POST(request: Request) {
           idempotency_key: reference,
         });
 
-        const finalDelivery = deliveryResult.success ? "delivered" : "failed";
+        const finalDelivery = deliveryResult.success ? (deliveryResult.status || "processing") : "failed";
         await db.updateOrderStatus(
           newOrder.id,
           finalDelivery,

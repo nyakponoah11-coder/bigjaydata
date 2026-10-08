@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { sendCustomerSMS } from "@/lib/sms";
-import { sendDataMartDelivery } from "@/lib/datamart";
+import { sendDataMartDelivery, syncOrderWithDataMart } from "@/lib/datamart";
 
 export async function GET(request: Request) {
   try {
@@ -42,7 +42,32 @@ export async function PATCH(request: Request) {
       send_sms,
       sms_text,
       resend_datamart,
+      sync_datamart,
+      sync_all_active,
     } = body;
+
+    // Batch sync all non-terminal orders with DataMart
+    if (sync_all_active) {
+      const allOrders = await db.getOrders();
+      const active = allOrders.filter(
+        (o) => !["cancelled", "refunded"].includes(o.delivery_status)
+      );
+      let updatedCount = 0;
+      for (const ord of active) {
+        try {
+          const synced = await syncOrderWithDataMart(ord);
+          if (synced.delivery_status !== ord.delivery_status) {
+            updatedCount++;
+          }
+        } catch {}
+      }
+      const refreshed = await db.getOrders();
+      return NextResponse.json({
+        success: true,
+        message: `Synced ${active.length} active orders (${updatedCount} updated)`,
+        orders: refreshed,
+      });
+    }
 
     const targetRef = reference || order_id;
     if (!targetRef) {
@@ -68,6 +93,16 @@ export async function PATCH(request: Request) {
       );
     }
 
+    // If admin requested live sync from DataMart
+    if (sync_datamart) {
+      const synced = await syncOrderWithDataMart(order);
+      return NextResponse.json({
+        success: true,
+        message: `Order live synced with DataMart: ${synced.delivery_status}`,
+        order: synced,
+      });
+    }
+
     // If admin requested resend to DataMart
     if (resend_datamart) {
       const dmResult = await sendDataMartDelivery({
@@ -77,7 +112,7 @@ export async function PATCH(request: Request) {
         reference: order.reference,
       });
 
-      const finalDelivery = dmResult.success ? "delivered" : "failed";
+      const finalDelivery = dmResult.success ? (dmResult.status || "processing") : "failed";
       const updated = await db.updateOrderStatus(
         order.id,
         finalDelivery,

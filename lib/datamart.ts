@@ -1,4 +1,4 @@
-import { db } from "./db";
+import { db, Order } from "./db";
 
 export interface DataMartDeliveryParams {
   network: string; // mtn, telecel, at
@@ -13,6 +13,7 @@ export interface DataMartResult {
   message: string;
   datamart_id?: string;
   order_reference?: string;
+  status?: string;
   raw_response?: any;
 }
 
@@ -213,11 +214,20 @@ export async function sendDataMartDelivery(params: DataMartDeliveryParams): Prom
 
     if (response.ok && (responseData?.status === "success" || responseData?.data?.purchaseId)) {
       const dataPayload = responseData.data || {};
+      const returnedStatus = (
+        dataPayload.orderStatus ||
+        dataPayload.deliveryStatus ||
+        dataPayload.status ||
+        responseData.orderStatus ||
+        "processing"
+      ).toLowerCase().trim();
+
       return {
         success: true,
         message: responseData.message || "Data bundle purchased successfully",
         datamart_id: dataPayload.purchaseId || dataPayload.orderReference || `DM-${Date.now()}`,
-        order_reference: dataPayload.orderReference,
+        order_reference: dataPayload.orderReference || dataPayload.reference,
+        status: returnedStatus,
         raw_response: responseData,
       };
     }
@@ -524,33 +534,178 @@ export async function testDataMartConnection(customApiKey?: string, customApiUrl
   }
 }
 
+export interface DataMartOrderStatusResult {
+  success: boolean;
+  orderStatus?: string; // "pending" | "waiting" | "processing" | "completed" | "failed" | "refunded" | "cancelled"
+  data?: any;
+  message?: string;
+  raw?: any;
+}
+
 /**
  * Checks order status from DataMart API: GET /order-status/:reference
+ * Official DataMart specification:
+ * Endpoint: GET /order-status/:reference
+ * Returns: { status: "success", data: { orderStatus: "...", reference: "...", ... } }
+ * Allowed status values: pending, waiting, processing, completed, failed, refunded, cancelled
  */
-export async function checkDataMartOrderStatus(orderReference: string): Promise<any> {
+export async function checkDataMartOrderStatus(orderReference: string): Promise<DataMartOrderStatusResult> {
+  const cleanRef = (orderReference || "").trim();
+  if (!cleanRef) {
+    return { success: false, message: "No order reference provided" };
+  }
+
   try {
     const settings = await db.getSettings();
     const apiKey = (settings.datamart_api_key || process.env.DATAMART_API_KEY || "").trim();
-    const devBase = resolveDeveloperBaseUrl(settings.datamart_api_url || process.env.DATAMART_API_URL);
-    const statusUrl = `${devBase}/order-status/${encodeURIComponent(orderReference)}`;
+    const configuredUrl = (settings.datamart_api_url || process.env.DATAMART_API_URL || "https://api.datamartgh.shop/api/developer").trim();
+    const devBase = resolveDeveloperBaseUrl(configuredUrl);
 
     if (!apiKey) {
-      return { status: "error", message: "Missing API Key" };
+      return { success: false, message: "Missing DataMart API Key" };
     }
 
-    const response = await fetch(statusUrl, {
-      method: "GET",
-      headers: {
-        "X-API-Key": apiKey,
-        "Accept": "application/json",
-      },
-    });
+    const candidateUrls = [
+      `${devBase}/order-status/${encodeURIComponent(cleanRef)}`,
+      `https://api.datamartgh.shop/api/developer/order-status/${encodeURIComponent(cleanRef)}`,
+      `https://api.datamartgh.shop/api/order-status/${encodeURIComponent(cleanRef)}`,
+      `https://api.datamartgh.shop/order-status/${encodeURIComponent(cleanRef)}`,
+    ];
+    const uniqueUrls = Array.from(new Set(candidateUrls));
 
-    return await response.json().catch(() => null);
-  } catch (err) {
+    const headers: Record<string, string> = {
+      "X-API-Key": apiKey,
+      "Authorization": `Bearer ${apiKey}`,
+      "x-access-token": apiKey,
+      "token": apiKey,
+      "User-Agent": "BundleMartGh/1.0",
+      "Accept": "application/json",
+    };
+
+    for (const url of uniqueUrls) {
+      try {
+        const urlWithToken = url.includes("?")
+          ? `${url}&token=${encodeURIComponent(apiKey)}`
+          : `${url}?token=${encodeURIComponent(apiKey)}`;
+
+        const response = await fetch(urlWithToken, {
+          method: "GET",
+          headers,
+          cache: "no-store",
+        });
+
+        const text = await response.text();
+        let data: any = null;
+        try {
+          data = JSON.parse(text);
+        } catch {
+          data = { raw: text };
+        }
+
+        if (response.ok && (data?.status === "success" || data?.data?.orderStatus || data?.orderStatus)) {
+          const payload = data.data || data;
+          const rawStatus = (payload.orderStatus || payload.status || data.orderStatus || "").toLowerCase().trim();
+          return {
+            success: true,
+            orderStatus: rawStatus,
+            data: payload,
+            message: data.message || "Order status fetched",
+            raw: data,
+          };
+        }
+      } catch (reqErr) {
+        // Try next candidate URL
+      }
+    }
+
+    return {
+      success: false,
+      message: "Order reference not found on DataMart",
+    };
+  } catch (err: any) {
     console.error("[DataMart API] Status check exception:", err);
-    return null;
+    return {
+      success: false,
+      message: err?.message || "Failed to check order status",
+    };
   }
+}
+
+/**
+ * Automatically checks and updates an order's status from DataMart in real time.
+ * Matches all official DataMart status values:
+ * pending, waiting, processing, completed, failed, refunded, cancelled
+ */
+export async function syncOrderWithDataMart(order: Order): Promise<Order> {
+  if (!order) return order;
+
+  // Extract candidate references to query DataMart:
+  // 1. DataMart purchase order reference (e.g. GN-AB12CD34) from datamart_response
+  // 2. DataMart purchaseId / datamart_id
+  // 3. Our own order reference (e.g. BMGH-...)
+  const dmOrderRef =
+    order.datamart_response?.data?.orderReference ||
+    order.datamart_response?.order_reference ||
+    order.datamart_response?.data?.reference;
+
+  const dmPurchaseId =
+    order.datamart_response?.data?.purchaseId ||
+    order.datamart_response?.datamart_id;
+
+  const candidates: string[] = [];
+  if (dmOrderRef && typeof dmOrderRef === "string") candidates.push(dmOrderRef.trim());
+  if (order.reference) candidates.push(order.reference.trim());
+  if (dmPurchaseId && typeof dmPurchaseId === "string" && !dmPurchaseId.startsWith("DM-")) {
+    candidates.push(dmPurchaseId.trim());
+  }
+
+  const uniqueCandidates = Array.from(new Set(candidates.filter(Boolean)));
+  if (uniqueCandidates.length === 0) return order;
+
+  for (const ref of uniqueCandidates) {
+    const result = await checkDataMartOrderStatus(ref);
+    if (result.success && result.orderStatus) {
+      const rawStatus = result.orderStatus.toLowerCase().trim();
+      const validStatuses = [
+        "pending",
+        "waiting",
+        "processing",
+        "completed",
+        "delivered",
+        "failed",
+        "refunded",
+        "cancelled",
+      ];
+
+      // Match DataMart status exactly
+      const mappedStatus = validStatuses.includes(rawStatus) ? rawStatus : rawStatus;
+
+      console.log(`[DataMart Sync] Order ${order.reference} synced with DataMart: ${rawStatus} -> ${mappedStatus}`);
+
+      const updatedPayload = {
+        ...(order.datamart_response || {}),
+        last_datamart_sync: {
+          timestamp: new Date().toISOString(),
+          queried_ref: ref,
+          order_status: rawStatus,
+          data: result.data,
+        },
+      };
+
+      const updated = await db.updateOrderStatus(
+        order.id,
+        mappedStatus,
+        updatedPayload,
+        {
+          delivery_status: mappedStatus,
+        }
+      );
+
+      if (updated) return updated;
+    }
+  }
+
+  return order;
 }
 
 export interface DeliveryTrackerData {

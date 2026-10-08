@@ -12,6 +12,16 @@ export interface Product {
   created_at: string;
 }
 
+export type DeliveryStatus =
+  | "pending"
+  | "waiting"
+  | "processing"
+  | "completed"
+  | "delivered"
+  | "failed"
+  | "refunded"
+  | "cancelled";
+
 export interface Order {
   id: string;
   reference: string;
@@ -21,8 +31,8 @@ export interface Order {
   amount: number;
   paystack_ref: string | null;
   payment_status: "paid" | "pending" | "failed" | string;
-  delivery_status: "delivered" | "processing" | "pending" | "failed" | string;
-  status: "pending" | "delivered" | "failed" | "refunded";
+  delivery_status: DeliveryStatus | string;
+  status: "pending" | "waiting" | "processing" | "completed" | "delivered" | "failed" | "refunded" | "cancelled" | string;
   datamart_response: any;
   created_at: string;
 }
@@ -33,15 +43,25 @@ export function normalizeOrder(order: any): Order {
     order.payment_status === "paid" ||
     order.payment_status === "completed" ||
     !!order.paystack_ref ||
-    (Number(order.amount) > 0 && order.status !== "failed");
+    (Number(order.amount) > 0 && order.status !== "failed" && order.status !== "cancelled");
 
   const payment_status = order.payment_status || (isPaid ? "paid" : "pending");
 
-  let delivery_status = order.delivery_status;
+  let delivery_status = (order.delivery_status || "").toLowerCase().trim();
   if (!delivery_status) {
-    if (order.status === "delivered") delivery_status = "delivered";
-    else if (order.status === "failed") delivery_status = "failed";
+    const rawStatus = (order.status || "").toLowerCase().trim();
+    if (rawStatus === "delivered" || rawStatus === "completed") delivery_status = "completed";
+    else if (rawStatus === "processing") delivery_status = "processing";
+    else if (rawStatus === "waiting") delivery_status = "waiting";
+    else if (rawStatus === "failed") delivery_status = "failed";
+    else if (rawStatus === "refunded") delivery_status = "refunded";
+    else if (rawStatus === "cancelled") delivery_status = "cancelled";
     else delivery_status = "pending";
+  }
+
+  let status = (order.status || "").toLowerCase().trim();
+  if (!status) {
+    status = delivery_status;
   }
 
   return {
@@ -49,7 +69,7 @@ export function normalizeOrder(order: any): Order {
     amount: Number(order.amount || 0),
     payment_status,
     delivery_status,
-    status: (order.status as Order["status"]) || (delivery_status === "delivered" ? "delivered" : "pending"),
+    status: status as any,
   };
 }
 
@@ -759,9 +779,28 @@ export const db = {
     datamartResponse?: any,
     options?: { payment_status?: string; delivery_status?: string }
   ): Promise<Order | null> {
-    const isDeliveryStatus = ["delivered", "failed", "processing", "pending"].includes(statusOrDelivery);
-    const legacyStatus: Order["status"] = (statusOrDelivery === "delivered" ? "delivered" : statusOrDelivery === "refunded" ? "refunded" : statusOrDelivery === "failed" ? "failed" : "pending");
-    const targetDeliveryStatus = options?.delivery_status || (isDeliveryStatus ? statusOrDelivery : undefined);
+    const validDeliveryStatuses = [
+      "pending",
+      "waiting",
+      "processing",
+      "completed",
+      "delivered",
+      "failed",
+      "refunded",
+      "cancelled",
+    ];
+    const cleaned = (statusOrDelivery || "").toLowerCase().trim();
+    const isDeliveryStatus = validDeliveryStatuses.includes(cleaned);
+    
+    // Normalize target delivery status
+    const targetDeliveryStatus = options?.delivery_status
+      ? options.delivery_status.toLowerCase().trim()
+      : isDeliveryStatus
+      ? cleaned
+      : undefined;
+
+    // Both status and delivery_status track the current state
+    const normalizedStatus = targetDeliveryStatus || cleaned || "pending";
     const targetPaymentStatus = options?.payment_status;
 
     if (isSupabaseConfigured && supabaseAdmin) {
@@ -769,7 +808,7 @@ export const db = {
         const trimmed = (orderIdOrRef || "").trim();
         const isExplicitRef = /^(BMGH|BIGJ)-/i.test(trimmed);
         const updatePayload: any = {
-          status: legacyStatus,
+          status: normalizedStatus,
           ...(datamartResponse ? { datamart_response: datamartResponse } : {}),
           ...(targetDeliveryStatus ? { delivery_status: targetDeliveryStatus } : {}),
           ...(targetPaymentStatus ? { payment_status: targetPaymentStatus } : {}),
@@ -796,7 +835,7 @@ export const db = {
         // Handle missing schema columns if delivery_status or payment_status columns don't exist in Supabase
         if (error && (error.message?.includes("delivery_status") || error.message?.includes("payment_status"))) {
           const fallbackPayload: any = {
-            status: legacyStatus,
+            status: normalizedStatus,
             ...(datamartResponse ? { datamart_response: datamartResponse } : {}),
           };
           const fallbackQuery = supabaseAdmin.from("orders").update(fallbackPayload);
@@ -829,7 +868,7 @@ export const db = {
       (o) => o.id === orderIdOrRef || o.reference.toLowerCase() === orderIdOrRef.toLowerCase()
     );
     if (!order) return null;
-    order.status = legacyStatus;
+    order.status = normalizedStatus;
     if (targetDeliveryStatus) order.delivery_status = targetDeliveryStatus;
     if (targetPaymentStatus) order.payment_status = targetPaymentStatus;
     if (datamartResponse) order.datamart_response = datamartResponse;
