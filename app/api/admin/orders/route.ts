@@ -54,8 +54,11 @@ export async function PATCH(request: Request) {
 
     let order = await db.getOrderByReference(targetRef);
     if (!order) {
+      order = await db.getOrderById(targetRef);
+    }
+    if (!order) {
       const all = await db.getOrders();
-      order = all.find((o) => o.id === targetRef) || null;
+      order = all.find((o) => o.id === targetRef || o.reference.toLowerCase() === targetRef.toLowerCase()) || null;
     }
 
     if (!order) {

@@ -74,6 +74,31 @@ export default function AdminOrdersPage() {
   };
 
   const handleUpdateDeliveryStatus = async (orderId: string, delivery_status: string) => {
+    // 1. Optimistic instant UI update
+    setOrders((prev) =>
+      prev.map((o) =>
+        o.id === orderId
+          ? {
+              ...o,
+              delivery_status: delivery_status as any,
+              status: delivery_status === "delivered" ? "delivered" : o.status,
+            }
+          : o
+      )
+    );
+    if (selectedOrder && selectedOrder.id === orderId) {
+      setSelectedOrder((prev: any) =>
+        prev
+          ? {
+              ...prev,
+              delivery_status: delivery_status as any,
+              status: delivery_status === "delivered" ? "delivered" : prev.status,
+            }
+          : null
+      );
+    }
+    setActionNotice(`Updating delivery status to ${delivery_status}...`);
+
     try {
       const res = await fetch("/api/admin/orders", {
         method: "PATCH",
@@ -81,16 +106,19 @@ export default function AdminOrdersPage() {
         body: JSON.stringify({ order_id: orderId, delivery_status }),
       });
       const data = await res.json();
-      if (data.success) {
+      if (data.success && data.order) {
         setActionNotice(`Delivery status updated to ${delivery_status}`);
-        fetchOrders();
+        setOrders((prev) => prev.map((o) => (o.id === orderId ? data.order : o)));
         if (selectedOrder && selectedOrder.id === orderId) {
           setSelectedOrder(data.order);
         }
         setTimeout(() => setActionNotice(""), 3000);
+      } else {
+        fetchOrders();
       }
     } catch (e) {
       console.error(e);
+      fetchOrders();
     }
   };
 

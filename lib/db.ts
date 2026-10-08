@@ -616,6 +616,26 @@ export const db = {
     return found ? normalizeOrder(found) : null;
   },
 
+  async getOrderById(id: string): Promise<Order | null> {
+    const cleanId = (id || "").trim();
+    if (!cleanId) return null;
+    if (isSupabaseConfigured && supabaseAdmin) {
+      try {
+        const { data, error } = await supabaseAdmin
+          .from("orders")
+          .select("*")
+          .eq("id", cleanId)
+          .maybeSingle();
+        if (!error && data) return normalizeOrder(data as Order);
+      } catch (err) {
+        console.error("Supabase getOrderById error:", err);
+      }
+    }
+
+    const found = (globalStore.__bmgh_orders || []).find((o) => o.id === cleanId);
+    return found ? normalizeOrder(found) : null;
+  },
+
   async getOrdersByPhone(phone: string): Promise<Order[]> {
     const cleanPhone = phone.trim().replace(/\s+/g, "");
     if (isSupabaseConfigured && supabaseAdmin) {
@@ -746,7 +766,8 @@ export const db = {
 
     if (isSupabaseConfigured && supabaseAdmin) {
       try {
-        const isRef = orderIdOrRef.startsWith("BMGH-") || orderIdOrRef.startsWith("BIGJ-") || orderIdOrRef.includes("-");
+        const trimmed = (orderIdOrRef || "").trim();
+        const isExplicitRef = /^(BMGH|BIGJ)-/i.test(trimmed);
         const updatePayload: any = {
           status: legacyStatus,
           ...(datamartResponse ? { datamart_response: datamartResponse } : {}),
@@ -754,21 +775,34 @@ export const db = {
           ...(targetPaymentStatus ? { payment_status: targetPaymentStatus } : {}),
         };
 
+        // Try primary query: by reference if explicitly BMGH/BIGJ, otherwise by id
         let query = supabaseAdmin.from("orders").update(updatePayload);
-        let { data, error } = isRef
-          ? await query.eq("reference", orderIdOrRef).select().single()
-          : await query.eq("id", orderIdOrRef).select().single();
+        let { data, error } = isExplicitRef
+          ? await query.ilike("reference", trimmed).select().maybeSingle()
+          : await query.eq("id", trimmed).select().maybeSingle();
 
-        // If columns do not exist yet in Supabase
+        // If not found by primary, try the alternative
+        if (!data) {
+          const altQuery = supabaseAdmin.from("orders").update(updatePayload);
+          const altRes = isExplicitRef
+            ? await altQuery.eq("id", trimmed).select().maybeSingle()
+            : await altQuery.ilike("reference", trimmed).select().maybeSingle();
+          if (altRes.data) {
+            data = altRes.data;
+            error = null;
+          }
+        }
+
+        // Handle missing schema columns if delivery_status or payment_status columns don't exist in Supabase
         if (error && (error.message?.includes("delivery_status") || error.message?.includes("payment_status"))) {
           const fallbackPayload: any = {
             status: legacyStatus,
             ...(datamartResponse ? { datamart_response: datamartResponse } : {}),
           };
           const fallbackQuery = supabaseAdmin.from("orders").update(fallbackPayload);
-          const fallbackRes = isRef
-            ? await fallbackQuery.eq("reference", orderIdOrRef).select().single()
-            : await fallbackQuery.eq("id", orderIdOrRef).select().single();
+          const fallbackRes = isExplicitRef
+            ? await fallbackQuery.ilike("reference", trimmed).select().maybeSingle()
+            : await fallbackQuery.eq("id", trimmed).select().maybeSingle();
           data = fallbackRes.data;
           error = fallbackRes.error;
         }
@@ -778,7 +812,11 @@ export const db = {
           const idx = (globalStore.__bmgh_orders || []).findIndex(
             (o) => o.id === ord.id || o.reference.toLowerCase() === ord.reference.toLowerCase()
           );
-          if (idx !== -1) globalStore.__bmgh_orders![idx] = ord;
+          if (idx !== -1) {
+            globalStore.__bmgh_orders![idx] = ord;
+          } else {
+            globalStore.__bmgh_orders = [ord, ...(globalStore.__bmgh_orders || [])];
+          }
           saveToDisk();
           return ord;
         }
@@ -787,7 +825,7 @@ export const db = {
       }
     }
 
-    const order = globalStore.__bmgh_orders!.find(
+    const order = (globalStore.__bmgh_orders || []).find(
       (o) => o.id === orderIdOrRef || o.reference.toLowerCase() === orderIdOrRef.toLowerCase()
     );
     if (!order) return null;
@@ -801,6 +839,7 @@ export const db = {
 
   // MESSAGES
   async getMessages(sessionId?: string): Promise<Message[]> {
+    let supabaseMsgs: Message[] = [];
     if (isSupabaseConfigured && supabaseAdmin) {
       try {
         let query = supabaseAdmin.from("messages").select("*").order("created_at", { ascending: false });
@@ -808,31 +847,69 @@ export const db = {
           query = query.eq("session_id", sessionId);
         }
         const { data, error } = await query;
-        if (!error && data) return data as Message[];
+        if (!error && Array.isArray(data)) {
+          supabaseMsgs = data as Message[];
+        }
       } catch (err) {
         console.error("Supabase getMessages error:", err);
       }
     }
-    const msgs = globalStore.__bmgh_messages || [];
-    if (sessionId) {
-      return msgs.filter((m) => m.session_id === sessionId);
+
+    // Merge with local disk/memory messages to prevent ANY chat loss
+    const localMsgs = globalStore.__bmgh_messages || [];
+    const filteredLocal = sessionId
+      ? localMsgs.filter((m) => m.session_id === sessionId)
+      : localMsgs;
+
+    // Combine Supabase and local, deduplicating by ID
+    const mergedMap = new Map<string, Message>();
+    for (const m of supabaseMsgs) {
+      mergedMap.set(m.id, m);
     }
-    return msgs;
+    for (const m of filteredLocal) {
+      if (!mergedMap.has(m.id)) {
+        mergedMap.set(m.id, m);
+      } else {
+        const existing = mergedMap.get(m.id)!;
+        if (m.ai_reply && !existing.ai_reply) existing.ai_reply = m.ai_reply;
+        if (m.ai_replied_at && !existing.ai_replied_at) existing.ai_replied_at = m.ai_replied_at;
+        if (m.reply && !existing.reply) existing.reply = m.reply;
+        if (m.replied_at && !existing.replied_at) existing.replied_at = m.replied_at;
+      }
+    }
+
+    const result = Array.from(mergedMap.values());
+    result.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    return result;
   },
 
   async createMessage(msg: Omit<Message, "id" | "is_read" | "created_at">): Promise<Message> {
     const newMsg: Message = {
       ...msg,
-      id: "msg-" + Math.random().toString(36).substring(2, 9),
+      id: typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : "msg-" + Math.random().toString(36).substring(2, 9),
       is_read: false,
       created_at: new Date().toISOString(),
     };
 
+    // Save to memory & disk immediately
+    globalStore.__bmgh_messages = [newMsg, ...(globalStore.__bmgh_messages || [])];
+    saveToDisk();
+
     if (isSupabaseConfigured && supabaseAdmin) {
       try {
-        const { data, error } = await supabaseAdmin.from("messages").insert([newMsg]).select().single();
+        const { data, error } = await supabaseAdmin.from("messages").insert([{
+          id: newMsg.id,
+          name: newMsg.name,
+          phone: newMsg.phone,
+          message: newMsg.message,
+          image_url: newMsg.image_url,
+          session_id: newMsg.session_id,
+          is_read: newMsg.is_read,
+          created_at: newMsg.created_at,
+        }]).select().single();
         if (!error && data) {
-          globalStore.__bmgh_messages!.unshift(data as Message);
+          const idx = globalStore.__bmgh_messages.findIndex((x) => x.id === newMsg.id);
+          if (idx !== -1) globalStore.__bmgh_messages[idx] = data as Message;
           saveToDisk();
           return data as Message;
         }
@@ -841,13 +918,20 @@ export const db = {
       }
     }
 
-    globalStore.__bmgh_messages!.unshift(newMsg);
-    saveToDisk();
     return newMsg;
   },
 
   async replyMessage(id: string, replyText: string): Promise<Message | null> {
     const replied_at = new Date().toISOString();
+
+    const localMsg = (globalStore.__bmgh_messages || []).find((m) => m.id === id);
+    if (localMsg) {
+      localMsg.reply = replyText;
+      localMsg.replied_at = replied_at;
+      localMsg.is_read = true;
+      saveToDisk();
+    }
+
     if (isSupabaseConfigured && supabaseAdmin) {
       try {
         const { data, error } = await supabaseAdmin
@@ -857,32 +941,30 @@ export const db = {
           .select()
           .single();
         if (!error && data) {
-          const m = globalStore.__bmgh_messages!.find((x) => x.id === id);
-          if (m) {
-            m.reply = replyText;
-            m.replied_at = replied_at;
-            m.is_read = true;
+          if (localMsg) {
+            Object.assign(localMsg, data);
+            saveToDisk();
           }
-          saveToDisk();
           return data as Message;
         }
       } catch (err) {
         console.error("Supabase replyMessage error:", err);
       }
     }
-    const msg = globalStore.__bmgh_messages!.find((m) => m.id === id);
-    if (msg) {
-      msg.reply = replyText;
-      msg.replied_at = replied_at;
-      msg.is_read = true;
-      saveToDisk();
-      return msg;
-    }
-    return null;
+
+    return localMsg || null;
   },
 
   async saveAIReply(id: string, aiReplyText: string): Promise<Message | null> {
     const ai_replied_at = new Date().toISOString();
+
+    const localMsg = (globalStore.__bmgh_messages || []).find((m) => m.id === id);
+    if (localMsg) {
+      localMsg.ai_reply = aiReplyText;
+      localMsg.ai_replied_at = ai_replied_at;
+      saveToDisk();
+    }
+
     if (isSupabaseConfigured && supabaseAdmin) {
       try {
         const { data, error } = await supabaseAdmin
@@ -892,26 +974,18 @@ export const db = {
           .select()
           .single();
         if (!error && data) {
-          const m = globalStore.__bmgh_messages!.find((x) => x.id === id);
-          if (m) {
-            m.ai_reply = aiReplyText;
-            m.ai_replied_at = ai_replied_at;
+          if (localMsg) {
+            Object.assign(localMsg, data);
+            saveToDisk();
           }
-          saveToDisk();
           return data as Message;
         }
       } catch (err) {
         console.error("Supabase saveAIReply error:", err);
       }
     }
-    const msg = globalStore.__bmgh_messages!.find((m) => m.id === id);
-    if (msg) {
-      msg.ai_reply = aiReplyText;
-      msg.ai_replied_at = ai_replied_at;
-      saveToDisk();
-      return msg;
-    }
-    return null;
+
+    return localMsg || null;
   },
 
   async markMessageRead(id: string): Promise<boolean> {
