@@ -221,7 +221,7 @@ export default function TrackClientView({ storeName }: { storeName: string }) {
                       </div>
 
                       <div className="text-[11px] text-slate-400">
-                        Paid: <strong className="text-slate-700">GHS {Number(o.amount).toFixed(2)}</strong> • {new Date(o.created_at).toLocaleString()}
+                        Paid: <strong className="text-slate-700">GHS {Number(o.amount).toFixed(2)}</strong> • {new Date(o.created_at).toLocaleString("en-US", { dateStyle: "short", timeStyle: "short", hour12: true })}
                       </div>
 
                       {/* Helpful reassurance if payment is paid but delivery had a delay */}

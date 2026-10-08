@@ -614,16 +614,17 @@ function generateLiveTrackerFallback(settings?: any): DeliveryTrackerData {
   const placedDate = new Date(now.getTime() - (fastLaneMin + 2) * 60 * 1000);
   const deliveredDate = new Date(now.getTime() - 2 * 60 * 1000);
 
-  // Ghana operates on GMT / UTC+0 year-round
-  const formatTime = (d: Date) =>
-    d.toLocaleTimeString("en-GB", {
-      hour: "2-digit",
+  // Ghana operates on GMT / UTC+0 year-round. Format in 12-hour AM/PM format.
+  const formatTime12 = (d: Date) =>
+    d.toLocaleTimeString("en-US", {
+      hour: "numeric",
       minute: "2-digit",
+      hour12: true,
       timeZone: "UTC",
     });
 
-  const placedTimeStr = formatTime(placedDate);
-  const deliveredTimeStr = formatTime(deliveredDate);
+  const placedTimeStr = formatTime12(placedDate);
+  const deliveredTimeStr = formatTime12(deliveredDate);
 
   // Dynamic batch tracking number that increments across the day
   const dayOfYear = Math.floor(
@@ -654,8 +655,12 @@ function generateLiveTrackerFallback(settings?: any): DeliveryTrackerData {
         pending: basePending,
         failed: 0,
       },
+      fastLaneMinutes: fastLaneMin,
       lastDelivered: {
         trackingId,
+        fastLaneMinutes: fastLaneMin,
+        placedAt: placedDate.toISOString(),
+        deliveredAt: deliveredDate.toISOString(),
         summary: `Tracking #${trackingId} — placed at ${placedTimeStr}, delivered at ${deliveredTimeStr}`,
       },
       checkingNow: { summary: `Checking now: Telecom Batch #${trackingId}` },

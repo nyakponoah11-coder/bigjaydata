@@ -110,8 +110,8 @@ export default function HelpClientView({
         const initialWelcome: ChatMessage = {
           id: "welcome-1",
           sender: "ai",
-          text: `Hello bossu! 👋 Welcome to ${storeName} Help & Live Support Room.\n\nHow can we help you today? You can:\n• Type your message or questions below\n• Attach screenshots (MoMo debit SMS, receipts, or errors)\n• Ask about bundle prices or track an order reference\n\nOur AI responds instantly, and our human admin team monitors all messages right here!`,
-          timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+          text: `Hello bossu! 👋 Welcome to ${storeName} Help & Live Support Room.\n\nHow can we help you today? You can:\n• Type your message or questions below\n• Attach screenshots (MoMo debit SMS, receipts, or errors)\n• Ask about bundle prices or track an order reference\n\nBig J Support responds instantly, and our support team monitors all messages right here!`,
+          timestamp: new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true }),
         };
         setMessages([initialWelcome]);
       }
@@ -138,17 +138,17 @@ export default function HelpClientView({
             sender: "user",
             text: m.message,
             imageUrl: m.image_url,
-            timestamp: new Date(m.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+            timestamp: new Date(m.created_at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true }),
           });
 
-          // If AI has replied to this message
+          // If Big J Support has replied to this message
           if (m.ai_reply) {
             loaded.push({
               id: `ai-reply-${m.id}`,
               sender: "ai",
               text: m.ai_reply,
               timestamp: m.ai_replied_at
-                ? new Date(m.ai_replied_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+                ? new Date(m.ai_replied_at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })
                 : "Just now",
             });
           }
@@ -160,7 +160,7 @@ export default function HelpClientView({
               sender: "admin",
               text: m.reply,
               timestamp: m.replied_at
-                ? new Date(m.replied_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+                ? new Date(m.replied_at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })
                 : "Just now",
             });
           }
@@ -252,7 +252,7 @@ export default function HelpClientView({
       sender: "user",
       text: userText || "Attached image",
       imageUrl: attachedImage || undefined,
-      timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+      timestamp: new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true }),
     };
 
     setMessages((prev) => {
@@ -308,7 +308,7 @@ export default function HelpClientView({
             id: "ai-" + (savedMsgId || Date.now()),
             sender: "ai",
             text: aiData.reply,
-            timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+            timestamp: new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true }),
           };
 
           setMessages((prev) => {
@@ -346,7 +346,7 @@ export default function HelpClientView({
             id: "err-" + Date.now(),
             sender: "ai",
             text: "Your message was sent to our admin team! You can also reach us immediately on WhatsApp if urgent.",
-            timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+            timestamp: new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true }),
           },
         ];
         if (typeof window !== "undefined" && sessionId) {
@@ -430,12 +430,12 @@ export default function HelpClientView({
                 </h2>
                 <span className="hidden sm:inline-flex items-center gap-1 text-[10px] bg-emerald-400/20 text-emerald-300 font-bold px-2 py-0.5 rounded-full border border-emerald-400/30">
                   <Sparkles className="w-2.5 h-2.5" />
-                  24/7 AI + Admin
+                  Big J Support
                 </span>
               </div>
               <p className="text-[11px] text-slate-300 flex items-center gap-1 mt-0.5">
                 <ShieldCheck className="w-3 h-3 text-emerald-400" />
-                Upload screenshots, chat with AI, or message store staff
+                Upload screenshots, chat with Big J Support, or message store staff
               </p>
             </div>
           </div>
@@ -517,7 +517,7 @@ export default function HelpClientView({
                   ) : !isUser ? (
                     <span className="font-bold text-emerald-400 flex items-center gap-1">
                       <Bot className="w-3 h-3 text-emerald-400" />
-                      AI Support Specialist
+                      Big J Support
                     </span>
                   ) : (
                     <span className="font-semibold text-slate-300">You</span>

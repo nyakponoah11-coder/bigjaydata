@@ -44,10 +44,10 @@ export default function AICustomerChatModal({
     {
       id: "welcome-1",
       sender: "ai",
-      text: `Hello bossu! 👋 Welcome to ${storeName}.\n\nI am your 24/7 AI Customer Support Specialist. How can I help you today? You can ask me:\n• "What are the prices for MTN 5GB or 10GB?"\n• "Track my order BMGH-xxxxxxxx or 055xxxxxxx"\n• "How long does delivery take?"\n• "Can I buy Telecel or AT bundles?"`,
+      text: `Hello bossu! 👋 Welcome to ${storeName}.\n\nI am your 24/7 Big J Customer Support Specialist. How can I help you today? You can ask me:\n• "What are the prices for MTN 5GB or 10GB?"\n• "Track my order BMGH-xxxxxxxx or 055xxxxxxx"\n• "How long does delivery take?"\n• "Can I buy Telecel or AT bundles?"`,
       provider: "gemini",
-      modelUsed: "AI Assistant",
-      timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+      modelUsed: "Big J Support",
+      timestamp: new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true }),
     },
   ]);
   const [input, setInput] = useState("");
@@ -76,7 +76,7 @@ export default function AICustomerChatModal({
       id: "u-" + Date.now(),
       sender: "user",
       text: userText,
-      timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+      timestamp: new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true }),
     };
 
     setMessages((prev) => [...prev, userMsg]);
@@ -105,7 +105,7 @@ export default function AICustomerChatModal({
         text: data.reply || "Done bossu! How else may I assist you?",
         provider: data.provider,
         modelUsed: data.modelUsed,
-        timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        timestamp: new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true }),
       };
 
       setMessages((prev) => [...prev, aiReply]);
@@ -116,7 +116,7 @@ export default function AICustomerChatModal({
           id: "err-" + Date.now(),
           sender: "ai",
           text: `Sorry bossu, I had a brief network glitch. You can also chat directly with our human team on WhatsApp at +${whatsappNumber}!`,
-          timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+          timestamp: new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true }),
         },
       ]);
     } finally {
@@ -148,15 +148,15 @@ export default function AICustomerChatModal({
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="font-extrabold text-sm sm:text-base text-white tracking-tight">
-                  {storeName} AI Support
+                  Big J Support
                 </h3>
                 <span className="text-[10px] font-black uppercase tracking-wider text-emerald-300 bg-emerald-950/90 border border-emerald-500/40 px-2 py-0.5 rounded-full">
-                  Live AI
+                  Live Support
                 </span>
               </div>
               <p className="text-[11px] text-emerald-200/90 flex items-center gap-1 font-medium">
                 <Sparkles className="w-3 h-3 text-amber-300 shrink-0" />
-                <span>Instant help • Model rotating engine</span>
+                <span>Instant customer support • Online 24/7</span>
               </p>
             </div>
           </div>
@@ -201,7 +201,7 @@ export default function AICustomerChatModal({
           {loading && (
             <div className="flex items-center gap-2 text-slate-400 text-xs py-2 px-3 bg-slate-900/60 rounded-xl w-fit border border-slate-800 animate-pulse">
               <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-400" />
-              <span>AI assistant is typing...</span>
+              <span>Big J Support is replying...</span>
             </div>
           )}
         </div>

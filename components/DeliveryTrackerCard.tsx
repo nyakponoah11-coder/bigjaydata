@@ -54,6 +54,29 @@ export default function DeliveryTrackerCard({
       ? deliveredCount + pendingCount
       : 424;
 
+  // Helper to format 12-hour time (AM/PM)
+  const format12Hour = (d: Date) => {
+    return d.toLocaleTimeString("en-US", {
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    });
+  };
+
+  // Helper to format duration in hours/minutes matching the exact difference
+  const formatDuration = (minutes: number) => {
+    const m = Math.max(1, Math.round(minutes));
+    if (m < 60) {
+      return `${m} min`;
+    }
+    const hrs = Math.floor(m / 60);
+    const remMin = m % 60;
+    if (remMin === 0) {
+      return hrs === 1 ? "1 hour" : `${hrs} hours`;
+    }
+    return `${hrs} hr ${remMin} min`;
+  };
+
   // Extract last delivered tracking details and calculate duration
   const dataObj = (tracker?.data || tracker || {}) as any;
   const lastDelivered = (dataObj?.lastDelivered || {}) as any;
@@ -71,34 +94,27 @@ export default function DeliveryTrackerCard({
   // Real-time default timestamps
   const now = new Date();
   let fastLaneMinutes = explicitMinutes > 0 ? explicitMinutes : 15;
-  let placedTimeStr = new Date(now.getTime() - (fastLaneMinutes + 2) * 60 * 1000).toLocaleTimeString("en-GB", {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-  let deliveredTimeStr = new Date(now.getTime() - 2 * 60 * 1000).toLocaleTimeString("en-GB", {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  const deliveredDateDefault = new Date(now.getTime() - 2 * 60 * 1000);
+  const placedDateDefault = new Date(deliveredDateDefault.getTime() - fastLaneMinutes * 60 * 1000);
+
+  let placedTimeStr = format12Hour(placedDateDefault);
+  let deliveredTimeStr = format12Hour(deliveredDateDefault);
 
   if (lastDelivered?.placedAt && lastDelivered?.deliveredAt) {
     try {
       const placedDate = new Date(lastDelivered.placedAt);
       const deliveredDate = new Date(lastDelivered.deliveredAt);
-      const diffMs = deliveredDate.getTime() - placedDate.getTime();
-      const diffMin = Math.round(diffMs / 60000);
+      if (!isNaN(placedDate.getTime()) && !isNaN(deliveredDate.getTime())) {
+        const diffMs = deliveredDate.getTime() - placedDate.getTime();
+        const diffMin = Math.round(diffMs / 60000);
 
-      if (diffMin > 0 && diffMin <= 120) {
-        fastLaneMinutes = diffMin;
+        if (diffMin > 0 && diffMin <= 300) {
+          fastLaneMinutes = diffMin;
+        }
+
+        placedTimeStr = format12Hour(placedDate);
+        deliveredTimeStr = format12Hour(deliveredDate);
       }
-
-      placedTimeStr = placedDate.toLocaleTimeString("en-GB", {
-        hour: "2-digit",
-        minute: "2-digit",
-      });
-      deliveredTimeStr = deliveredDate.toLocaleTimeString("en-GB", {
-        hour: "2-digit",
-        minute: "2-digit",
-      });
     } catch {
       // fallback to dynamic defaults
     }
@@ -117,7 +133,11 @@ export default function DeliveryTrackerCard({
           const ampm = m[3]?.toUpperCase();
           if (ampm === "PM" && h < 12) h += 12;
           if (ampm === "AM" && h === 12) h = 0;
-          return { total: h * 60 + min, display: `${String(h).padStart(2, "0")}:${String(min).padStart(2, "0")}` };
+          const d = new Date(2026, 0, 1, h, min);
+          return {
+            total: h * 60 + min,
+            display: format12Hour(d),
+          };
         }
         return null;
       };
@@ -127,12 +147,14 @@ export default function DeliveryTrackerCard({
       if (pObj && dObj) {
         let diff = dObj.total - pObj.total;
         if (diff < 0) diff += 24 * 60;
-        if (diff > 0 && diff <= 120) fastLaneMinutes = diff;
+        if (diff > 0 && diff <= 300) fastLaneMinutes = diff;
         placedTimeStr = pObj.display;
         deliveredTimeStr = dObj.display;
       }
     }
   }
+
+  const durationDisplay = formatDuration(fastLaneMinutes);
 
   return (
     <div
@@ -214,7 +236,7 @@ export default function DeliveryTrackerCard({
             </span>
           </div>
           <span className="text-[#facc15] font-black text-sm sm:text-base font-mono">
-            ~{fastLaneMinutes} min
+            ~{durationDisplay}
           </span>
         </div>
         <div className="text-amber-200/90 text-xs sm:text-sm font-mono mt-1.5 font-medium">
@@ -232,7 +254,7 @@ export default function DeliveryTrackerCard({
 
       {/* BOTTOM SOLID BANNER BUTTON */}
       <div className="w-full rounded-full bg-[#f59e0b] hover:bg-[#d97706] text-black font-extrabold py-3.5 px-6 text-center text-sm sm:text-base tracking-wide shadow-lg shadow-amber-500/20 transition-all flex items-center justify-center gap-2 mt-4 cursor-default select-none">
-        Fast lane delivery time is ~{fastLaneMinutes} min
+        Fast lane delivery time is ~{durationDisplay}
       </div>
     </div>
   );
