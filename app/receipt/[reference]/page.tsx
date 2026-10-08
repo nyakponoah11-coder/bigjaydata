@@ -33,6 +33,7 @@ export default async function ReceiptPage({
       <Navbar
         storeName={settings.store_name}
         whatsappNumber={settings.whatsapp_number}
+        whatsappChannelUrl={settings.whatsapp_channel_url}
       />
 
       <main className="flex-1 max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full space-y-6">

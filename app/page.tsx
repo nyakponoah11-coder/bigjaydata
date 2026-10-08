@@ -51,6 +51,7 @@ export default async function HomePage() {
         <Navbar
           storeName={settings.store_name}
           whatsappNumber={settings.whatsapp_number}
+          whatsappChannelUrl={settings.whatsapp_channel_url}
         />
 
       {/* Customer Comments Cards with Avatars (Comes First) */}
