@@ -32,7 +32,7 @@ interface ChatMessage {
   text: string;
   imageUrl?: string;
   timestamp: string;
-  repliedAt?: string;
+  createdAt: number;
 }
 
 export default function HelpClientView({
@@ -53,31 +53,49 @@ export default function HelpClientView({
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
-  const isUserScrolledUpRef = useRef(false);
+  const messagesBottomRef = useRef<HTMLDivElement>(null);
   const prevMessagesSig = useRef("");
+  const isUserScrolledUpRef = useRef(false);
 
-  // Helper to scroll internal chat container only - NEVER scrolls the outer page or window!
+  // Smooth scroll to bottom of chat container
   const scrollToBottom = (smooth = true) => {
-    const el = chatContainerRef.current;
-    if (el) {
-      el.scrollTo({
-        top: el.scrollHeight,
+    if (chatContainerRef.current) {
+      chatContainerRef.current.scrollTo({
+        top: chatContainerRef.current.scrollHeight,
         behavior: smooth ? "smooth" : "auto",
+      });
+    }
+    if (messagesBottomRef.current) {
+      messagesBottomRef.current.scrollIntoView({
+        behavior: smooth ? "smooth" : "auto",
+        block: "end",
       });
     }
   };
 
-  // Monitor chat container scroll so manual user scrolling is preserved
   const handleChatScroll = () => {
-    const el = chatContainerRef.current;
-    if (!el) return;
-    const distanceToBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-    // If user is more than 70px above bottom, they have deliberately scrolled up to read past history
-    isUserScrolledUpRef.current = distanceToBottom > 70;
+    if (!chatContainerRef.current) return;
+    const { scrollTop, scrollHeight, clientHeight } = chatContainerRef.current;
+    const isNearBottom = scrollHeight - scrollTop - clientHeight < 80;
+    isUserScrolledUpRef.current = !isNearBottom;
   };
 
-  // Initialize or restore session ID & details
+  // Auto-scroll to bottom whenever messages or loading state changes
+  useEffect(() => {
+    const timer = setTimeout(() => scrollToBottom(true), 50);
+    return () => clearTimeout(timer);
+  }, [messages.length, loading]);
+
+  // Unified persistent storage key
   const HELP_CHAT_KEY = "bmgh_help_chat_history";
+
+  const initialWelcome: ChatMessage = {
+    id: "welcome-1",
+    sender: "ai",
+    text: `Hello bossu! 👋 Welcome to ${storeName} Help & Live Support Room.\n\nHow can we help you today? You can:\n• Type your message or questions below\n• Attach screenshots (MoMo debit SMS, receipts, or errors)\n• Ask about bundle prices or track an order reference\n\nBig J Support responds instantly, and our support team monitors all messages right here!`,
+    timestamp: new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true }),
+    createdAt: 0,
+  };
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -93,7 +111,7 @@ export default function HelpClientView({
       setCustomerName(savedName);
       setCustomerPhone(savedPhone);
 
-      // Load cached chat history from unified key or session key
+      // Load cached chat history
       const cachedChat =
         localStorage.getItem(HELP_CHAT_KEY) ||
         localStorage.getItem("bmgh_help_chat_" + sId);
@@ -102,7 +120,16 @@ export default function HelpClientView({
         try {
           const parsed = JSON.parse(cachedChat);
           if (Array.isArray(parsed) && parsed.length > 0) {
-            setMessages(parsed);
+            const normalized: ChatMessage[] = parsed.map((m: any, idx: number) => ({
+              id: m.id || "msg-" + idx,
+              sender: m.sender || "user",
+              text: m.text || "",
+              imageUrl: m.imageUrl,
+              timestamp: m.timestamp || "Just now",
+              createdAt: m.id === "welcome-1" ? 0 : m.createdAt || idx + 1,
+            }));
+            normalized.sort((a, b) => a.createdAt - b.createdAt);
+            setMessages(normalized);
             initialLoaded = true;
           }
         } catch {
@@ -111,12 +138,6 @@ export default function HelpClientView({
       }
 
       if (!initialLoaded) {
-        const initialWelcome: ChatMessage = {
-          id: "welcome-1",
-          sender: "ai",
-          text: `Hello bossu! 👋 Welcome to ${storeName} Help & Live Support Room.\n\nHow can we help you today? You can:\n• Type your message or questions below\n• Attach screenshots (MoMo debit SMS, receipts, or errors)\n• Ask about bundle prices or track an order reference\n\nBig J Support responds instantly, and our support team monitors all messages right here!`,
-          timestamp: new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true }),
-        };
         setMessages([initialWelcome]);
       }
 
@@ -130,83 +151,109 @@ export default function HelpClientView({
       const res = await fetch(`/api/messages?sessionId=${encodeURIComponent(sId)}`);
       const data = await res.json();
       if (data.success && Array.isArray(data.messages) && data.messages.length > 0) {
-        // Transform fetched messages into chat bubble format
-        const loaded: ChatMessage[] = [];
-        const ascMessages = [...data.messages].reverse();
+        const serverChatItems: ChatMessage[] = [];
 
-        ascMessages.forEach((m: any) => {
-          // User message
-          loaded.push({
+        // Sort server messages chronologically (oldest first)
+        const sortedAsc = [...data.messages].sort(
+          (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+        );
+
+        sortedAsc.forEach((m: any) => {
+          const baseTime = new Date(m.created_at).getTime() || Date.now();
+
+          // 1. User message bubble
+          serverChatItems.push({
             id: m.id,
             sender: "user",
             text: m.message,
             imageUrl: m.image_url,
             timestamp: new Date(m.created_at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true }),
+            createdAt: baseTime,
           });
 
-          // If Big J Support has replied to this message
+          // 2. AI reply bubble (strictly sequenced right after user message)
           if (m.ai_reply) {
-            loaded.push({
+            const aiTime = m.ai_replied_at ? new Date(m.ai_replied_at).getTime() : baseTime + 100;
+            serverChatItems.push({
               id: `ai-reply-${m.id}`,
               sender: "ai",
               text: m.ai_reply,
               timestamp: m.ai_replied_at
                 ? new Date(m.ai_replied_at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })
                 : "Just now",
+              createdAt: aiTime > baseTime ? aiTime : baseTime + 100,
             });
           }
 
-          // If admin has replied to this message, add admin bubble right after it
+          // 3. Admin human reply bubble (strictly sequenced right after)
           if (m.reply) {
-            loaded.push({
+            const adminTime = m.replied_at ? new Date(m.replied_at).getTime() : baseTime + 200;
+            serverChatItems.push({
               id: `admin-reply-${m.id}`,
               sender: "admin",
               text: m.reply,
               timestamp: m.replied_at
                 ? new Date(m.replied_at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })
                 : "Just now",
+              createdAt: adminTime > baseTime ? adminTime : baseTime + 200,
             });
           }
         });
 
         // Compute signature to check if anything actually changed on server
-        const signature = loaded.map((m) => `${m.id}_${m.text}`).join("|");
+        const signature = serverChatItems.map((m) => `${m.id}_${m.text}`).join("|");
         if (signature === prevMessagesSig.current && !isInitial) {
           return;
         }
         prevMessagesSig.current = signature;
 
         setMessages((prev) => {
-          const welcome = prev.find((x) => x.id === "welcome-1");
+          const welcome = prev.find((x) => x.id === "welcome-1") || initialWelcome;
 
-          // Keep all messages in state that are not yet in loaded
-          const uncommitted = prev.filter(
-            (p) =>
-              p.id !== "welcome-1" &&
-              !loaded.some(
-                (l) => l.id === p.id || (l.sender === p.sender && l.text.trim() === p.text.trim())
-              )
+          const mergedMap = new Map<string, ChatMessage>();
+          mergedMap.set("welcome-1", welcome);
+
+          // Add existing local messages
+          for (const p of prev) {
+            if (p.id !== "welcome-1") {
+              mergedMap.set(p.id, p);
+            }
+          }
+
+          // Merge confirmed server messages
+          for (const s of serverChatItems) {
+            // Replace matching optimistic local user message
+            for (const [key, val] of mergedMap.entries()) {
+              if (
+                key !== "welcome-1" &&
+                key !== s.id &&
+                val.sender === s.sender &&
+                val.text.trim() === s.text.trim()
+              ) {
+                mergedMap.delete(key);
+              }
+            }
+            mergedMap.set(s.id, s);
+          }
+
+          // Strictly sort chronologically from top to down (createdAt ASC)
+          const sortedList = Array.from(mergedMap.values()).sort(
+            (a, b) => a.createdAt - b.createdAt
           );
 
-          const combined = welcome ? [welcome, ...loaded, ...uncommitted] : [...loaded, ...uncommitted];
-
           if (typeof window !== "undefined") {
-            localStorage.setItem(HELP_CHAT_KEY, JSON.stringify(combined));
-            if (sId) localStorage.setItem("bmgh_help_chat_" + sId, JSON.stringify(combined));
+            localStorage.setItem(HELP_CHAT_KEY, JSON.stringify(sortedList));
+            if (sId) localStorage.setItem("bmgh_help_chat_" + sId, JSON.stringify(sortedList));
           }
-          return combined;
+          return sortedList;
         });
-
-        if (!isUserScrolledUpRef.current || isInitial) {
-          setTimeout(() => scrollToBottom(!isInitial), 60);
-        }
       }
     } catch (err) {
       console.warn("Failed to load past session messages", err);
     }
   };
 
-  // Poll for admin replies every 6 seconds without disrupting scroll
+  // Poll for admin replies every 6 seconds
   useEffect(() => {
     if (!sessionId) return;
     const interval = setInterval(() => {
@@ -247,13 +294,15 @@ export default function HelpClientView({
     if (customerName) localStorage.setItem("bmgh_help_customer_name", customerName);
     if (customerPhone) localStorage.setItem("bmgh_help_customer_phone", customerPhone);
 
-    const userMsgId = "u-" + Date.now();
+    const now = Date.now();
+    const userMsgId = "u-" + now;
     const userMsg: ChatMessage = {
       id: userMsgId,
       sender: "user",
       text: userText || "Attached image",
       imageUrl: attachedImage || undefined,
       timestamp: new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true }),
+      createdAt: now,
     };
 
     let activeSessionId = sessionId;
@@ -267,7 +316,7 @@ export default function HelpClientView({
     }
 
     setMessages((prev) => {
-      const next = [...prev, userMsg];
+      const next = [...prev, userMsg].sort((a, b) => a.createdAt - b.createdAt);
       if (typeof window !== "undefined") {
         localStorage.setItem(HELP_CHAT_KEY, JSON.stringify(next));
         if (activeSessionId) localStorage.setItem("bmgh_help_chat_" + activeSessionId, JSON.stringify(next));
@@ -304,15 +353,17 @@ export default function HelpClientView({
 
       const aiData = await aiRes.json().catch(() => ({}));
       if (aiData.reply) {
+        const replyTime = Math.max(Date.now(), now + 100);
         const aiMsg: ChatMessage = {
-          id: "ai-" + (aiData.messageId || Date.now()),
+          id: "ai-" + (aiData.messageId || replyTime),
           sender: "ai",
           text: aiData.reply,
           timestamp: new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true }),
+          createdAt: replyTime,
         };
 
         setMessages((prev) => {
-          const next = [...prev, aiMsg];
+          const next = [...prev, aiMsg].sort((a, b) => a.createdAt - b.createdAt);
           if (typeof window !== "undefined") {
             localStorage.setItem(HELP_CHAT_KEY, JSON.stringify(next));
             if (activeSessionId) localStorage.setItem("bmgh_help_chat_" + activeSessionId, JSON.stringify(next));
@@ -326,16 +377,18 @@ export default function HelpClientView({
       }
     } catch (err: any) {
       console.error("AI Chat call error:", err);
+      const errTime = Math.max(Date.now(), now + 100);
       setMessages((prev) => {
         const next: ChatMessage[] = [
           ...prev,
           {
-            id: "err-" + Date.now(),
-            sender: "ai",
+            id: "err-" + errTime,
+            sender: "ai" as const,
             text: "Your message has been sent to our desk bossu! If urgent, you can also reach us directly on WhatsApp.",
             timestamp: new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true }),
+            createdAt: errTime,
           },
-        ];
+        ].sort((a, b) => a.createdAt - b.createdAt);
         if (typeof window !== "undefined") {
           localStorage.setItem(HELP_CHAT_KEY, JSON.stringify(next));
           if (activeSessionId) localStorage.setItem("bmgh_help_chat_" + activeSessionId, JSON.stringify(next));
@@ -553,6 +606,8 @@ export default function HelpClientView({
               <span>Thinking & saving message...</span>
             </div>
           )}
+
+          <div ref={messagesBottomRef} className="h-1 shrink-0" />
         </div>
 
         {/* QUICK SUGGESTIONS CHIPS */}
