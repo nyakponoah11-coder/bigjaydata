@@ -13,6 +13,8 @@ import {
   ExternalLink,
   ShieldCheck,
   Sparkles,
+  Smartphone,
+  Store,
 } from "lucide-react";
 import FreeDataBanner from "./FreeDataBanner";
 
@@ -83,6 +85,8 @@ export default function Navbar({
     { label: "Telecel Data Bundles", href: "/buy/telecel", icon: null, dot: "bg-red-500", badge: "Fast" },
     { label: "AT (AirtelTigo) Bundles", href: "/buy/at", icon: null, dot: "bg-blue-500", badge: null },
     { label: "Track Order Status", href: "/track", icon: Search, badge: "Live" },
+    { label: "Install App", href: "/install", icon: Smartphone, badge: "APK / iOS" },
+    { label: "Agent Store", href: "/agent-store", icon: Store, badge: "Coming Soon" },
   ];
 
   return (

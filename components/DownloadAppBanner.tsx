@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import Link from "next/link";
 import {
   Smartphone,
   Download,
@@ -189,11 +190,19 @@ export default function DownloadAppBanner({ storeName = "Big Jay Data" }: Props)
               <div className="pt-1 flex flex-wrap items-center gap-2.5">
                 <button
                   onClick={handleInstallAndroid}
-                  className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-green-500 hover:from-emerald-400 hover:to-green-400 text-slate-950 font-black text-xs shadow-lg shadow-emerald-500/20 transition-all hover:scale-[1.02] active:scale-95"
+                  className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-green-500 hover:from-emerald-400 hover:to-green-400 text-slate-950 font-black text-xs shadow-lg shadow-emerald-500/20 transition-all hover:scale-[1.02] active:scale-95 cursor-pointer"
                 >
                   <Download className="w-4 h-4" />
                   <span>Install App on Android</span>
                 </button>
+
+                <Link
+                  href="/install"
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white font-bold text-xs transition-colors"
+                >
+                  <span>Full Install Guide</span>
+                  <ExternalLink className="w-3.5 h-3.5 text-emerald-400" />
+                </Link>
               </div>
             </div>
           ) : (
@@ -213,6 +222,16 @@ export default function DownloadAppBanner({ storeName = "Big Jay Data" }: Props)
                   Tap <strong className="text-white">&quot;Add&quot;</strong> in the top-right corner to place {storeName} on your home screen.
                 </li>
               </ol>
+
+              <div className="pt-1">
+                <Link
+                  href="/install"
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white font-bold text-xs transition-colors"
+                >
+                  <span>View Full iPhone Details</span>
+                  <ExternalLink className="w-3.5 h-3.5 text-emerald-400" />
+                </Link>
+              </div>
             </div>
           )}
         </div>
