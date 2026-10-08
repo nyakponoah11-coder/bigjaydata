@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Sparkles, Zap } from "lucide-react";
+import { Zap } from "lucide-react";
 
 interface Props {
   text?: string;
@@ -69,14 +69,7 @@ export default function AnnouncementBanner({
         {/* Rolling Marquee text */}
         <div className="relative w-full overflow-hidden whitespace-nowrap">
           <div className="inline-block animate-marquee pl-4">
-            <span className="inline-flex items-center gap-2">
-              <span>{currentText}</span>
-              <Sparkles className="w-3.5 h-3.5 text-amber-300 inline" />
-              <span className="opacity-75">|</span>
-              <span className="text-emerald-100 font-normal">
-                Need assistance? Tap the floating WhatsApp button anytime!
-              </span>
-            </span>
+            <span className="font-medium tracking-wide">{currentText}</span>
           </div>
         </div>
       </div>
