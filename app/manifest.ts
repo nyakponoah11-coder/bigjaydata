@@ -2,8 +2,8 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "Big Jay Data",
-    short_name: "BigJayData",
+    name: "My Bundle",
+    short_name: "My Bundle",
     description: "Instant Mobile Data Bundles in Ghana — MTN, Telecel & AT",
     start_url: "/",
     display: "standalone",

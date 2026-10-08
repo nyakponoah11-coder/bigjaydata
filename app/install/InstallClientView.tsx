@@ -208,7 +208,7 @@ export default function InstallClientView({
                 </div>
                 <h3 className="font-extrabold text-sm text-white">Instant App Launch</h3>
                 <p className="text-xs text-slate-400 leading-relaxed">
-                  The {storeName} app icon will appear right on your phone&apos;s home screen and app drawer!
+                  The <strong>My Bundle</strong> app icon will appear right on your phone&apos;s home screen and app drawer!
                 </p>
               </div>
             </div>
@@ -275,7 +275,7 @@ export default function InstallClientView({
                   <span className="text-slate-400 text-xs font-mono bg-slate-800 px-1 py-0.5 rounded">+</span>
                 </h3>
                 <p className="text-xs text-slate-400 leading-relaxed">
-                  Scroll down the share options and tap <strong className="text-emerald-400">&quot;Add to Home Screen&quot;</strong>.
+                  Scroll down the share options and tap <strong className="text-emerald-400">&quot;Add to Home Screen&quot;</strong> (defaults to <strong>&quot;My Bundle&quot;</strong>).
                 </p>
               </div>
 

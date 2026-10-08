@@ -11,10 +11,11 @@ export const metadata: Metadata = {
     apple: "/logo.png",
   },
   manifest: "/manifest.webmanifest",
+  applicationName: "My Bundle",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "Big Jay Data",
+    title: "My Bundle",
   },
 };
 
