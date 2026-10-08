@@ -19,6 +19,7 @@ import {
   EyeOff,
   Sparkles,
   Key,
+  Zap,
 } from "lucide-react";
 
 export default function AdminSettingsPage() {
@@ -47,6 +48,13 @@ export default function AdminSettingsPage() {
   const [showGeminiKey, setShowGeminiKey] = useState(false);
   const [testingGemini, setTestingGemini] = useState(false);
   const [geminiTestResult, setGeminiTestResult] = useState<{ success: boolean; message: string } | null>(null);
+
+  // Groq AI Agent State
+  const [groqApiKey, setGroqApiKey] = useState("");
+  const [groqModel, setGroqModel] = useState("llama-3.3-70b-versatile");
+  const [showGroqKey, setShowGroqKey] = useState(false);
+  const [testingGroq, setTestingGroq] = useState(false);
+  const [groqTestResult, setGroqTestResult] = useState<{ success: boolean; message: string } | null>(null);
 
   // DataMart Connection Testing
   const [testingDataMart, setTestingDataMart] = useState(false);
@@ -116,6 +124,39 @@ export default function AdminSettingsPage() {
     }
   };
 
+  const handleTestGroq = async () => {
+    if (!groqApiKey.trim()) {
+      setGroqTestResult({ success: false, message: "Please enter your Groq API key first." });
+      return;
+    }
+    setTestingGroq(true);
+    setGroqTestResult(null);
+    try {
+      const res = await fetch("/api/admin/ai-settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "test",
+          provider: "groq",
+          api_key: groqApiKey.trim(),
+          model: groqModel.trim(),
+        }),
+      });
+      const data = await res.json();
+      setGroqTestResult({
+        success: data.success,
+        message: data.message || (data.success ? "Connected to Groq Cloud!" : "Connection failed"),
+      });
+    } catch (err: any) {
+      setGroqTestResult({
+        success: false,
+        message: err?.message || "Failed to contact Groq API",
+      });
+    } finally {
+      setTestingGroq(false);
+    }
+  };
+
   const fetchSettings = async () => {
     setLoading(true);
     try {
@@ -141,6 +182,8 @@ export default function AdminSettingsPage() {
         setAnnouncementActive(s.announcement_active !== false);
         setGeminiApiKey(s.gemini_api_key || "");
         setGeminiModel(s.gemini_model || "gemini-3.8-flash");
+        setGroqApiKey(s.groq_api_key || s.grok_api_key || "");
+        setGroqModel(s.groq_model || s.grok_model || "llama-3.3-70b-versatile");
       }
     } catch (e: any) {
       setError("Failed to load settings");
@@ -186,6 +229,16 @@ export default function AdminSettingsPage() {
         updates.gemini_model = geminiModel.trim();
       }
 
+      // Groq AI Key & Model
+      if (groqApiKey !== undefined && !groqApiKey.includes("••••")) {
+        updates.groq_api_key = groqApiKey.trim();
+        updates.grok_api_key = groqApiKey.trim();
+      }
+      if (groqModel) {
+        updates.groq_model = groqModel.trim();
+        updates.grok_model = groqModel.trim();
+      }
+
       const res = await fetch("/api/settings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -208,10 +261,16 @@ export default function AdminSettingsPage() {
         if (data.settings.gemini_model !== undefined) {
           setGeminiModel(data.settings.gemini_model);
         }
+        if (data.settings.groq_api_key !== undefined || data.settings.grok_api_key !== undefined) {
+          setGroqApiKey(data.settings.groq_api_key || data.settings.grok_api_key || "");
+        }
+        if (data.settings.groq_model !== undefined || data.settings.grok_model !== undefined) {
+          setGroqModel(data.settings.groq_model || data.settings.grok_model || "llama-3.3-70b-versatile");
+        }
       }
 
       setNotice(
-        `Settings saved successfully! Gemini AI key and store settings updated in database.`
+        `Settings saved successfully! AI keys and store settings updated in database.`
       );
       setTimeout(() => setNotice(""), 6000);
     } catch (err: any) {
@@ -639,6 +698,132 @@ export default function AdminSettingsPage() {
                     <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
                   )}
                   <span>{geminiTestResult.message}</span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* SECTION 4B: GROQ CLOUD (FREE ULTRA-FAST LPU) */}
+          <div className="bg-slate-900 border border-sky-500/30 rounded-3xl p-6 shadow-lg space-y-4 relative overflow-hidden">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2.5">
+                <Zap className="w-5 h-5 text-sky-400" />
+                <span className="text-white font-bold text-sm">Groq Cloud AI (Ultra-Fast LPU • Free)</span>
+                {groqApiKey ? (
+                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-950 text-emerald-400 border border-emerald-800 flex items-center gap-1">
+                    <CheckCircle className="w-3 h-3 text-emerald-400" /> Active & Saved
+                  </span>
+                ) : (
+                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-sky-950/80 text-sky-400 border border-sky-800 flex items-center gap-1">
+                    Free API Key Available
+                  </span>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2">
+                <a
+                  href="https://console.groq.com/keys"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1.5 text-xs text-sky-400 hover:text-sky-300 font-bold bg-sky-400/10 hover:bg-sky-400/20 px-3 py-1.5 rounded-xl border border-sky-400/30 transition-colors"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  <span>Get Free Groq Key ↗</span>
+                </a>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
+              <div className="sm:col-span-2">
+                <label className="block text-slate-300 font-bold mb-1">
+                  Groq API Key (gsk_...)
+                </label>
+                <div className="relative">
+                  <input
+                    type={showGroqKey ? "text" : "password"}
+                    value={groqApiKey}
+                    onChange={(e) => setGroqApiKey(e.target.value)}
+                    placeholder="gsk_..."
+                    className="w-full px-3.5 py-2.5 pr-10 bg-slate-800 border border-slate-700 rounded-xl text-white font-mono text-xs focus:outline-none focus:ring-2 focus:ring-sky-400"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowGroqKey(!showGroqKey)}
+                    className="absolute right-3 top-2.5 text-slate-400 hover:text-white"
+                  >
+                    {showGroqKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+                {groqApiKey && (
+                  <div className="mt-2 p-2 rounded-xl bg-slate-800/80 border border-slate-700 flex items-center justify-between text-[11px] text-slate-300">
+                    <span className="font-mono">
+                      🔒 Saved in Database:{" "}
+                      <strong className="text-sky-300">
+                        {groqApiKey.length > 8
+                          ? groqApiKey.slice(0, 4) + "••••••••" + groqApiKey.slice(-4)
+                          : "••••••••"}
+                      </strong>
+                    </span>
+                    <span className="text-emerald-400 font-bold">Encrypted & Stored</span>
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-slate-300 font-bold mb-1">
+                  Groq Model
+                </label>
+                <select
+                  value={groqModel}
+                  onChange={(e) => setGroqModel(e.target.value)}
+                  className="w-full px-3.5 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white font-medium focus:outline-none focus:ring-2 focus:ring-sky-400"
+                >
+                  <option value="llama-3.3-70b-versatile">llama-3.3-70b-versatile (Recommended • Smartest)</option>
+                  <option value="llama-3.1-8b-instant">llama-3.1-8b-instant (Fastest LPU)</option>
+                  <option value="mixtral-8x7b-32768">mixtral-8x7b-32768</option>
+                  <option value="gemma2-9b-it">gemma2-9b-it</option>
+                </select>
+                <span className="text-[10px] text-slate-400 mt-1 block">
+                  100% Free on Groq LPU with zero latency
+                </span>
+              </div>
+            </div>
+
+            {/* Test Groq Connection Button */}
+            <div className="pt-2 border-t border-slate-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <button
+                type="button"
+                onClick={handleTestGroq}
+                disabled={testingGroq}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-sky-950/60 hover:bg-sky-900/80 border border-sky-800 text-sky-300 rounded-xl text-xs font-bold transition-all disabled:opacity-50"
+              >
+                {testingGroq ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Testing Groq Connection...</span>
+                  </>
+                ) : (
+                  <>
+                    <Zap className="w-3.5 h-3.5" />
+                    <span>Test Groq API Key</span>
+                  </>
+                )}
+              </button>
+
+              {groqTestResult && (
+                <div
+                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-2 ${
+                    groqTestResult.success
+                      ? "bg-emerald-950 text-emerald-300 border border-emerald-800"
+                      : "bg-red-950 text-red-300 border border-red-800"
+                  }`}
+                >
+                  {groqTestResult.success ? (
+                    <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
+                  ) : (
+                    <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
+                  )}
+                  <span>{groqTestResult.message}</span>
                 </div>
               )}
             </div>

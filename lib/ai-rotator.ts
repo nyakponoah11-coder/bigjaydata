@@ -373,6 +373,87 @@ async function generateLocalAssistantReply(
     return `Hello bossu! I'm strictly here to assist you with ${settings.store_name} mobile data bundles (MTN, Telecel, and AT), order tracking, and fast delivery! 😊 How can I help you with your data today?`;
   }
 
+  // 2b. General Status / "What is going on" / "What's happening"
+  const isStatusInquiry =
+    lower.includes("what is going on") ||
+    lower.includes("what's going on") ||
+    lower.includes("whats going on") ||
+    lower.includes("what is happening") ||
+    lower.includes("what's happening") ||
+    lower.includes("whats happening") ||
+    lower.includes("what dey go on") ||
+    lower.includes("wetin dey happen") ||
+    lower.includes("what dey happen") ||
+    lower.includes("any update") ||
+    lower.includes("how far") ||
+    lower.includes("is the system working") ||
+    lower.includes("is everything working");
+
+  if (isStatusInquiry) {
+    return `Everything is running smoothly and fully active bossu! 🚀\n\nOur automated telecom dispatch is online 24/7. All bundle purchases for MTN, Telecel, and AT are crediting directly to customer SIMs within seconds.\n\nDid you just place an order that you want to check, or do you need help getting a new bundle? Let me know what you need and I'll assist you right away!`;
+  }
+
+  // 2c. Delivery Speed & How Delivery Works ("how is delivery", "delivery speed", "how fast", "how does delivery work")
+  const isDeliveryInquiry =
+    lower.includes("delivery") ||
+    lower.includes("how is delivery") ||
+    lower.includes("how fast") ||
+    lower.includes("how quick") ||
+    lower.includes("speed") ||
+    lower.includes("instant") ||
+    lower.includes("how does delivery work") ||
+    lower.includes("delivery time") ||
+    lower.includes("how long to deliver") ||
+    lower.includes("how long does it take") ||
+    lower.includes("how do i receive") ||
+    lower.includes("how do i get the data");
+
+  if (isDeliveryInquiry) {
+    return `Our data delivery is 100% automated and direct to your SIM bossu! ⚡\n\n• **Speed:** Deliveries drop directly onto your line in **15 to 60 seconds** after payment (max 5–15 mins during peak telecom network congestion).\n• **How it works:** As soon as your MoMo payment is authorized, our server triggers the telecom gateway to credit the recipient number automatically.\n• **Checking your balance:** Dial *138# (MTN), *126# (Telecel), or *124# (AT) to see your bundle.\n\nAre you looking to buy a bundle now, or did you want to track an order you already placed?`;
+  }
+
+  // 2d. Order Tracking Inquiry (when user asks to track without providing reference/phone)
+  const isTrackInquiry =
+    (lower.includes("track") ||
+     lower.includes("check my order") ||
+     lower.includes("check order") ||
+     lower.includes("order status") ||
+     lower.includes("trace order") ||
+     lower.includes("where is my order")) &&
+    !context;
+
+  if (isTrackInquiry) {
+    return `I can track your order for you right away bossu! 🔍\n\nKindly send me either:\n1. Your **Order Reference** (e.g. \`BMGH-...\` or \`BIGJ-...\`) OR\n2. The **Recipient Phone Number** you purchased the bundle for.\n\nOnce you drop it here, I will check the live telecom dispatch queue immediately! You can also check the live tracker anytime at [/track](/track).`;
+  }
+
+  // 2e. Service Introduction ("who are you", "what is this", "what do you do")
+  const isAboutInquiry =
+    lower.includes("who are you") ||
+    lower.includes("what do you do") ||
+    lower.includes("what can you do") ||
+    lower.includes("what is this") ||
+    lower.includes("what is big jay") ||
+    lower.includes("about this site") ||
+    lower.includes("what service");
+
+  if (isAboutInquiry) {
+    return `I am Kofi, your live customer support assistant for ${settings.store_name}! 👋\n\nWe provide fast, affordable, non-expiry mobile data bundles for MTN, Telecel, and AT across Ghana with 24/7 automated delivery directly to your phone.\n\nI can help you check live rates, track an existing order, explain delivery and payments, or assist you with any questions. How can I help you today?`;
+  }
+
+  // 2f. Legitimacy & Trust ("is this real", "is this legit", "can i trust", "is it safe")
+  const isTrustInquiry =
+    lower.includes("is this real") ||
+    lower.includes("is this legit") ||
+    lower.includes("are you legit") ||
+    lower.includes("is it legit") ||
+    lower.includes("can i trust") ||
+    lower.includes("is it safe") ||
+    lower === "legit";
+
+  if (isTrustInquiry) {
+    return `Yes bossu, 100% genuine and verified! ✅\n\n${settings.store_name} is Ghana's trusted data provider. We process transactions securely via Paystack (MTN MoMo, Telecel Cash, AT Money, and Cards) and our automated telecom gateway credits your SIM directly within seconds.\n\nYour money and transactions are 100% safe. If you ever have questions, you can also reach our team on WhatsApp at ${whatsappUrl}!`;
+  }
+
   // 3. Live Database Order Context Found
   if (context && (context.includes("ORDER FOUND:") || context.includes("ORDER FOUND FOR PHONE"))) {
     const isDelivered = context.toLowerCase().includes("delivered");
@@ -434,8 +515,7 @@ async function generateLocalAssistantReply(
     lower.includes("did not receive") ||
     lower.includes("where is") ||
     lower.includes("not yet") ||
-    lower.includes("pending") ||
-    lower.includes("how long");
+    lower.includes("pending");
 
   if (isDelayOrWaiting) {
     if (!alreadySuggestedShortcode) {
@@ -592,13 +672,13 @@ async function generateLocalAssistantReply(
     return greetings[Math.floor(Math.random() * greetings.length)];
   }
 
-  // 16. Natural Conversational Fallback
-  const fallbacks = [
-    `I'm right here with you bossu! Feel free to ask me anything about our bundles, delivery speed, or tracking an order. How can I help you right now?`,
-    `Always happy to help bossu! Are you looking to buy an MTN, Telecel, or AT bundle, or did you want to track a recent order? Let me know!`,
-    `Understood bossu! Let me know what you need—whether it's checking live rates, order delivery, or network assistance, I'm right here for you!`,
-  ];
-  return fallbacks[Math.floor(Math.random() * fallbacks.length)];
+  // 16. Helpful Conversational Fallback with clear actionable guidance
+  return `I'm right here with you bossu! 😊 To make sure I get you the exact information you need, you can:\n\n` +
+    `• 💰 Type **MTN**, **Telecel**, or **AT** to see our non-expiry rates\n` +
+    `• ⚡ Type **Delivery** to check how fast data is credited to your line\n` +
+    `• 🔍 Drop your **Order Reference** or **Phone Number** to track an order\n` +
+    `• 💬 Type **WhatsApp** to chat directly with our support team\n\n` +
+    `How can I assist you right now?`;
 }
 
 /**
