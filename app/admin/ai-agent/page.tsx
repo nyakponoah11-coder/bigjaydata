@@ -73,15 +73,18 @@ export default function AdminAIAgentPage() {
   ]);
   const [input, setInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const chatListContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     fetchAISettings();
   }, []);
 
   useEffect(() => {
-    if (activeTab === "chat") {
-      scrollRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (activeTab === "chat" && chatListContainerRef.current) {
+      chatListContainerRef.current.scrollTo({
+        top: chatListContainerRef.current.scrollHeight,
+        behavior: "smooth",
+      });
     }
   }, [messages, activeTab]);
 
@@ -823,7 +826,7 @@ export default function AdminAIAgentPage() {
             </div>
 
             {/* MESSAGE LIST */}
-            <div className="flex-1 p-5 overflow-y-auto space-y-4 text-xs sm:text-sm font-sans">
+            <div ref={chatListContainerRef} className="flex-1 p-5 overflow-y-auto space-y-4 text-xs sm:text-sm font-sans">
               {messages.map((m) => (
                 <div
                   key={m.id}
@@ -855,8 +858,6 @@ export default function AdminAIAgentPage() {
                   <span>AI is thinking & formatting reply...</span>
                 </div>
               )}
-
-              <div ref={scrollRef} />
             </div>
 
             {/* TEST PROMPT CHIPS */}

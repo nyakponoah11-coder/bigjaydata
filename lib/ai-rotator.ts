@@ -319,15 +319,10 @@ async function callOpenAI(
 }
 
 /**
- * 4. Smart Local Ghanaian Assistant Engine (Fallback if all external APIs are missing or exhausted)
- * Speaks like a natural, warm Ghanaian customer support person, stays strictly within the data business,
- * provides real live database answers, and strictly preserves privacy.
- */
-/**
- * 4. Smart Local Ghanaian Assistant Engine (Fallback if all external APIs are missing or exhausted)
- * Speaks like a warm, highly encouraging, empathetic Ghanaian customer care professional.
- * Stays strictly within the mobile data domain, provides live database details, addresses user anxieties,
- * and NEVER repeats robotic canned messages.
+ * 4. Human-like Ghanaian Assistant Engine
+ * Speaks naturally like a friendly, attentive human customer care person.
+ * Listens to feelings, answers direct questions, respects past chat turns,
+ * and never repeats robotic paragraphs or rigid templates.
  */
 async function generateLocalAssistantReply(
   userMessage: string,
@@ -336,209 +331,272 @@ async function generateLocalAssistantReply(
 ): Promise<string> {
   const settings = await db.getSettings();
   const lower = userMessage.toLowerCase().trim();
-  const whatsappUrl = settings.whatsapp_channel_url || `https://wa.me/${settings.whatsapp_number}`;
+  const whatsappUrl = settings.whatsapp_channel_url || `https://wa.me/${settings.whatsapp_number.replace(/[^0-9]/g, "")}`;
 
-  // Check last assistant reply in history to prevent repetitive canned answers
-  const lastAssistantMsg = [...history].reverse().find((h) => h.role === "assistant")?.content?.toLowerCase() || "";
+  // Analyze past conversation context
+  const pastAssistantMsgs = history
+    .filter((h) => h.role === "assistant")
+    .map((h) => h.content.toLowerCase());
+  const lastAssistant = pastAssistantMsgs[pastAssistantMsgs.length - 1] || "";
+  const alreadySuggestedShortcode = pastAssistantMsgs.some((m) => m.includes("*138#") || m.includes("*126#") || m.includes("shortcode"));
+  const alreadyAskedForPhoneOrRef = pastAssistantMsgs.some((m) => m.includes("reference") || m.includes("recipient") || m.includes("phone number"));
 
-  // 1. Off-topic check (Strict domain boundary)
+  // 1. Robotic / Bot check ("are you a bot", "are you ai", "you sound robotic", "is this an automated response")
+  if (
+    lower.includes("bot") ||
+    lower.includes("robot") ||
+    lower.includes("automated") ||
+    lower.includes("are you real") ||
+    lower.includes("human") ||
+    lower.includes("are you a machine")
+  ) {
+    const humanReplies = [
+      `Haha, no vex bossu! 😊 I'm right here with you on the support desk to make sure your data issues are sorted out quickly. Tell me what happened with your line or order, and I'll attend to you directly!`,
+      `I'm right here bossu! We want to make sure your order is attended to fast. Tell me what's going on with your data or what you need help with?`,
+      `No worries bossu, I'm here live on the desk. You can ask me anything about your order, bundles, or delivery—I'm listening!`,
+    ];
+    return humanReplies[Math.floor(Math.random() * humanReplies.length)];
+  }
+
+  // 2. Off-topic check (Strict domain boundary)
   const offTopicKeywords = [
     "who is", "who was", "write a code", "write code", "python", "javascript",
     "essay", "recipe", "cook", "capital of", "president of", "premier league",
     "football match", "celebrity", "solve math", "weather in", "write a story",
-    "translate to french", "translate to spanish", "homework", "politics"
+    "translate to", "homework", "politics", "dating"
   ];
   const isOffTopic = offTopicKeywords.some((kw) => lower.includes(kw)) &&
     !lower.includes("data") && !lower.includes("bundle") && !lower.includes("order") &&
     !lower.includes("mtn") && !lower.includes("telecel") && !lower.includes("at");
 
   if (isOffTopic) {
-    return `Hello bossu! I'm here specifically to assist you with ${settings.store_name} mobile data bundles (MTN, Telecel, and AT), order tracking, and fast delivery support! 😊 How can I help you with your data today?`;
+    return `Hello bossu! I'm strictly here to assist you with ${settings.store_name} mobile data bundles (MTN, Telecel, and AT), order tracking, and fast delivery! 😊 How can I help you with your data today?`;
   }
 
-  // 2. Order Context from Database (Live Order Tracking & Problem Resolution)
+  // 3. Live Database Order Context Found
   if (context && (context.includes("ORDER FOUND:") || context.includes("ORDER FOUND FOR PHONE"))) {
     const isDelivered = context.toLowerCase().includes("delivered");
     const isProcessing = context.toLowerCase().includes("processing") || context.toLowerCase().includes("pending");
     const isFailed = context.toLowerCase().includes("failed");
+    const details = context.replace(/ORDER FOUND.*?:\s*/i, "").trim();
 
     if (isDelivered) {
-      return `Hello bossu! 🎉 Great news—I just checked our live system for you. Your order has been successfully **DELIVERED**! ⚡\n\n${context.replace(/ORDER FOUND.*?:\s*/i, "").trim()}\n\n💡 *Helpful Tip:* Telecom gateways credit your data directly to your SIM balance immediately, but telco SMS alerts from MTN or Telecel are often delayed by network congestion. Please dial ***138#** (MTN) or ***126#** (Telecel) right now to confirm your new balance. Enjoy your bundle!`;
+      return `Good news bossu! 🎉 I just checked our live gateway for you:\n\n${details}\n\nYour order is marked **DELIVERED**! Please check your SIM balance directly (*138# for MTN, *126# for Telecel, *124# for AT) because telco SMS delivery alerts are often delayed by the networks. Enjoy your bundle!`;
     }
 
     if (isProcessing) {
-      return `Hello bossu! I found your order in our live queue: ⏳\n\n${context.replace(/ORDER FOUND.*?:\s*/i, "").trim()}\n\nPayment is confirmed, and our telecom gateway is actively dispatching your data line. Automated delivery typically takes 15 to 60 seconds. Please give it a brief moment, then dial your network balance code (*138# / *126#) to confirm your bundle!`;
+      return `I found your order in our live queue bossu! ⏳\n\n${details}\n\nPayment went through successfully, and our automated telecom gateway is actively dispatching it. It should drop in under a minute!`;
     }
 
     if (isFailed) {
-      return `Hello bossu! I found your order:\n\n${context.replace(/ORDER FOUND.*?:\s*/i, "").trim()}\n\n⚠️ It looks like the telecom gateway encountered a momentary telco glitch, but please be 100% reassured: **your money and data are completely secure**. Our admin team is actively reviewing this and pushing line delivery manually. You can also message us directly on WhatsApp at ${whatsappUrl} for immediate priority resolution!`;
+      return `Hello bossu! I looked up your order:\n\n${details}\n\nIt looks like the telecom network encountered a slight hiccup during dispatch, but please don't worry—**your money is 100% safe**. Our team is reviewing this right now, or you can tap WhatsApp at ${whatsappUrl} to have it re-sent to your line immediately!`;
     }
 
-    return `Hello bossu! Here is the live status of your order from our records:\n\n${context.replace(/ORDER FOUND.*?:\s*/i, "").trim()}\n\nIf you need any verification, I am right here to help, or you can reach our team directly on WhatsApp: ${whatsappUrl}`;
+    return `Here is your order details from our system bossu:\n\n${details}\n\nLet me know if you need anything else on this!`;
   }
 
-  // 3. User is reporting delays, missing data, or anxiety ("haven't received", "still waiting", "why delay", "not yet", "where is it")
-  const hasNegativeKeyword =
-    lower.includes("not") ||
-    lower.includes("haven't") ||
-    lower.includes("hasn't") ||
-    lower.includes("didn't") ||
-    lower.includes("did not") ||
-    lower.includes("no ") ||
-    lower.includes("never") ||
-    lower.includes("delay") ||
-    lower.includes("waiting") ||
-    lower.includes("where") ||
-    lower.includes("slow");
-
-  const hasDeliveryAction =
-    lower.includes("arrive") ||
-    lower.includes("receive") ||
-    lower.includes("deliver") ||
-    lower.includes("credited") ||
-    lower.includes("enter") ||
-    lower.includes("drop") ||
-    lower.includes("see") ||
-    lower.includes("come") ||
-    lower.includes("gotten") ||
-    lower.includes("data") ||
-    lower.includes("bundle") ||
-    lower.includes("order");
-
-  const isDelayComplaint =
-    (hasNegativeKeyword && hasDeliveryAction) ||
-    lower.includes("still waiting") ||
-    lower.includes("why delay") ||
-    lower.includes("pending") ||
+  // 4. Anxiety, scam fear, or high frustration ("scam", "thief", "steal", "cheat", "where is my money", "you took my money")
+  if (
     lower.includes("scam") ||
-    lower.includes("fake");
-
-  if (isDelayComplaint) {
-    return `I completely understand your concern bossu, and I want to reassure you that you have nothing to worry about! 🙏 Your money and data are 100% safe and guaranteed with ${settings.store_name}.\n\nHere is what often happens:\n1. Our automated telecom gateway credits data directly to your SIM balance within seconds.\n2. However, SMS confirmation messages from MTN and Telecel often experience network delays, even when the data has already arrived on your phone.\n\n👉 **Please dial ***138#** (for MTN) or ***126#** (for Telecel / ***124#** for AT) on your phone right now to check your balance directly. In 99% of cases, your data is already sitting there!\n\nIf you check and still don't see it, simply reply with your **Order Reference** (e.g. \`BMGH-...\`) or recipient phone number, and I will track it down for you immediately!`;
+    lower.includes("thief") ||
+    lower.includes("steal") ||
+    lower.includes("cheat") ||
+    lower.includes("fraud") ||
+    lower.includes("my money")
+  ) {
+    return `Oh bossu, please don't worry or think that way at all! 🙏 We are a legitimate, trusted data service in Ghana, and your money is 100% secure. If your data hasn't arrived, it's strictly due to a telecom network delay or a queue on the line. We will never keep your money without delivering your bundle. Kindly give me your phone number or order reference so I can track it down immediately, or message us directly on WhatsApp at ${whatsappUrl} for urgent personal assistance!`;
   }
 
-  // 4. Appreciation / Gratitude / Success confirmations ("thank you", "thanks", "received", "seen it", "it has come", "god bless")
-  const isGratitude =
+  // 5. Customer already checked shortcode / still complaining after check ("still haven't", "still not", "nothing there", "empty", "no data", "i checked already", "i did that", "it's not showing")
+  const checkedAlready =
+    lower.includes("checked") ||
+    lower.includes("already") ||
+    lower.includes("nothing") ||
+    lower.includes("still not") ||
+    lower.includes("still no") ||
+    lower.includes("empty") ||
+    lower.includes("did that") ||
+    lower.includes("done that");
+
+  if (alreadySuggestedShortcode && checkedAlready) {
+    return `I hear you bossu, and I really apologize for the wait! Since the balance hasn't reflected yet on your line, the network gateway must be holding the queue. Please send me the **phone number** that was supposed to receive the data or your **Order Reference** (e.g. \`BMGH-...\`), and I will check the exact gateway dispatch logs for you right away. You can also chat with our operations lead directly on WhatsApp at ${whatsappUrl}!`;
+  }
+
+  // 6. Delays / Waiting / Order inquiry ("where is my data", "haven't received", "delay", "waiting", "when will it arrive", "how long")
+  const isDelayOrWaiting =
+    lower.includes("delay") ||
+    lower.includes("wait") ||
+    lower.includes("haven't received") ||
+    lower.includes("hasn't arrived") ||
+    lower.includes("not received") ||
+    lower.includes("not come") ||
+    lower.includes("didn't receive") ||
+    lower.includes("did not receive") ||
+    lower.includes("where is") ||
+    lower.includes("not yet") ||
+    lower.includes("pending") ||
+    lower.includes("how long");
+
+  if (isDelayOrWaiting) {
+    if (!alreadySuggestedShortcode) {
+      return `I completely understand bossu, and don't worry—your money and order are 100% safe! 🙏 Delivery usually takes between 15 to 60 seconds, but telco SMS notifications from MTN or Telecel can be delayed even after data has dropped on the SIM.\n\nCould you please dial your balance code right now (*138# for MTN, *126# for Telecel, *124# for AT)? If it's still not showing, just reply with your **phone number** or **order reference** so I can check the live dispatch queue for you!`;
+    }
+
+    if (!alreadyAskedForPhoneOrRef) {
+      return `Chale, sorry for the wait! Let me look into this for you personally. What's the **recipient phone number** or the **order reference** (e.g. \`BMGH-...\`)? Drop it here and I'll trace it right away!`;
+    }
+
+    return `I'm following up on this bossu! If you've shared your number or reference, I'm checking it right now. You can also reach our admin desk directly on WhatsApp at ${whatsappUrl} if you need it pushed with top priority!`;
+  }
+
+  // 7. Expiry questions ("does it expire", "expiry date", "how long does it last", "validity")
+  if (lower.includes("expir") || lower.includes("valid") || lower.includes("how long does it last")) {
+    return `None of our bundles expire bossu! 🎉 All our MTN, Telecel, and AT data packages are completely non-expiry. They stay on your phone balance until you finish using them.`;
+  }
+
+  // 8. Third-party buying ("can i buy for someone else", "can i buy for my friend", "another number", "different phone")
+  if (
+    lower.includes("someone else") ||
+    lower.includes("another number") ||
+    lower.includes("friend") ||
+    lower.includes("another person") ||
+    lower.includes("different number")
+  ) {
+    return `Yes bossu! You can buy data for anyone. When you choose your bundle on our site, simply enter the recipient's phone number as the delivery number, and the data will be sent directly to their phone upon payment!`;
+  }
+
+  // 9. Payment questions ("how do i pay", "momo", "payment methods", "telecel cash", "card")
+  if (
+    lower.includes("how to pay") ||
+    lower.includes("payment method") ||
+    lower.includes("momo") ||
+    lower.includes("telecel cash") ||
+    lower.includes("card") ||
+    lower.includes("paystack")
+  ) {
+    return `We accept all Ghanaian payment methods bossu! 💳\n• MTN Mobile Money\n• Telecel Cash\n• AT Money\n• Bank Cards (Visa & Mastercard via Paystack)\n\nYou'll get an automated MoMo authorization prompt on your phone right away to approve!`;
+  }
+
+  // 10. How to buy / order process
+  if (
+    lower.includes("how to buy") ||
+    lower.includes("how do i buy") ||
+    lower.includes("how to order") ||
+    lower.includes("process") ||
+    lower.includes("how does it work")
+  ) {
+    return `It's super easy and takes less than a minute bossu! 🚀\n1. Select your network:\n   • **MTN:** [/buy/mtn](/buy/mtn)\n   • **Telecel:** [/buy/telecel](/buy/telecel)\n   • **AT:** [/buy/at](/buy/at)\n2. Pick the bundle size you want\n3. Enter the recipient's number and approve the MoMo prompt\n\nYour data drops directly to the phone within 15 to 60 seconds!`;
+  }
+
+  // 11. Rates & Pricing Inquiries
+  if (
+    lower.includes("price") ||
+    lower.includes("cost") ||
+    lower.includes("rate") ||
+    lower.includes("how much") ||
+    lower.includes("list") ||
+    lower.includes("bundles")
+  ) {
+    const products = await db.getProducts();
+
+    if (lower.includes("mtn")) {
+      const mtn = products.filter((p) => p.is_active && p.network.toLowerCase() === "mtn").map((p) => `• **${p.size}**: GHS ${p.price.toFixed(2)}`);
+      return `Here are our current MTN Turbo rates bossu:\n\n${mtn.join("\n") || "1GB to 50GB available on site"}\n\n👉 You can order right now at [/buy/mtn](/buy/mtn) with instant delivery and no expiry!`;
+    }
+
+    if (lower.includes("telecel") || lower.includes("vodafone")) {
+      const telecel = products.filter((p) => p.is_active && p.network.toLowerCase() === "telecel").map((p) => `• **${p.size}**: GHS ${p.price.toFixed(2)}`);
+      return `Here are our Telecel Fast Data rates bossu:\n\n${telecel.join("\n") || "1GB to 50GB available on site"}\n\n👉 You can order at [/buy/telecel](/buy/telecel)!`;
+    }
+
+    if (lower.includes("at") || lower.includes("airteltigo") || lower.includes("tigo")) {
+      const at = products.filter((p) => p.is_active && p.network.toLowerCase() === "at").map((p) => `• **${p.size}**: GHS ${p.price.toFixed(2)}`);
+      return `Here are our AT rates bossu:\n\n${at.join("\n") || "Available on site"}\n\n👉 Order anytime at [/buy/at](/buy/at)!`;
+    }
+
+    const mtn = products.filter((p) => p.is_active && p.network.toLowerCase() === "mtn").slice(0, 4).map((p) => `${p.size}: GHS ${p.price.toFixed(2)}`).join(" | ");
+    const telecel = products.filter((p) => p.is_active && p.network.toLowerCase() === "telecel").slice(0, 4).map((p) => `${p.size}: GHS ${p.price.toFixed(2)}`).join(" | ");
+    const at = products.filter((p) => p.is_active && p.network.toLowerCase() === "at").slice(0, 4).map((p) => `${p.size}: GHS ${p.price.toFixed(2)}`).join(" | ");
+
+    return `Here are some of our popular rates bossu (all non-expiry):\n\n` +
+      `🟡 **MTN:** ${mtn || "Check store"}\n` +
+      `🔴 **Telecel:** ${telecel || "Check store"}\n` +
+      `🔵 **AT:** ${at || "Check store"}\n\n` +
+      `You can tap **Buy** at the top or visit [/buy/mtn](/buy/mtn) to get your bundle in under 60 seconds!`;
+  }
+
+  // 12. Human WhatsApp Escalation / Call
+  if (
+    lower.includes("whatsapp") ||
+    lower.includes("channel") ||
+    lower.includes("call") ||
+    lower.includes("speak to") ||
+    lower.includes("talk to") ||
+    lower.includes("customer service") ||
+    lower.includes("contact")
+  ) {
+    return `Sure bossu! You can reach our team directly here:\n\n💬 **WhatsApp Support:** ${whatsappUrl}\n📞 **Phone:** ${settings.support_phone}\n\nWe're always ready to help!`;
+  }
+
+  // 13. Gratitude & Confirmation ("thank you", "thanks", "received", "it has come", "seen", "god bless")
+  if (
     lower.includes("thank") ||
-    lower.includes("thanks") ||
     lower.includes("received") ||
-    lower.includes("seen it") ||
     lower.includes("it has come") ||
     lower.includes("it came") ||
     lower.includes("just came") ||
+    lower.includes("seen it") ||
+    lower.includes("seen") ||
     lower.includes("god bless") ||
-    lower.includes("appreciate");
-
-  if (isGratitude) {
+    lower.includes("appreciate")
+  ) {
     const thanksResponses = [
-      `You are most welcome bossu! 🎉 So happy to hear your data has arrived safely! Enjoy your high-speed internet, and remember ${settings.store_name} is always here whenever you need a fast top-up. Have a blessed day!`,
-      `Awesome bossu! It was an absolute pleasure assisting you. 🙌 Thank you so much for choosing ${settings.store_name}. Whenever you need more data, just pop in anytime!`,
-      `Glory! So glad you're sorted and online bossu! 🚀 Enjoy browsing, streaming, and chatting. We appreciate your patronage!`,
+      `You are very welcome bossu! 🎉 So glad you are sorted and online! Enjoy your bundle, and ${settings.store_name} is always here whenever you need a fast top-up. Have a blessed day!`,
+      `Awesome bossu! 🙌 Thank you so much for choosing ${settings.store_name}. Whenever you need more data, just pop in anytime!`,
+      `Glory! Happy to hear that bossu! 🚀 Enjoy your high-speed internet, and let us know whenever you need more!`,
     ];
     return thanksResponses[Math.floor(Math.random() * thanksResponses.length)];
   }
 
-  // 5. Short conversational acknowledgements ("ok", "okay", "alright", "seen", "noted", "cool", "waiting", "checking", "hold on")
-  const isAcknowledgement =
+  // 14. Conversational Acknowledgement ("ok", "okay", "alright", "noted", "cool", "checking", "wait")
+  const isAck =
     lower === "ok" ||
     lower === "okay" ||
     lower === "alright" ||
-    lower === "seen" ||
-    lower === "noted" ||
-    lower === "cool" ||
     lower === "k" ||
     lower.startsWith("ok ") ||
     lower.startsWith("okay ") ||
     lower.includes("checking") ||
     lower.includes("hold on") ||
-    lower.includes("one sec");
+    lower.includes("one sec") ||
+    lower.includes("wait");
 
-  if (isAcknowledgement) {
+  if (isAck) {
     const ackResponses = [
-      `Sounds good bossu! Take your time to check your balance via the shortcode (*138# or *126#). I am right here waiting to assist you whenever you're ready! 😊`,
-      `Perfect bossu! Let me know what you find once you dial your network balance code. We're here 24/7 to make sure everything is smooth for you!`,
-      `Understood chief! Thank you for your patience. I'm right here if you need any further update!`,
+      `Alright bossu, take your time! I'm right here waiting for you. 😊`,
+      `Understood chief! Let me know what you find once you check your balance or details.`,
+      `No problem bossu! I'm right here whenever you're ready.`,
     ];
     return ackResponses[Math.floor(Math.random() * ackResponses.length)];
   }
 
-  // 6. Simple Human Greetings
-  const greetingWords = ["hello", "hi", "hey", "good morning", "good afternoon", "good evening", "bossu", "chale", "kofi", "ao", "sup", "yo", "greetings"];
-  const isGreeting = lower.length <= 35 && greetingWords.some((g) => lower === g || lower.startsWith(g + " ") || lower.endsWith(" " + g) || lower.includes(g));
-  if (isGreeting && !lower.includes("price") && !lower.includes("order") && !lower.includes("track")) {
+  // 15. Friendly Greetings
+  const greetingWords = ["hello", "hi", "hey", "good morning", "good afternoon", "good evening", "bossu", "chale", "kofi", "sup", "yo"];
+  const isGreeting = lower.length <= 30 && greetingWords.some((g) => lower === g || lower.startsWith(g + " ") || lower.endsWith(" " + g));
+  if (isGreeting) {
     const greetings = [
-      `Hello bossu! 👋 Warm welcome to ${settings.store_name}. We're active and delivering high-speed bundles 24/7. How can I brighten your day today?`,
-      `Good day chief! Great to have you here at ${settings.store_name}. Are you looking to buy mobile data or check on an order today?`,
-      `Welcome bossu! Big J Support is live and ready. Whatever data inquiry or order you have, I'm here to assist you right away!`,
+      `Hello bossu! 👋 Welcome to ${settings.store_name}. How can I assist you with your data today?`,
+      `Good day chief! Great to have you here. Are you looking to buy a bundle or checking up on an order?`,
+      `Welcome bossu! Big J Support is active and ready. What can I do for you today?`,
     ];
     return greetings[Math.floor(Math.random() * greetings.length)];
   }
 
-  // 7. Inquiries for Pricing / Rates
-  if (lower.includes("price") || lower.includes("cost") || lower.includes("rate") || lower.includes("how much") || lower.includes("prices") || lower.includes("list")) {
-    const products = await db.getProducts();
-
-    if (lower.includes("mtn")) {
-      const mtn = products.filter((p) => p.is_active && p.network === "mtn").map((p) => `• **${p.size}**: GHS ${p.price.toFixed(2)}`);
-      return `Here are our active MTN Turbo Data rates bossu:\n\n${mtn.join("\n") || "1GB to 50GB available on site"}\n\n👉 You can place your order instantly at [/buy/mtn](/buy/mtn). Delivery takes under 60 seconds with no bundle expiry!`;
-    }
-
-    if (lower.includes("telecel") || lower.includes("vodafone")) {
-      const telecel = products.filter((p) => p.is_active && p.network === "telecel").map((p) => `• **${p.size}**: GHS ${p.price.toFixed(2)}`);
-      return `Here are our Telecel Fast Data rates bossu:\n\n${telecel.join("\n") || "1GB to 50GB available on site"}\n\n👉 You can order directly at [/buy/telecel](/buy/telecel) with instant automated delivery!`;
-    }
-
-    if (lower.includes("at") || lower.includes("airteltigo") || lower.includes("tigo")) {
-      const at = products.filter((p) => p.is_active && p.network === "at").map((p) => `• **${p.size}**: GHS ${p.price.toFixed(2)}`);
-      return `Here are our AT (AirtelTigo) Data rates bossu:\n\n${at.join("\n") || "Check our store page for active sizes"}\n\n👉 You can buy anytime at [/buy/at](/buy/at)!`;
-    }
-
-    const mtn = products.filter((p) => p.is_active && p.network === "mtn").slice(0, 4).map((p) => `${p.size}: GHS ${p.price.toFixed(2)}`).join(" | ");
-    const telecel = products.filter((p) => p.is_active && p.network === "telecel").slice(0, 4).map((p) => `${p.size}: GHS ${p.price.toFixed(2)}`).join(" | ");
-    const at = products.filter((p) => p.is_active && p.network === "at").slice(0, 4).map((p) => `${p.size}: GHS ${p.price.toFixed(2)}`).join(" | ");
-
-    return `Here is a quick look at our live wholesale prices bossu:\n\n` +
-      `🟡 **MTN Turbo:** ${mtn || "Available on site"}\n` +
-      `🔴 **Telecel Fast:** ${telecel || "Available on site"}\n` +
-      `🔵 **AT Data:** ${at || "Available on site"}\n\n` +
-      `All packages have no expiry date! Tap **Buy** at the top or visit [/buy/mtn](/buy/mtn) to grab your package in under 60 seconds.`;
-  }
-
-  // 8. Inquiries about Order Tracking
-  if (lower.includes("track") || lower.includes("status")) {
-    if (lastAssistantMsg.includes("order reference") || lastAssistantMsg.includes("tracking")) {
-      return `If you don't have your reference handy bossu, no problem at all! Just type the phone number that was supposed to receive the data, and I'll find your order. Or you can jump on our live WhatsApp chat at ${whatsappUrl} and we'll check it together!`;
-    }
-    return `No problem bossu! Please reply with your **Order Reference** (e.g. \`BMGH-...\`) or the recipient **phone number**, and I will look up the live delivery status for you right away.\n\nYou can also check anytime on our live tracking page at [/track](/track).`;
-  }
-
-  // 9. How to buy data
-  if (lower.includes("how to buy") || lower.includes("how do i buy") || lower.includes("how to order") || lower.includes("process")) {
-    return `Buying data on **${settings.store_name}** is super easy and takes less than a minute bossu! 🚀\n\n1. Select your network:\n   • **MTN:** [/buy/mtn](/buy/mtn)\n   • **Telecel:** [/buy/telecel](/buy/telecel)\n   • **AT:** [/buy/at](/buy/at)\n2. Pick your preferred bundle size\n3. Enter recipient phone number & complete payment via MoMo prompt\n\nYour data is credited to the phone balance automatically in 15 to 60 seconds!`;
-  }
-
-  // 10. Delivery Speed / Automation
-  if (lower.includes("how long") || lower.includes("delivery") || lower.includes("how fast") || lower.includes("speed")) {
-    return `All orders on **${settings.store_name}** are 100% automated! ⚡ Delivery normally takes **15 to 60 seconds** directly to your phone balance as soon as payment is confirmed.`;
-  }
-
-  // 11. Payment methods & Security
-  if (lower.includes("payment") || lower.includes("pay") || lower.includes("momo") || lower.includes("telecel cash") || lower.includes("card") || lower.includes("safe") || lower.includes("legit")) {
-    return `You are 100% protected bossu! 🔒 We use bank-grade Paystack encryption. We support all major Ghanaian payment methods:\n• MTN Mobile Money\n• Telecel Cash\n• AT Money\n• Debit/Credit Cards (Visa & Mastercard)\n\nPayment prompts arrive directly on your phone instantly, and all orders are guaranteed!`;
-  }
-
-  // 12. Human support / WhatsApp
-  if (lower.includes("whatsapp") || lower.includes("channel") || lower.includes("human") || lower.includes("agent") || lower.includes("call") || lower.includes("talk to someone")) {
-    return `Sure bossu! You can chat directly with our team or join our official updates channel here:\n\n` +
-      `💬 **WhatsApp Support / Channel:**\n${whatsappUrl}\n\n` +
-      `📞 **Phone Call:** ${settings.support_phone}\n\nWe are always happy to help!`;
-  }
-
-  // 13. Dynamic encouraging conversational fallback (Rotates to never repeat)
+  // 16. Natural Conversational Fallback
   const fallbacks = [
-    `I'm right here with you bossu! Feel free to ask me anything about our data rates, tracking an order, or how delivery works. How can I assist you right now?`,
-    `Always happy to help bossu! Are you looking to top up an MTN, Telecel, or AT bundle, or do you have a question about an existing order? Let me know!`,
-    `Understood bossu! Let me know what you need—whether it's checking live rates, verifying an order, or telecom troubleshooting, I've got your back!`,
+    `I'm right here with you bossu! Feel free to ask me anything about our bundles, delivery speed, or tracking an order. How can I help you right now?`,
+    `Always happy to help bossu! Are you looking to buy an MTN, Telecel, or AT bundle, or did you want to track a recent order? Let me know!`,
+    `Understood bossu! Let me know what you need—whether it's checking live rates, order delivery, or network assistance, I'm right here for you!`,
   ];
   return fallbacks[Math.floor(Math.random() * fallbacks.length)];
 }

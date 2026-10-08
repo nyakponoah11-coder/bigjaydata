@@ -77,6 +77,8 @@ export default function HelpClientView({
   };
 
   // Initialize or restore session ID & details
+  const HELP_CHAT_KEY = "bmgh_help_chat_history";
+
   useEffect(() => {
     if (typeof window !== "undefined") {
       let sId = localStorage.getItem("bmgh_help_session_id");
@@ -91,8 +93,10 @@ export default function HelpClientView({
       setCustomerName(savedName);
       setCustomerPhone(savedPhone);
 
-      // Load cached chat history or fallback to initial welcome message
-      const cachedChat = localStorage.getItem("bmgh_help_chat_" + sId);
+      // Load cached chat history from unified key or session key
+      const cachedChat =
+        localStorage.getItem(HELP_CHAT_KEY) ||
+        localStorage.getItem("bmgh_help_chat_" + sId);
       let initialLoaded = false;
       if (cachedChat) {
         try {
@@ -125,10 +129,9 @@ export default function HelpClientView({
     try {
       const res = await fetch(`/api/messages?sessionId=${encodeURIComponent(sId)}`);
       const data = await res.json();
-      if (data.success && Array.isArray(data.messages)) {
+      if (data.success && Array.isArray(data.messages) && data.messages.length > 0) {
         // Transform fetched messages into chat bubble format
         const loaded: ChatMessage[] = [];
-        // Note: data.messages comes sorted DESC, let's reverse to ASC for chronological view
         const ascMessages = [...data.messages].reverse();
 
         ascMessages.forEach((m: any) => {
@@ -169,7 +172,6 @@ export default function HelpClientView({
         // Compute signature to check if anything actually changed on server
         const signature = loaded.map((m) => `${m.id}_${m.text}`).join("|");
         if (signature === prevMessagesSig.current && !isInitial) {
-          // No changes from server: DO NOT update state and do not scroll
           return;
         }
         prevMessagesSig.current = signature;
@@ -177,8 +179,7 @@ export default function HelpClientView({
         setMessages((prev) => {
           const welcome = prev.find((x) => x.id === "welcome-1");
 
-          // CRITICAL: NEVER wipe out active user or AI messages from screen!
-          // Filter out any messages currently in state that aren't yet matched in loaded
+          // Keep all messages in state that are not yet in loaded
           const uncommitted = prev.filter(
             (p) =>
               p.id !== "welcome-1" &&
@@ -189,13 +190,13 @@ export default function HelpClientView({
 
           const combined = welcome ? [welcome, ...loaded, ...uncommitted] : [...loaded, ...uncommitted];
 
-          if (typeof window !== "undefined" && sId) {
-            localStorage.setItem("bmgh_help_chat_" + sId, JSON.stringify(combined));
+          if (typeof window !== "undefined") {
+            localStorage.setItem(HELP_CHAT_KEY, JSON.stringify(combined));
+            if (sId) localStorage.setItem("bmgh_help_chat_" + sId, JSON.stringify(combined));
           }
           return combined;
         });
 
-        // Only scroll internal chat container if user has not scrolled up to read past history
         if (!isUserScrolledUpRef.current || isInitial) {
           setTimeout(() => scrollToBottom(!isInitial), 60);
         }
@@ -255,10 +256,21 @@ export default function HelpClientView({
       timestamp: new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true }),
     };
 
+    let activeSessionId = sessionId;
+    if (!activeSessionId && typeof window !== "undefined") {
+      activeSessionId = localStorage.getItem("bmgh_help_session_id") || "";
+      if (!activeSessionId) {
+        activeSessionId = "sess_" + Math.random().toString(36).substring(2, 10);
+        localStorage.setItem("bmgh_help_session_id", activeSessionId);
+      }
+      setSessionId(activeSessionId);
+    }
+
     setMessages((prev) => {
       const next = [...prev, userMsg];
-      if (typeof window !== "undefined" && sessionId) {
-        localStorage.setItem("bmgh_help_chat_" + sessionId, JSON.stringify(next));
+      if (typeof window !== "undefined") {
+        localStorage.setItem(HELP_CHAT_KEY, JSON.stringify(next));
+        if (activeSessionId) localStorage.setItem("bmgh_help_chat_" + activeSessionId, JSON.stringify(next));
       }
       return next;
     });
@@ -271,86 +283,62 @@ export default function HelpClientView({
     setTimeout(() => scrollToBottom(true), 40);
 
     try {
-      // 1. Save to messages table for Admin Dashboard review
-      const msgRes = await fetch("/api/messages", {
+      const historyPayload = messages.slice(-6).map((m) => ({
+        sender: m.sender === "admin" ? "assistant" : m.sender,
+        text: m.text,
+      }));
+
+      // Atomic call: saves customer message and attaches AI reply in one transaction
+      const aiRes = await fetch("/api/ai-chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name: customerName.trim() || "Customer",
-          phone: customerPhone.trim() || "",
           message: userText || "Attached screenshot/image",
-          image_url: attachedImage || undefined,
-          session_id: sessionId,
+          sessionId: activeSessionId,
+          customerName: customerName.trim() || "Customer",
+          customerPhone: customerPhone.trim() || "",
+          imageUrl: attachedImage || undefined,
+          history: historyPayload,
         }),
       });
-      const msgData = await msgRes.json().catch(() => ({}));
-      const savedMsgId = msgData?.message?.id;
 
-      // 2. Fetch AI response if there's text so customer gets instant help
-      if (userText) {
-        const historyPayload = messages.slice(-6).map((m) => ({
-          sender: m.sender === "admin" ? "assistant" : m.sender,
-          text: m.text,
-        }));
+      const aiData = await aiRes.json().catch(() => ({}));
+      if (aiData.reply) {
+        const aiMsg: ChatMessage = {
+          id: "ai-" + (aiData.messageId || Date.now()),
+          sender: "ai",
+          text: aiData.reply,
+          timestamp: new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true }),
+        };
 
-        const aiRes = await fetch("/api/ai-chat", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            message: userText,
-            history: historyPayload,
-          }),
+        setMessages((prev) => {
+          const next = [...prev, aiMsg];
+          if (typeof window !== "undefined") {
+            localStorage.setItem(HELP_CHAT_KEY, JSON.stringify(next));
+            if (activeSessionId) localStorage.setItem("bmgh_help_chat_" + activeSessionId, JSON.stringify(next));
+          }
+          return next;
         });
 
-        const aiData = await aiRes.json().catch(() => ({}));
-        if (aiData.reply) {
-          const aiMsg: ChatMessage = {
-            id: "ai-" + (savedMsgId || Date.now()),
-            sender: "ai",
-            text: aiData.reply,
-            timestamp: new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true }),
-          };
-
-          setMessages((prev) => {
-            const next = [...prev, aiMsg];
-            if (typeof window !== "undefined" && sessionId) {
-              localStorage.setItem("bmgh_help_chat_" + sessionId, JSON.stringify(next));
-            }
-            return next;
-          });
-
-          // Save AI reply to server so it permanently attaches to the message in database!
-          if (savedMsgId) {
-            fetch("/api/messages", {
-              method: "PATCH",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                id: savedMsgId,
-                action: "ai_reply",
-                ai_reply: aiData.reply,
-              }),
-            }).catch(console.error);
-          }
-
-          if (!isUserScrolledUpRef.current) {
-            setTimeout(() => scrollToBottom(true), 50);
-          }
+        if (!isUserScrolledUpRef.current) {
+          setTimeout(() => scrollToBottom(true), 50);
         }
       }
     } catch (err: any) {
-      console.error(err);
+      console.error("AI Chat call error:", err);
       setMessages((prev) => {
         const next: ChatMessage[] = [
           ...prev,
           {
             id: "err-" + Date.now(),
             sender: "ai",
-            text: "Your message was sent to our admin team! You can also reach us immediately on WhatsApp if urgent.",
+            text: "Your message has been sent to our desk bossu! If urgent, you can also reach us directly on WhatsApp.",
             timestamp: new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true }),
           },
         ];
-        if (typeof window !== "undefined" && sessionId) {
-          localStorage.setItem("bmgh_help_chat_" + sessionId, JSON.stringify(next));
+        if (typeof window !== "undefined") {
+          localStorage.setItem(HELP_CHAT_KEY, JSON.stringify(next));
+          if (activeSessionId) localStorage.setItem("bmgh_help_chat_" + activeSessionId, JSON.stringify(next));
         }
         return next;
       });

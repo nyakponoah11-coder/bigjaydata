@@ -63,18 +63,45 @@ export async function POST(request: Request) {
     let safeReply = aiResult.reply;
 
     // Safety privacy filter: Ensure no raw phone numbers belonging to other people are leaked in the reply
-    // If reply contains a 10-digit number that was NOT typed by the user, mask it
     const phoneRegex = /\b(0[235]\d{8})\b/g;
     safeReply = safeReply.replace(phoneRegex, (matchedPhone) => {
       if (message.includes(matchedPhone)) {
-        return matchedPhone; // User themselves typed it
+        return matchedPhone;
       }
       return maskPhone(matchedPhone);
     });
 
+    // Atomic message persistence to ensure the customer chat never disappears and appears immediately in Admin Messages
+    const sessionId = (body?.sessionId || body?.session_id || "").trim();
+    const customerName = (body?.customerName || body?.name || "").trim();
+    const customerPhone = (body?.customerPhone || body?.phone || "").trim();
+    const imageUrl = body?.imageUrl || body?.image_url || undefined;
+    const existingMsgId = body?.messageId || body?.id;
+
+    let savedMessageId = existingMsgId;
+
+    if (existingMsgId) {
+      await db.saveAIReply(existingMsgId, safeReply);
+    } else if (body?.persist !== false) {
+      try {
+        const created = await db.createMessage({
+          name: customerName || "Customer",
+          phone: customerPhone || "",
+          message: message,
+          image_url: imageUrl,
+          session_id: sessionId || undefined,
+        });
+        savedMessageId = created.id;
+        await db.saveAIReply(created.id, safeReply);
+      } catch (saveErr) {
+        console.warn("[API /ai-chat] Failed to auto-persist message record:", saveErr);
+      }
+    }
+
     return NextResponse.json({
       success: true,
       reply: safeReply,
+      messageId: savedMessageId,
       provider: aiResult.provider,
       modelUsed: aiResult.modelUsed,
     });

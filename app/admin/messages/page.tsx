@@ -43,8 +43,6 @@ export default function AdminMessagesPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [previewImage, setPreviewImage] = useState<string | null>(null);
 
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-
   const fetchMessages = async () => {
     setLoading(true);
     try {
@@ -190,12 +188,25 @@ export default function AdminMessagesPage() {
     return conversations.find((c) => c.id === selectedConvId) || filteredConversations[0] || null;
   }, [conversations, filteredConversations, selectedConvId]);
 
-  // Scroll to bottom of active chat thread when messages change
-  useEffect(() => {
-    if (activeConversation) {
-      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  const chatThreadContainerRef = useRef<HTMLDivElement>(null);
+
+  const scrollToBottomChat = () => {
+    if (chatThreadContainerRef.current) {
+      chatThreadContainerRef.current.scrollTo({
+        top: chatThreadContainerRef.current.scrollHeight,
+        behavior: "smooth",
+      });
     }
-  }, [activeConversation?.messages]);
+  };
+
+  // Scroll to bottom only when selecting a conversation
+  const prevSelectedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (activeConversation && activeConversation.id !== prevSelectedRef.current) {
+      prevSelectedRef.current = activeConversation.id;
+      setTimeout(scrollToBottomChat, 60);
+    }
+  }, [activeConversation?.id]);
 
   // Mark all unread messages in a conversation as read
   const handleMarkThreadRead = async (thread: ConversationThread) => {
@@ -223,6 +234,7 @@ export default function AdminMessagesPage() {
     if (thread.unreadCount > 0) {
       handleMarkThreadRead(thread);
     }
+    setTimeout(scrollToBottomChat, 60);
   };
 
   // Send admin reply inside active conversation
@@ -264,9 +276,7 @@ export default function AdminMessagesPage() {
           )
         );
         setReplyText("");
-        setTimeout(() => {
-          messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-        }, 50);
+        setTimeout(scrollToBottomChat, 60);
       }
     } catch (e) {
       console.error(e);
@@ -489,7 +499,7 @@ export default function AdminMessagesPage() {
                 </div>
 
                 {/* THREAD MESSAGES CHAT CONTAINER */}
-                <div className="flex-1 p-4 sm:p-6 overflow-y-auto overscroll-contain space-y-4">
+                <div ref={chatThreadContainerRef} className="flex-1 p-4 sm:p-6 overflow-y-auto overscroll-contain space-y-4">
                   <div className="text-center my-2">
                     <span className="text-[10px] font-mono text-slate-400 bg-slate-900 border border-slate-800 px-3 py-1 rounded-full">
                       Conversation started on {formatDateTime12(activeConversation.messages[0]?.created_at || "")}
@@ -572,8 +582,6 @@ export default function AdminMessagesPage() {
                       )}
                     </div>
                   ))}
-
-                  <div ref={messagesEndRef} />
                 </div>
 
                 {/* BOTTOM ADMIN REPLY INPUT BAR */}
