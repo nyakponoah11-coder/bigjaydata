@@ -84,21 +84,21 @@ export default function Navbar({
     return clean.includes("whatsapp.com/channel/") || clean.includes("chat.whatsapp.com/");
   };
 
+  const isChannelConfigured = Boolean(directChannelUrl && isValidChannelUrl(directChannelUrl));
+  const fallbackSupportUrl = whatsappNumber
+    ? `https://wa.me/${whatsappNumber.replace(/[^0-9]/g, "")}?text=Hello%20${encodeURIComponent(storeName)}%2C%20I%20want%20to%20join%20your%20WhatsApp%20Channel.`
+    : "#";
+
+  // If valid channel URL is configured in admin settings, use it directly.
+  // Otherwise, fallback gracefully to WhatsApp support so the link never hangs in the air!
+  const resolvedChannelLink = isChannelConfigured ? directChannelUrl : fallbackSupportUrl;
+
   const handleOpenChannel = (e: React.MouseEvent<HTMLAnchorElement>) => {
-    if (!directChannelUrl || !isValidChannelUrl(directChannelUrl)) {
-      e.preventDefault();
-      alert("WhatsApp Channel link is not yet configured in Admin Settings. Please use WhatsApp Support below to chat directly with us!");
-      return;
-    }
-    // Delay closing drawer so browser navigation is not interrupted on mobile
+    // Delay closing drawer so mobile browser navigation / app switching is not interrupted
     setTimeout(() => {
       setIsOpen(false);
     }, 400);
   };
-
-  // CRITICAL: The WhatsApp Channel MUST ONLY link to the channel URL provided in admin settings.
-  // It must NEVER link to the WhatsApp phone number!
-  const resolvedChannelLink = directChannelUrl;
 
   // Close drawer on route change
   useEffect(() => {
@@ -241,21 +241,19 @@ export default function Navbar({
 
             {/* Bottom Actions & Support */}
             <div className="pt-6 border-t border-slate-800 space-y-2.5">
-              {resolvedChannelLink && (
-                <a
-                  href={resolvedChannelLink}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  onClick={handleOpenChannel}
-                  className="flex items-center justify-center gap-2.5 w-full py-3.5 px-4 rounded-2xl bg-[#25D366] hover:bg-[#20ba59] text-slate-950 font-black text-xs tracking-wide shadow-lg shadow-emerald-500/20 transition-all hover:scale-[1.02] active:scale-95 group"
-                >
-                  <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
-                    <path d="M12.031 6.172c-3.181 0-5.767 2.586-5.768 5.766-.001 1.298.38 2.27 1.019 3.287l-.711 2.598 2.664-.699c.97.53 1.769.82 2.8.82 3.181 0 5.767-2.586 5.768-5.766 0-3.18-2.586-5.766-5.772-5.766zm3.392 8.244c-.144.405-.837.774-1.17.824-.312.045-.697.07-1.127-.069-.272-.089-.623-.223-1.077-.421-1.921-.838-3.17-2.775-3.266-2.903-.095-.128-.778-1.034-.778-1.97 0-.936.491-1.398.666-1.589.175-.19.382-.238.51-.238.127 0 .254.001.365.006.118.005.277-.045.433.332.162.392.553 1.349.602 1.448.049.099.082.215.016.345-.065.13-.098.211-.194.323-.096.112-.204.25-.291.336-.098.096-.2.201-.086.397.114.195.508.839 1.09 1.358.749.668 1.38.874 1.576.972.196.098.311.082.426-.049.115-.131.491-.571.622-.767.131-.196.262-.164.442-.098.18.065 1.144.539 1.34.637.196.098.327.147.376.23.049.082.049.477-.095.882z" />
-                  </svg>
-                  <span>Join WhatsApp Channel</span>
-                  <ExternalLink className="w-3.5 h-3.5 opacity-70 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
-                </a>
-              )}
+              <a
+                href={resolvedChannelLink}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={handleOpenChannel}
+                className="flex items-center justify-center gap-2.5 w-full py-3.5 px-4 rounded-2xl bg-[#25D366] hover:bg-[#20ba59] text-slate-950 font-black text-xs tracking-wide shadow-lg shadow-emerald-500/20 transition-all hover:scale-[1.02] active:scale-95 group"
+              >
+                <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
+                  <path d="M12.031 6.172c-3.181 0-5.767 2.586-5.768 5.766-.001 1.298.38 2.27 1.019 3.287l-.711 2.598 2.664-.699c.97.53 1.769.82 2.8.82 3.181 0 5.767-2.586 5.768-5.766 0-3.18-2.586-5.766-5.772-5.766zm3.392 8.244c-.144.405-.837.774-1.17.824-.312.045-.697.07-1.127-.069-.272-.089-.623-.223-1.077-.421-1.921-.838-3.17-2.775-3.266-2.903-.095-.128-.778-1.034-.778-1.97 0-.936.491-1.398.666-1.589.175-.19.382-.238.51-.238.127 0 .254.001.365.006.118.005.277-.045.433.332.162.392.553 1.349.602 1.448.049.099.082.215.016.345-.065.13-.098.211-.194.323-.096.112-.204.25-.291.336-.098.096-.2.201-.086.397.114.195.508.839 1.09 1.358.749.668 1.38.874 1.576.972.196.098.311.082.426-.049.115-.131.491-.571.622-.767.131-.196.262-.164.442-.098.18.065 1.144.539 1.34.637.196.098.327.147.376.23.049.082.049.477-.095.882z" />
+                </svg>
+                <span>Join WhatsApp Channel</span>
+                <ExternalLink className="w-3.5 h-3.5 opacity-70 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
+              </a>
 
               {whatsappNumber && (
                 <a
