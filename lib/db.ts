@@ -290,8 +290,8 @@ export const db = {
         if (!error && data) {
           const merged: Settings = { ...globalStore.__bmgh_settings, ...data };
           // Preserve channel url and AI keys if configured locally
-          if (data.whatsapp_channel_url !== undefined && data.whatsapp_channel_url !== null) {
-            merged.whatsapp_channel_url = data.whatsapp_channel_url;
+          if (data.whatsapp_channel_url && String(data.whatsapp_channel_url).trim()) {
+            merged.whatsapp_channel_url = String(data.whatsapp_channel_url).trim();
           } else if (globalStore.__bmgh_settings?.whatsapp_channel_url) {
             merged.whatsapp_channel_url = globalStore.__bmgh_settings.whatsapp_channel_url;
           }

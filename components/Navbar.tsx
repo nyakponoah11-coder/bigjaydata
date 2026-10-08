@@ -31,20 +31,19 @@ export default function Navbar({
   const [channelUrl, setChannelUrl] = useState(whatsappChannelUrl || "");
   const pathname = usePathname();
 
-  // Load WhatsApp channel URL from prop or fetch from settings
+  // Load WhatsApp channel URL from prop and fetch latest from settings
   useEffect(() => {
     if (whatsappChannelUrl) {
       setChannelUrl(whatsappChannelUrl);
-    } else {
-      fetch("/api/settings")
-        .then((r) => r.json())
-        .then((d) => {
-          if (d?.settings?.whatsapp_channel_url) {
-            setChannelUrl(d.settings.whatsapp_channel_url);
-          }
-        })
-        .catch(() => {});
     }
+    fetch("/api/settings")
+      .then((r) => r.json())
+      .then((d) => {
+        if (d?.settings?.whatsapp_channel_url) {
+          setChannelUrl(d.settings.whatsapp_channel_url);
+        }
+      })
+      .catch(() => {});
   }, [whatsappChannelUrl]);
 
   const sanitizeUrl = (url?: string) => {
@@ -57,11 +56,9 @@ export default function Navbar({
 
   const directChannelUrl = sanitizeUrl(channelUrl);
 
-  const resolvedChannelLink =
-    directChannelUrl ||
-    (whatsappNumber
-      ? `https://wa.me/${whatsappNumber.replace(/[^0-9]/g, "")}?text=Hello%20${encodeURIComponent(storeName)}%2C%20please%20send%20me%20your%20WhatsApp%20Channel%20link.`
-      : "https://whatsapp.com");
+  // CRITICAL: The WhatsApp Channel MUST ONLY link to the channel URL provided in admin settings.
+  // It must NEVER link to the WhatsApp phone number!
+  const resolvedChannelLink = directChannelUrl || "https://whatsapp.com/channel/";
 
   // Close drawer on route change
   useEffect(() => {

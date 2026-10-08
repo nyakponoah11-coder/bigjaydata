@@ -410,7 +410,7 @@ export default function HelpClientView({
       ? rawChannel
       : `https://${rawChannel}`
     : "";
-  const channelLink = formattedChannel || `https://wa.me/${cleanNumber}`;
+  const channelLink = formattedChannel || "https://whatsapp.com/channel/";
 
   const quickPrompts = [
     { label: "💰 MTN Prices", prompt: "What are the rates for MTN data bundles?" },

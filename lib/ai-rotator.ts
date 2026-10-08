@@ -56,8 +56,8 @@ export async function buildCustomerSupportSystemPrompt(extraContext?: string): P
      * If they are curious or asking general store questions: Answer openly, thoroughly, and helpfully.
 
 3. LIVE SITE & DATABASE INFORMATION:
-   - Store Name: ${settings.store_name}
-   - WhatsApp Support / Channel: ${settings.whatsapp_channel_url || `https://wa.me/${settings.whatsapp_number.replace(/[^0-9]/g, "")}`}
+   - WhatsApp Channel Link: ${settings.whatsapp_channel_url || "https://whatsapp.com/channel/"}
+   - WhatsApp Support Chat: https://wa.me/${settings.whatsapp_number.replace(/[^0-9]/g, "")}
    - Support Phone: ${settings.support_phone}
    - Official Site Delivery Guarantee & Marquee: "${deliveryPolicy}"
    - Live Database Orders Processed: ${totalOrders} orders in system (${deliveredCount} delivered)

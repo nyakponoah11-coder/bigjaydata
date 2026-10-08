@@ -391,7 +391,7 @@ export default function AdminSettingsPage() {
                     </span>
                   ) : (
                     <span className="inline-flex items-center gap-1 text-[10px] bg-amber-500/10 text-amber-400 font-bold px-2.5 py-0.5 rounded-full border border-amber-500/20">
-                      Not Configured (Using wa.me Chat)
+                      Not Configured (Optional)
                     </span>
                   )}
                 </div>

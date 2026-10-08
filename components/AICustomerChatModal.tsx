@@ -124,7 +124,15 @@ export default function AICustomerChatModal({
     }
   };
 
-  const channelLink = whatsappChannelUrl || `https://wa.me/${whatsappNumber.replace(/[^0-9]/g, "")}`;
+  const sanitizeUrl = (url?: string) => {
+    if (!url) return "";
+    const trimmed = url.trim();
+    if (!trimmed) return "";
+    if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) return trimmed;
+    return `https://${trimmed}`;
+  };
+
+  const channelLink = sanitizeUrl(whatsappChannelUrl) || "https://whatsapp.com/channel/";
 
   const quickPrompts = [
     { label: "💰 MTN Prices", prompt: "What are the prices for MTN data bundles?" },
