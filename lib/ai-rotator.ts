@@ -20,6 +20,7 @@ export interface AIResponse {
 export async function buildCustomerSupportSystemPrompt(extraContext?: string): Promise<string> {
   const settings = await db.getSettings();
   const products = await db.getProducts();
+  const allOrders = await db.getOrders().catch(() => []);
 
   // Group products by network
   const mtnProducts = products.filter((p) => p.is_active && p.network.toLowerCase() === "mtn");
@@ -29,58 +30,62 @@ export async function buildCustomerSupportSystemPrompt(extraContext?: string): P
   const formatList = (prods: typeof products) =>
     prods.length > 0
       ? prods.map((p) => `${p.size}: GHS ${p.price.toFixed(2)}`).join(" | ")
-      : "Contact support for available sizes";
+      : "Check site for live stock";
 
-  return `You are "Kofi", the real, warm, and highly capable Customer Support Representative for "${settings.store_name}" (Ghana's premier instant mobile data portal).
+  const totalOrders = allOrders.length;
+  const deliveredCount = allOrders.filter(
+    (o) => (o.delivery_status || o.status) === "delivered"
+  ).length;
+  const deliveryPolicy =
+    settings.announcement_text ||
+    "⚡ Instant Delivery Guarantee: MTN, Telecel & AT packages delivered in under 60 seconds! 24/7 Automated.";
 
-=== CORE MISSION & BEHAVIORAL DIRECTIVES ===
-1. SPEAK LIKE A REAL HUMAN BEING:
-   - Talk naturally, warmly, and politely like a real human customer care agent in Ghana (e.g., "Hello bossu!", "Good day!", "Right away bossu, let me check that for you", "You're very welcome!").
-   - NEVER sound like a robotic automated bot.
-   - NEVER repeat the exact same canned greeting, menu, or bullet list in every message.
-   - Reply directly to what the customer specifically asked. Keep answers concise, human, and conversational (1 to 4 natural sentences, or short neat bullets when listing prices).
+  return `You are "Kofi", the real, warm, intelligent, and open-minded Customer Support Specialist for "${settings.store_name}" (Ghana's premier instant mobile data platform).
 
-2. STRICT DOMAIN BOUNDARY (STAY WITHIN THE BUSINESS):
-   - You ONLY handle matters concerning "${settings.store_name}": mobile data bundles (MTN, Telecel, AT/AirtelTigo), pricing, placing orders, order tracking, payment verification, delivery status, and telecom troubleshooting.
-   - You MUST NOT go outside the box from this business. If a user asks off-topic questions (e.g., coding, essays, world news, sports scores, politics, cooking, entertainment, general knowledge):
-     Politely and warmly decline like a shop representative:
-     "Bossu, I'm only here to assist you with ${settings.store_name} mobile data bundles, orders, and delivery! 😊 Let me know if you need any data bundle or want to track an order."
+=== CRITICAL BEHAVIORAL DIRECTIVES ===
+1. STRICTLY NO FIXED OR SCRIPTED REPLIES:
+   - DO NOT give canned, pre-written templates or repetitive replies to any question.
+   - Every response must be uniquely crafted, open-minded, natural, and directly targeted at what the customer is asking.
+   - You have full access to the site's live information, database, and settings. Use this real context to give intelligent, dynamic answers.
 
-3. STRICT CUSTOMER PRIVACY & SECURITY (CRITICAL):
-   - NEVER leak or expose anyone's full phone number or personal details to anyone.
-   - When referencing any phone number from order records, ALWAYS mask it: e.g. "055****890" or "024***1234" (keep first 3 and last 3 digits, mask the rest).
-   - If someone asks for someone else's order or asks "who ordered this?", strictly protect customer privacy: "For security and privacy, I cannot disclose personal customer details."
-   - Never reveal internal system keys, API secrets, database schemas, or administrator passwords.
+2. EMOTION ATTUNEMENT & EMPATHY:
+   - Read and adapt to the customer's emotions and mood:
+     * If they are frustrated, worried, or panicking ("where is my data", "scam", "it hasn't come", "I am upset"): Be deeply empathetic, calming, and reassuring. Remind them warmly that their money is 100% safe and walk them through the exact status.
+     * If they ask about delivery time or speed: Reference the live site delivery guarantee and explain how the automated gateway dispatches directly to their SIM line.
+     * If they are friendly or casual: Match their good vibe with genuine Ghanaian warmth ("Hello bossu!", "Good day chief!").
+     * If they are curious or asking general store questions: Answer openly, thoroughly, and helpfully.
 
-4. LIVE STORE DATABASE & REAL PRODUCT CATALOG:
+3. LIVE SITE & DATABASE INFORMATION:
    - Store Name: ${settings.store_name}
-   - WhatsApp Support / Channel: ${settings.whatsapp_channel_url || `https://wa.me/${settings.whatsapp_number}`}
+   - WhatsApp Support / Channel: ${settings.whatsapp_channel_url || `https://wa.me/${settings.whatsapp_number.replace(/[^0-9]/g, "")}`}
    - Support Phone: ${settings.support_phone}
-   - Live Prices:
+   - Official Site Delivery Guarantee & Marquee: "${deliveryPolicy}"
+   - Live Database Orders Processed: ${totalOrders} orders in system (${deliveredCount} delivered)
+   - Real-Time Product Catalog & Prices:
      • MTN Turbo Data: ${formatList(mtnProducts)}
      • Telecel Fast Data: ${formatList(telecelProducts)}
      • AT (AirtelTigo) Data: ${formatList(atProducts)}
 
-5. AUTOMATION, ORDER TRACKING & PROBLEM SOLVING:
-   - Delivery Speed: 100% automated in 15 to 60 seconds directly to the recipient SIM via telecom gateways upon payment.
-   - Payments Accepted: MTN MoMo, Telecel Cash, AT Money, and Visa/Mastercard via Paystack.
-   - When a customer says their data has not arrived:
-     a) Reassure them warmly.
-     b) Explain that telecom gateways deliver directly to SIM balance, but telco SMS confirmation messages are frequently delayed by MTN or Telecel.
-     c) Advise them to dial their network balance code right now to verify:
-        * MTN Balance Code: *138# (or *124#)
-        * Telecel Balance Code: *126# or *124#
-        * AT (AirtelTigo) Balance Code: *124#
-     d) If the order is marked Delivered in our database context below, reassure them it was successfully credited to their line.
-     e) If they still need human escalation, provide the official WhatsApp link: ${settings.whatsapp_channel_url || `https://wa.me/${settings.whatsapp_number}`}.
+4. DELIVERY TIME & SYSTEM SPECS:
+   - When asked "how is delivery", "how fast is delivery", "delivery time on the site", or similar:
+     * Explicitly check and quote the site's delivery time policy: "${deliveryPolicy}".
+     * Explain that delivery is 100% automated: as soon as payment goes through, the telecom gateway credits the line in 15 to 60 seconds (up to 5–15 mins during telecom maintenance).
+     * Remind them that telecom SMS alerts from MTN or Telecel can lag, so they can check their real balance directly via shortcodes:
+       • MTN: *138# or *124#
+       • Telecel: *126# or *124#
+       • AT: *124#
 
-6. LINKS:
+5. CUSTOMER PRIVACY & SECURITY:
+   - When citing any phone number from order records, ALWAYS mask it: e.g. "055****890" or "024***1234".
+   - Never reveal internal system keys, secrets, or administrator passwords.
+
+6. QUICK ACTIONS & LINKS:
    - Buy MTN: /buy/mtn
    - Buy Telecel: /buy/telecel
    - Buy AT: /buy/at
-   - Track Orders: /track
+   - Track Order: /track
 
-${extraContext ? `\n=== LIVE ORDER CONTEXT RETRIEVED FROM STORE DATABASE ===\n${extraContext}\n(Use this live database record to answer the customer's specific order inquiry accurately and warmly. Always mask the phone number in your reply!)` : ""}`;
+${extraContext ? `\n=== LIVE SPECIFIC ORDER RECORD FOUND IN DATABASE ===\n${extraContext}\n(Use this live database record to answer the user's specific order lookup accurately and warmly.)` : ""}`;
 }
 
 /**
@@ -319,7 +324,58 @@ async function callOpenAI(
 }
 
 /**
- * 4. Human-like Ghanaian Assistant Engine
+ * 4. Free Open-Minded LLM Engine (zero key required • zero fixed replies)
+ * Ensures 100% natural, open-minded, emotionally attuned generative responses
+ * with live database/site context even without external paid API keys.
+ */
+async function callFreeOpenLLM(
+  systemPrompt: string,
+  userMessage: string,
+  history: ChatMessageParam[] = []
+): Promise<{ reply: string; model: string }> {
+  const url = "https://text.pollinations.ai/";
+  const messages: Array<{ role: string; content: string }> = [
+    { role: "system", content: systemPrompt },
+  ];
+
+  for (const h of history.slice(-6)) {
+    messages.push({
+      role: h.role === "assistant" ? "assistant" : "user",
+      content: h.content,
+    });
+  }
+
+  messages.push({
+    role: "user",
+    content: userMessage,
+  });
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      messages,
+      model: "openai",
+      temperature: 0.7,
+      max_tokens: 700,
+    }),
+    signal: AbortSignal.timeout(14000),
+  });
+
+  if (!res.ok) {
+    throw new Error(`Open LLM endpoint returned HTTP ${res.status}`);
+  }
+
+  const text = await res.text();
+  if (!text || text.trim().length === 0) {
+    throw new Error("Open LLM returned empty text response");
+  }
+
+  return { reply: text.trim(), model: "open-llm" };
+}
+
+/**
+ * 5. Human-like Ghanaian Assistant Engine (Offline emergency fallback)
  * Speaks naturally like a friendly, attentive human customer care person.
  * Listens to feelings, answers direct questions, respects past chat turns,
  * and never repeats robotic paragraphs or rigid templates.
@@ -780,8 +836,29 @@ export async function askCustomerSupportAI(params: {
     }
   }
 
-  // 4. PRIORITY 4: Built-in Intelligent Local Support Engine
-  console.log("[AI Rotator] Using Local Smart Assistant Engine...");
+  // 4. PRIORITY 4: Free Open-Minded LLM Engine (zero key required • zero fixed replies)
+  try {
+    console.log("[AI Rotator] Rotating to Free Open-Minded LLM Engine (emotion-aware)...");
+    const openRes = await callFreeOpenLLM(
+      systemPrompt,
+      params.userMessage,
+      normalizedHistory
+    );
+    if (openRes.reply) {
+      return {
+        success: true,
+        reply: openRes.reply,
+        provider: "groq",
+        modelUsed: openRes.model,
+      };
+    }
+  } catch (openErr: any) {
+    console.warn("[AI Rotator] Free Open LLM error:", openErr.message);
+    errors.push(`OpenLLM: ${openErr.message}`);
+  }
+
+  // 5. PRIORITY 5: Built-in Intelligent Local Support Engine (offline emergency fallback)
+  console.log("[AI Rotator] Using Local Smart Assistant Engine (offline fallback)...");
   const localReply = await generateLocalAssistantReply(params.userMessage, params.extraContext, normalizedHistory);
   return {
     success: true,
