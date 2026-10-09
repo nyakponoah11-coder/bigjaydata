@@ -316,14 +316,26 @@ export default function AdminDashboardPage() {
                         <td className="py-3.5">
                           <span
                             className={`px-2 py-0.5 rounded-full font-bold uppercase text-[10px] ${
-                              deliveryStatus === "delivered"
+                              deliveryStatus === "delivered" || deliveryStatus === "completed"
                                 ? "bg-emerald-950 text-emerald-400 border border-emerald-800"
-                                : deliveryStatus === "pending" || deliveryStatus === "processing"
+                                : deliveryStatus === "processing" || deliveryStatus === "in_progress"
+                                ? "bg-amber-950 text-amber-400 border border-amber-800"
+                                : deliveryStatus === "pending" || deliveryStatus === "waiting" || deliveryStatus === "queued"
                                 ? "bg-sky-950 text-sky-400 border border-sky-800"
+                                : deliveryStatus === "refunded"
+                                ? "bg-purple-950 text-purple-400 border border-purple-800"
                                 : "bg-red-950 text-red-400 border border-red-800"
                             }`}
                           >
-                            {deliveryStatus === "delivered" ? "Delivered" : deliveryStatus === "pending" || deliveryStatus === "processing" ? "In Progress" : "Failed"}
+                            {deliveryStatus === "delivered" || deliveryStatus === "completed"
+                              ? "Delivered"
+                              : deliveryStatus === "processing" || deliveryStatus === "in_progress"
+                              ? "Processing"
+                              : deliveryStatus === "pending" || deliveryStatus === "waiting" || deliveryStatus === "queued"
+                              ? "Queued"
+                              : deliveryStatus === "refunded"
+                              ? "Refunded"
+                              : "Failed"}
                           </span>
                         </td>
                         <td className="py-3.5 text-slate-400">

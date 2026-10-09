@@ -79,25 +79,26 @@ export default function AdminOrdersPage() {
       case "completed":
       case "delivered":
         return {
-          label: "✓ Completed",
+          label: "✓ Delivered",
           className: "bg-emerald-950 text-emerald-400 border border-emerald-800",
         };
       case "processing":
+      case "in_progress":
+      case "in-progress":
         return {
           label: "⚡ Processing",
           className: "bg-amber-950 text-amber-300 border border-amber-800 animate-pulse",
         };
       case "waiting":
+      case "pending":
+      case "queued":
         return {
-          label: "⏳ Waiting",
+          label: "⏳ Queued",
           className: "bg-blue-950 text-blue-300 border border-blue-800",
         };
-      case "pending":
-        return {
-          label: "⏳ Pending",
-          className: "bg-sky-950 text-sky-400 border border-sky-800",
-        };
       case "failed":
+      case "rejected":
+      case "declined":
         return {
           label: "✕ Failed",
           className: "bg-red-950 text-red-400 border border-red-800",

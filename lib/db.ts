@@ -50,13 +50,15 @@ export function normalizeOrder(order: any): Order {
   let delivery_status = (order.delivery_status || "").toLowerCase().trim();
   if (!delivery_status) {
     const rawStatus = (order.status || "").toLowerCase().trim();
-    if (rawStatus === "delivered" || rawStatus === "completed") delivery_status = "completed";
-    else if (rawStatus === "processing") delivery_status = "processing";
-    else if (rawStatus === "waiting") delivery_status = "waiting";
+    if (rawStatus === "delivered" || rawStatus === "completed") delivery_status = "delivered";
+    else if (rawStatus === "processing" || rawStatus === "in_progress") delivery_status = "processing";
+    else if (rawStatus === "waiting" || rawStatus === "pending") delivery_status = "pending";
     else if (rawStatus === "failed") delivery_status = "failed";
     else if (rawStatus === "refunded") delivery_status = "refunded";
     else if (rawStatus === "cancelled") delivery_status = "cancelled";
     else delivery_status = "pending";
+  } else if (delivery_status === "completed") {
+    delivery_status = "delivered";
   }
 
   let status = (order.status || "").toLowerCase().trim();

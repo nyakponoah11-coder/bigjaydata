@@ -61,6 +61,8 @@ export default function TrackClientView({ storeName }: { storeName: string }) {
           message: "Data bundle has been successfully delivered and activated on your phone line.",
         };
       case "processing":
+      case "in_progress":
+      case "in-progress":
         return {
           label: "Processing",
           icon: <Zap className="w-3 h-3 text-amber-600 animate-pulse" />,
@@ -68,18 +70,13 @@ export default function TrackClientView({ storeName }: { storeName: string }) {
           message: "Data bundle is actively processing on the telecom network. Expected delivery within 1-2 minutes.",
         };
       case "waiting":
+      case "pending":
+      case "queued":
         return {
-          label: "Waiting in Queue",
+          label: "Queued for delivery",
           icon: <Clock className="w-3 h-3 text-blue-600" />,
           className: "bg-blue-100 text-blue-800 border-blue-200",
           message: "Your order is queued in line for automated network dispatch.",
-        };
-      case "pending":
-        return {
-          label: "Pending Dispatch",
-          icon: <Clock className="w-3 h-3 text-sky-600" />,
-          className: "bg-sky-100 text-sky-800 border-sky-200",
-          message: "Order placed. Awaiting dispatch to automated telecom gateway.",
         };
       case "refunded":
         return {
@@ -89,6 +86,9 @@ export default function TrackClientView({ storeName }: { storeName: string }) {
           message: "This transaction has been refunded.",
         };
       case "cancelled":
+      case "canceled":
+      case "rejected":
+      case "declined":
         return {
           label: "Cancelled",
           icon: <AlertTriangle className="w-3 h-3 text-slate-600" />,

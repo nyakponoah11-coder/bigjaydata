@@ -100,9 +100,11 @@ export default function ReceiptClientView({ initialOrder, reference, settings }:
     );
   }
 
-  const isDelivered = order.status === "delivered";
-  const isPending = order.status === "pending";
-  const isFailed = order.status === "failed";
+  const ds = (order.delivery_status || order.status || "").toLowerCase().trim();
+  const isDelivered = ds === "delivered" || ds === "completed";
+  const isFailed = ds === "failed" || ds === "cancelled" || ds === "rejected" || ds === "declined";
+  const isRefunded = ds === "refunded";
+  const isPending = !isDelivered && !isFailed && !isRefunded;
 
   return (
     <div className="space-y-6">
