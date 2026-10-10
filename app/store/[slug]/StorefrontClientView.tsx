@@ -336,7 +336,11 @@ export default function StorefrontClientView({
       if (!res.ok || !data.success) {
         throw new Error(data.message || "No transaction found matching this search.");
       }
-      setTrackedOrder(data.order);
+      const found = data.order || (Array.isArray(data.orders) ? data.orders[0] : null);
+      if (!found) {
+        throw new Error("No transaction found matching this search.");
+      }
+      setTrackedOrder(found);
     } catch (err: any) {
       setTrackingError(err.message || "Failed to find order");
     } finally {

@@ -1778,7 +1778,23 @@ export const db = {
 
   async getAgentById(id: string): Promise<Agent | null> {
     const all = await this.getAgents();
-    return all.find((a) => a.id === id) || null;
+    const found = all.find((a) => a.id === id) || null;
+    if (found) {
+      try {
+        const orders = await this.getAgentOrders(found.id);
+        const earned = orders
+          .filter((o) => o.payment_status === "paid")
+          .reduce((sum, o) => sum + (Number(o.agent_profit) || 0), 0);
+        const withdrawals = await this.getAgentWithdrawals(found.id);
+        const withdrawn = withdrawals
+          .filter((w) => w.status === "completed")
+          .reduce((sum, w) => sum + (Number(w.amount) || 0), 0);
+        found.total_earned = Number(earned.toFixed(2));
+        found.total_withdrawn = Number(withdrawn.toFixed(2));
+        found.wallet_balance = Number(Math.max(0, earned - withdrawn).toFixed(2));
+      } catch {}
+    }
+    return found;
   },
 
   async getAgentBySlug(slug: string): Promise<Agent | null> {
@@ -2083,7 +2099,39 @@ export const db = {
 
   // AGENT ORDERS
   async getAgentOrders(agentId?: string): Promise<AgentOrder[]> {
-    if (isSupabaseConfigured && supabaseAdmin && (!globalStore.__bmgh_agent_orders || globalStore.__bmgh_agent_orders.length === 0)) {
+    if (isSupabaseConfigured && supabaseAdmin) {
+      // 1. Try direct agent_orders table
+      try {
+        let query = supabaseAdmin
+          .from("agent_orders")
+          .select("*")
+          .order("created_at", { ascending: false });
+        if (agentId) query = query.eq("agent_id", agentId);
+        const { data: dbOrders, error: dbErr } = await query;
+        if (!dbErr && Array.isArray(dbOrders) && dbOrders.length > 0) {
+          const mapped: AgentOrder[] = dbOrders.map((o: any) => ({
+            id: o.id,
+            agent_id: o.agent_id,
+            reference: o.reference,
+            network: o.network,
+            package_size: o.package_size,
+            phone: o.phone,
+            amount: Number(o.amount),
+            base_price: Number(o.base_price),
+            agent_profit: Number(o.agent_profit),
+            paystack_ref: o.paystack_ref,
+            payment_status: o.payment_status || "paid",
+            delivery_status: o.delivery_status || "pending",
+            status: o.status || "pending",
+            datamart_response: o.datamart_response,
+            created_at: o.created_at,
+          }));
+          globalStore.__bmgh_agent_orders = mapped;
+          return mapped;
+        }
+      } catch {}
+
+      // 2. Try settings registry config
       try {
         const { data } = await supabaseAdmin
           .from("settings")
@@ -2093,10 +2141,54 @@ export const db = {
         if (data?.announcement_text) {
           try {
             const list = JSON.parse(data.announcement_text);
-            if (Array.isArray(list)) globalStore.__bmgh_agent_orders = list;
+            if (Array.isArray(list) && list.length > 0) {
+              globalStore.__bmgh_agent_orders = list;
+              return agentId ? list.filter((o: any) => o.agent_id === agentId) : list;
+            }
           } catch {}
         }
       } catch (err) {}
+
+      // 3. Fallback: Search master orders table for orders placed through agent store
+      if (agentId) {
+        try {
+          const { data: masterOrders } = await supabaseAdmin
+            .from("orders")
+            .select("*")
+            .order("created_at", { ascending: false });
+          if (Array.isArray(masterOrders) && masterOrders.length > 0) {
+            const agentMatching = masterOrders.filter(
+              (mo: any) =>
+                mo.datamart_response?.agent_id === agentId ||
+                (mo.reference && (mo.reference.startsWith("STON-") || mo.reference.startsWith("DATA-")))
+            );
+            if (agentMatching.length > 0) {
+              const converted: AgentOrder[] = agentMatching.map((mo: any) => ({
+                id: "agord-" + mo.id,
+                agent_id: agentId,
+                reference: mo.reference,
+                network: mo.network,
+                package_size: mo.package_size,
+                phone: mo.phone,
+                amount: Number(mo.amount),
+                base_price: Number(mo.datamart_response?.base_price || 0.02),
+                agent_profit: Number(
+                  mo.datamart_response?.agent_profit !== undefined
+                    ? mo.datamart_response.agent_profit
+                    : Math.max(0, Number(mo.amount) - 0.02)
+                ),
+                paystack_ref: mo.paystack_ref,
+                payment_status: mo.payment_status || "paid",
+                delivery_status: mo.delivery_status || "delivered",
+                status: mo.status || "delivered",
+                datamart_response: mo.datamart_response,
+                created_at: mo.created_at,
+              }));
+              return converted;
+            }
+          }
+        } catch {}
+      }
     }
 
     const orders = globalStore.__bmgh_agent_orders || [];
@@ -2110,21 +2202,56 @@ export const db = {
       id: "agord-" + crypto.randomUUID().slice(0, 8),
       created_at: new Date().toISOString(),
     };
-    if (!globalStore.__bmgh_agent_orders) globalStore.__bmgh_agent_orders = [];
-    globalStore.__bmgh_agent_orders.unshift(newOrder);
+
+    // 1. Ensure agents are loaded
+    const agents = await this.getAgents();
+    const agent = agents.find((a) => a.id === newOrder.agent_id);
 
     // If order is paid, automatically credit the agent's wallet
-    if (newOrder.payment_status === "paid" && newOrder.agent_profit > 0) {
-      const agent = (globalStore.__bmgh_agents || []).find((a) => a.id === newOrder.agent_id);
-      if (agent) {
-        agent.wallet_balance = Number((agent.wallet_balance + newOrder.agent_profit).toFixed(2));
-        agent.total_earned = Number((agent.total_earned + newOrder.agent_profit).toFixed(2));
-      }
+    if (newOrder.payment_status === "paid" && newOrder.agent_profit > 0 && agent) {
+      agent.wallet_balance = Number((agent.wallet_balance + newOrder.agent_profit).toFixed(2));
+      agent.total_earned = Number((agent.total_earned + newOrder.agent_profit).toFixed(2));
     }
+
+    // 2. Ensure in-memory cache is populated
+    if (!globalStore.__bmgh_agent_orders) globalStore.__bmgh_agent_orders = [];
+    globalStore.__bmgh_agent_orders.unshift(newOrder);
 
     saveToDisk();
 
     if (isSupabaseConfigured && supabaseAdmin) {
+      // 1. Direct agent_orders table
+      try {
+        await supabaseAdmin.from("agent_orders").upsert({
+          id: newOrder.id,
+          agent_id: newOrder.agent_id,
+          reference: newOrder.reference,
+          network: newOrder.network,
+          package_size: newOrder.package_size,
+          phone: newOrder.phone,
+          amount: newOrder.amount,
+          base_price: newOrder.base_price,
+          agent_profit: newOrder.agent_profit,
+          paystack_ref: newOrder.paystack_ref,
+          payment_status: newOrder.payment_status,
+          delivery_status: newOrder.delivery_status,
+          status: newOrder.status,
+          datamart_response: newOrder.datamart_response || {},
+          created_at: newOrder.created_at,
+        });
+      } catch {}
+
+      // 2. Direct agents table update
+      if (agent) {
+        try {
+          await supabaseAdmin.from("agents").update({
+            wallet_balance: agent.wallet_balance,
+            total_earned: agent.total_earned,
+          }).eq("id", agent.id);
+        } catch {}
+      }
+
+      // 3. Settings table registry fallbacks
       try {
         await Promise.all([
           supabaseAdmin.from("settings").upsert({
@@ -2151,15 +2278,27 @@ export const db = {
   },
 
   async updateAgentOrderStatus(orderId: string, deliveryStatus: string, response?: any): Promise<AgentOrder | null> {
-    const orders = globalStore.__bmgh_agent_orders || [];
+    const orders = await this.getAgentOrders();
     const o = orders.find((x) => x.id === orderId || x.reference === orderId);
-    if (!o) return null;
-    o.delivery_status = deliveryStatus;
-    o.status = deliveryStatus;
-    if (response) o.datamart_response = response;
+    if (o) {
+      o.delivery_status = deliveryStatus;
+      o.status = deliveryStatus;
+      if (response) o.datamart_response = response;
+    }
     saveToDisk();
 
     if (isSupabaseConfigured && supabaseAdmin) {
+      try {
+        await supabaseAdmin
+          .from("agent_orders")
+          .update({
+            delivery_status: deliveryStatus,
+            status: deliveryStatus,
+            datamart_response: response || {},
+          })
+          .or(`id.eq.${orderId},reference.eq.${orderId}`);
+      } catch {}
+
       try {
         await supabaseAdmin.from("settings").upsert({
           id: "agent_orders_registry_config",
@@ -2167,12 +2306,12 @@ export const db = {
           support_phone: "+233551234567",
           whatsapp_number: "233551234567",
           email: "support@bundlemartgh.com",
-          announcement_text: JSON.stringify(globalStore.__bmgh_agent_orders),
+          announcement_text: JSON.stringify(globalStore.__bmgh_agent_orders || []),
         });
       } catch (err) {}
     }
 
-    return o;
+    return o || null;
   },
 
   // AGENT WITHDRAWALS

@@ -321,6 +321,42 @@ export default function AgentDashboardPage() {
     }
   };
 
+  const [savingAll, setSavingAll] = useState(false);
+
+  const handleSaveAllPrices = async () => {
+    if (!agent) return;
+    try {
+      setSavingAll(true);
+      setError("");
+      setNotice("");
+      for (const p of products) {
+        const customVal = editPrices[p.base_product_id];
+        if (customVal !== undefined && customVal !== "") {
+          const numPrice = parseFloat(customVal);
+          if (!isNaN(numPrice) && numPrice >= p.base_price) {
+            await fetch("/api/agent/products", {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                agent_id: agent.id,
+                base_product_id: p.base_product_id,
+                selling_price: numPrice,
+                is_active: p.is_active,
+              }),
+            });
+          }
+        }
+      }
+      setNotice("All product retail prices updated successfully!");
+      await loadDashboardData(agent.id);
+      setTimeout(() => setNotice(""), 3500);
+    } catch (err: any) {
+      setError("Failed to save some prices. Please retry.");
+    } finally {
+      setSavingAll(false);
+    }
+  };
+
   const handleToggleProductActive = async (p: any) => {
     try {
       const nextState = !p.is_active;
@@ -818,11 +854,30 @@ export default function AgentDashboardPage() {
         {/* TAB 2: PRODUCTS (Set & Edit Pricing against Base Price) */}
         {activeTab === "products" && (
           <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-4">
-            <div>
-              <h3 className="text-base font-bold text-white">Store Bundle Pricing & Margins</h3>
-              <p className="text-xs text-slate-400 mt-1">
-                Set your retail selling prices against the Admin Base Cost. When customers pay on your store, the base cost is deducted and the remaining profit automatically accumulates in your wallet.
-              </p>
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div>
+                <h3 className="text-base font-bold text-white">Store Bundle Pricing & Margins</h3>
+                <p className="text-xs text-slate-400 mt-1">
+                  Set your retail selling prices against the Admin Base Cost. When customers pay on your store, the base cost is deducted and the remaining profit automatically accumulates in your wallet.
+                </p>
+              </div>
+              <button
+                onClick={handleSaveAllPrices}
+                disabled={savingAll}
+                className="self-start sm:self-auto px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs rounded-xl shadow-md transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
+              >
+                {savingAll ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Saving All...</span>
+                  </>
+                ) : (
+                  <>
+                    <Check className="w-3.5 h-3.5" />
+                    <span>Save All Prices</span>
+                  </>
+                )}
+              </button>
             </div>
 
             <div className="overflow-x-auto">

@@ -4,6 +4,9 @@ import { sendDataMartDelivery } from "@/lib/datamart";
 import { verifyPaystackTransaction } from "@/lib/paystack";
 import { decodeAgentToken } from "@/lib/agent-link";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 export async function POST(
   req: Request,
   { params }: { params: Promise<{ slug: string }> }
