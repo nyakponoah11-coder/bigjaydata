@@ -37,14 +37,6 @@ interface DeveloperConfig {
   notice_message?: string;
 }
 
-interface AgentStoreConfig {
-  is_enabled: boolean;
-  developer_master_enabled?: boolean;
-  admin_enabled?: boolean;
-  registration_fee: number;
-  custom_domain?: string;
-}
-
 interface DeveloperProduct {
   id: string;
   network: string;
@@ -79,9 +71,6 @@ export default function AdminDeveloperPage() {
   // Notifications
   const [notice, setNotice] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
-  // Agent Store config (read-only display)
-  const [agentStoreConfig, setAgentStoreConfig] = useState<AgentStoreConfig | null>(null);
-
   // Pricing editing state
   const [networkFilter, setNetworkFilter] = useState("all");
   const [editingPriceId, setEditingPriceId] = useState<string | null>(null);
@@ -113,20 +102,13 @@ export default function AdminDeveloperPage() {
   const loadData = async () => {
     try {
       setLoading(true);
-      const [adminRes, agentStoreRes] = await Promise.all([
-        fetch("/api/admin/developer", { cache: "no-store" }),
-        fetch("/api/admin/agent-store-config", { cache: "no-store" }),
-      ]);
-      const adminData = await adminRes.json();
-      if (adminData.success) {
-        setConfig(adminData.config);
-        setProducts(adminData.products || []);
-        setAccounts(adminData.accounts || []);
-        setOrders(adminData.recent_orders || []);
-      }
-      const agentStoreData = await agentStoreRes.json();
-      if (agentStoreData.success) {
-        setAgentStoreConfig(agentStoreData.config);
+      const res = await fetch("/api/admin/developer", { cache: "no-store" });
+      const data = await res.json();
+      if (data.success) {
+        setConfig(data.config);
+        setProducts(data.products || []);
+        setAccounts(data.accounts || []);
+        setOrders(data.recent_orders || []);
       }
     } catch (err: any) {
       setNotice({ type: "error", message: "Failed to connect to developer management backend." });
@@ -437,89 +419,6 @@ export default function AdminDeveloperPage() {
           >
             {notice.type === "success" ? <CheckCircle2 className="w-4 h-4" /> : <AlertTriangle className="w-4 h-4" />}
             <span>{notice.message}</span>
-          </div>
-        )}
-
-        {/* Status Display Cards (Read-only) */}
-        {config && agentStoreConfig && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Developer API Status */}
-            <div
-              className={`p-5 sm:p-6 rounded-3xl border transition-all shadow-xl relative overflow-hidden ${
-                config.is_enabled
-                  ? "bg-gradient-to-br from-indigo-950/40 via-slate-900 to-slate-900 border-indigo-800/80 shadow-indigo-950/30"
-                  : "bg-gradient-to-br from-amber-950/30 via-slate-900 to-slate-900 border-amber-900/60 shadow-amber-950/20"
-              }`}
-            >
-              <div className="space-y-1.5">
-                <div className="flex items-center gap-2">
-                  <span
-                    className={`w-2.5 h-2.5 rounded-full animate-pulse ${
-                      config.is_enabled ? "bg-emerald-400" : "bg-amber-400"
-                    }`}
-                  />
-                  <span
-                    className={`text-xs font-black uppercase tracking-wider ${
-                      config.is_enabled ? "text-emerald-400" : "text-amber-400"
-                    }`}
-                  >
-                    {config.is_enabled ? "Developer API Gateway: Active" : "Developer API Gateway: Paused (Coming Soon)"}
-                  </span>
-                </div>
-                <h2 className="text-lg sm:text-xl font-black text-white">
-                  {config.is_enabled
-                    ? "API Gateway is Live for Developers"
-                    : "API Access is Paused by Admin"}
-                </h2>
-                <p className="text-xs text-slate-400 leading-relaxed">
-                  {config.is_enabled
-                    ? "Developers can generate secret API keys, check balances, and automate data fulfillment via REST endpoints. All purchases deduct from developer wallets."
-                    : "The public developer portal at /developer currently displays the 'Coming Soon' maintenance banner. Programmatic API calls return 403 Forbidden until turned on."}
-                </p>
-                <p className="text-xs text-slate-500 mt-3">
-                  Control: <span className="font-mono text-indigo-300">bundlemartgh.com/key</span>
-                </p>
-              </div>
-            </div>
-
-            {/* Agent Store Status */}
-            <div
-              className={`p-5 sm:p-6 rounded-3xl border transition-all shadow-xl relative overflow-hidden ${
-                agentStoreConfig.is_enabled
-                  ? "bg-gradient-to-br from-emerald-950/40 via-slate-900 to-slate-900 border-emerald-800/80 shadow-emerald-950/30"
-                  : "bg-gradient-to-br from-rose-950/30 via-slate-900 to-slate-900 border-rose-900/60 shadow-rose-950/20"
-              }`}
-            >
-              <div className="space-y-1.5">
-                <div className="flex items-center gap-2">
-                  <span
-                    className={`w-2.5 h-2.5 rounded-full animate-pulse ${
-                      agentStoreConfig.is_enabled ? "bg-emerald-400" : "bg-rose-400"
-                    }`}
-                  />
-                  <span
-                    className={`text-xs font-black uppercase tracking-wider ${
-                      agentStoreConfig.is_enabled ? "text-emerald-400" : "text-rose-400"
-                    }`}
-                  >
-                    {agentStoreConfig.is_enabled ? "Agent Storefronts: Active" : "Agent Storefronts: Paused (Coming Soon)"}
-                  </span>
-                </div>
-                <h2 className="text-lg sm:text-xl font-black text-white">
-                  {agentStoreConfig.is_enabled
-                    ? "Agent Stores are Live for Customers"
-                    : "Agent Store Access is Paused by Admin"}
-                </h2>
-                <p className="text-xs text-slate-400 leading-relaxed">
-                  {agentStoreConfig.is_enabled
-                    ? "All agent storefronts are accessible. Customers can browse and purchase data bundles instantly."
-                    : "All agent storefronts at /s/[slug] and /d/[token] display 'Coming Soon'. Customers cannot make purchases until enabled."}
-                </p>
-                <p className="text-xs text-slate-500 mt-3">
-                  Control: <span className="font-mono text-indigo-300">bundlemartgh.com/key</span>
-                </p>
-              </div>
-            </div>
           </div>
         )}
 
