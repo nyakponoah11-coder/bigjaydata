@@ -193,6 +193,7 @@ export interface Agent {
   whatsapp_channel_url?: string;
   support_email?: string;
   cloaked_url?: string;
+  custom_prices?: Record<string, number>;
 }
 
 export interface AgentOrder {
@@ -366,6 +367,10 @@ const initialAgents: Agent[] = [
     registration_paid: true,
     cloaked_url: "https://tinyurl.com/265syqzn",
     created_at: "2026-10-10T10:05:54.889Z",
+    custom_prices: {
+      "abp-mtn-1": 1.0,
+      "mtn_1gb": 1.0,
+    },
   },
 ];
 
@@ -2016,6 +2021,24 @@ export const db = {
       }
     });
 
+    // 5. Direct Agent custom_prices override (GUARANTEES agent-set prices always win)
+    const current = (globalStore.__bmgh_agents || initialAgents).find(
+      (a) => a.id === agentId || a.store_slug === agentId
+    );
+    if (current?.custom_prices) {
+      baseProducts.forEach((bp) => {
+        const directPrice =
+          current.custom_prices?.[bp.id] ??
+          current.custom_prices?.[`${bp.network.toLowerCase()}_${bp.size.toLowerCase()}`];
+        if (directPrice !== undefined && Number(directPrice) > 0) {
+          const matched = productMap.get(bp.id);
+          if (matched) {
+            matched.selling_price = Number(directPrice);
+          }
+        }
+      });
+    }
+
     const result = Array.from(productMap.values());
 
     // Update globalStore cache
@@ -2089,6 +2112,20 @@ export const db = {
 
     globalStore.__bmgh_agent_products = list;
     saveToDisk();
+
+    // Synchronize agent's custom_prices dictionary
+    try {
+      const allAgents = await this.getAgents();
+      const ag = allAgents.find((a) => a.id === agentId || a.store_slug === agentId);
+      if (ag) {
+        if (!ag.custom_prices) ag.custom_prices = {};
+        ag.custom_prices[baseProductId] = validSellingPrice;
+        if (bp) {
+          ag.custom_prices[`${bp.network.toLowerCase()}_${bp.size.toLowerCase()}`] = validSellingPrice;
+        }
+        this.updateAgent(ag.id, { custom_prices: ag.custom_prices }).catch(() => {});
+      }
+    } catch {}
 
     if (isSupabaseConfigured && supabaseAdmin) {
       // 1. Save to settings config row first (guaranteed single source of truth across Vercel serverless)
