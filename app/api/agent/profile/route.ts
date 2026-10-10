@@ -61,7 +61,7 @@ export async function GET(req: Request) {
     return NextResponse.json({
       success: true,
       agent,
-      custom_domain: config.custom_domain || process.env.NEXT_PUBLIC_STORE_DOMAIN || "",
+      custom_domain: config.custom_domain || process.env.NEXT_PUBLIC_STORE_DOMAIN || "fastdata-gh.vercel.app",
     });
   } catch (error: any) {
     return NextResponse.json({ success: false, message: error?.message }, { status: 500 });

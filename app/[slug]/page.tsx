@@ -55,6 +55,7 @@ export async function generateMetadata({
   return {
     title: storeTitle,
     description: storeDesc,
+    keywords: `${agent.store_name}, fast data, instant mobile data, MTN data bundle, Telecel bundle, AT data`,
     applicationName: agent.store_name,
     openGraph: {
       title: storeTitle,

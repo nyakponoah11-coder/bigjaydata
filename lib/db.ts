@@ -1509,7 +1509,7 @@ export const db = {
       developer_master_enabled: true,
       admin_enabled: true,
       registration_fee: 0,
-      custom_domain: "",
+      custom_domain: "fastdata-gh.vercel.app",
     };
   },
 
@@ -1842,7 +1842,7 @@ export const db = {
         const config = await this.getAgentStoreConfig();
         const baseOrigin = config.custom_domain
           ? `https://${config.custom_domain.replace(/^https?:\/\//i, "").replace(/\/+$/, "")}`
-          : process.env.NEXT_PUBLIC_BASE_URL || "https://www.bundlemartgh.com";
+          : "https://fastdata-gh.vercel.app";
         const target = `${baseOrigin.replace(/\/+$/, "")}/s/${newAgent.store_slug}`;
         const res = await fetch(`https://tinyurl.com/api-create.php?url=${encodeURIComponent(target)}`, {
           signal: AbortSignal.timeout(3500),

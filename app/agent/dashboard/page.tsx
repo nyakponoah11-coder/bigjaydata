@@ -44,7 +44,7 @@ export default function AgentDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<"home" | "products" | "orders" | "withdrawals" | "settings">("home");
   const [linkMode, setLinkMode] = useState<"clean" | "cloaked" | "short" | "masked" | "standard">("clean");
-  const [customDomain, setCustomDomain] = useState<string>("");
+  const [customDomain, setCustomDomain] = useState<string>("fastdata-gh.vercel.app");
   const [storeSlug, setStoreSlug] = useState<string>("");
   const [tinyUrl, setTinyUrl] = useState<string>("");
   const [shortening, setShortening] = useState<boolean>(false);
@@ -189,11 +189,8 @@ export default function AgentDashboardPage() {
   const standardPath = agent ? `/store/${agent.store_slug}` : "";
   const maskedPath = agent ? `/d/${encryptedToken}` : "";
 
-  const baseOrigin = customDomain
-    ? `https://${customDomain.replace(/^https?:\/\//i, "").replace(/\/+$/, "")}`
-    : typeof window !== "undefined"
-    ? window.location.origin
-    : "";
+  const effectiveDomain = customDomain || "fastdata-gh.vercel.app";
+  const baseOrigin = `https://${effectiveDomain.replace(/^https?:\/\//i, "").replace(/\/+$/, "")}`;
 
   const directCleanUrl = agent && baseOrigin ? `${baseOrigin}${cleanPath}` : "";
   const directShortUrl = agent && baseOrigin ? `${baseOrigin}${shortPath}` : "";
