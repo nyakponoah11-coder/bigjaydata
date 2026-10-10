@@ -9,7 +9,12 @@ export async function GET() {
       ...settings,
       paystack_secret_key: settings.paystack_secret_key ? "••••••••" : "",
     };
-    return NextResponse.json({ success: true, settings: safeSettings });
+    const config = await db.getAgentStoreConfig();
+    return NextResponse.json({
+      success: true,
+      settings: safeSettings,
+      agent_store_enabled: config.is_enabled,
+    });
   } catch (error: any) {
     return NextResponse.json(
       { success: false, message: error?.message || "Failed to fetch settings" },

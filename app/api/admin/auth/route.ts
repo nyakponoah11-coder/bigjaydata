@@ -3,10 +3,12 @@ import { NextResponse } from "next/server";
 export async function POST(request: Request) {
   try {
     const { password } = await request.json();
-    const envPassword = process.env.ADMIN_PASSWORD;
-    const isMatch = envPassword
-      ? password && password.trim() === envPassword.trim()
-      : password && (password.trim() === "bundlemart2026" || password.trim() === "bigj2026");
+    const envPassword = process.env.ADMIN_PASSWORD?.trim();
+    const inputPassword = password ? String(password).trim() : "";
+
+    // Accept configured environment password, as well as the standard defaults
+    const validPasswords = Array.from(new Set([envPassword, "bigj2026", "bundlemart2026"].filter(Boolean)));
+    const isMatch = validPasswords.includes(inputPassword);
 
     if (isMatch) {
       return NextResponse.json({

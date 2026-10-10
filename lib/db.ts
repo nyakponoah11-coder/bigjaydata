@@ -140,6 +140,88 @@ export interface VoucherClaim {
   created_at: string;
 }
 
+// ================= AGENT STORE INTERFACES =================
+export interface AgentStoreConfig {
+  is_enabled: boolean;
+  registration_fee: number;
+}
+
+export interface AgentBaseProduct {
+  id: string;
+  network: string; // mtn, telecel, at
+  size: string; // 1GB, 2GB, etc.
+  base_price: number; // what admin charges the agent
+  suggested_price: number; // recommended retail price
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface AgentCustomProduct {
+  id: string;
+  agent_id: string;
+  base_product_id: string;
+  network: string;
+  size: string;
+  base_price: number;
+  selling_price: number; // agent's price to customer
+  is_active: boolean;
+}
+
+export interface Agent {
+  id: string;
+  name: string;
+  store_name: string;
+  store_slug: string;
+  email: string;
+  phone: string;
+  momo_number: string;
+  momo_network: string;
+  description: string;
+  password_hash: string;
+  theme: "emerald" | "midnight" | "sunset" | "sapphire" | "pearl" | string;
+  wallet_balance: number;
+  total_earned: number;
+  total_withdrawn: number;
+  is_active: boolean;
+  registration_paid: boolean;
+  created_at: string;
+  logo_url?: string;
+  whatsapp_number?: string;
+  whatsapp_channel_url?: string;
+  support_email?: string;
+}
+
+export interface AgentOrder {
+  id: string;
+  agent_id: string;
+  reference: string;
+  network: string;
+  package_size: string;
+  phone: string;
+  amount: number; // customer paid (e.g. 5.00)
+  base_price: number; // admin base cost (e.g. 4.00)
+  agent_profit: number; // agent earned profit (e.g. 1.00)
+  paystack_ref: string | null;
+  payment_status: string;
+  delivery_status: string;
+  status: string;
+  datamart_response?: any;
+  created_at: string;
+}
+
+export interface AgentWithdrawal {
+  id: string;
+  agent_id: string;
+  amount: number;
+  momo_number: string;
+  momo_network: string;
+  status: "pending" | "completed" | "rejected";
+  verification_code: string;
+  verified: boolean;
+  note?: string;
+  created_at: string;
+}
+
 // Products start empty - added and managed purely via /admin/products
 let initialProducts: Product[] = [];
 
@@ -244,6 +326,22 @@ function loadFromDisk(): any {
 
 const diskData = loadFromDisk();
 
+const initialAgentBaseProducts: AgentBaseProduct[] = [
+  { id: "abp-mtn-1", network: "mtn", size: "1GB", base_price: 4.5, suggested_price: 5.5, is_active: true, created_at: new Date().toISOString() },
+  { id: "abp-mtn-2", network: "mtn", size: "2GB", base_price: 9.0, suggested_price: 11.0, is_active: true, created_at: new Date().toISOString() },
+  { id: "abp-mtn-3", network: "mtn", size: "3GB", base_price: 13.5, suggested_price: 16.5, is_active: true, created_at: new Date().toISOString() },
+  { id: "abp-mtn-5", network: "mtn", size: "5GB", base_price: 22.0, suggested_price: 26.5, is_active: true, created_at: new Date().toISOString() },
+  { id: "abp-mtn-10", network: "mtn", size: "10GB", base_price: 44.0, suggested_price: 52.0, is_active: true, created_at: new Date().toISOString() },
+  { id: "abp-tc-1", network: "telecel", size: "1GB", base_price: 4.0, suggested_price: 5.0, is_active: true, created_at: new Date().toISOString() },
+  { id: "abp-tc-2", network: "telecel", size: "2GB", base_price: 8.0, suggested_price: 10.0, is_active: true, created_at: new Date().toISOString() },
+  { id: "abp-tc-5", network: "telecel", size: "5GB", base_price: 20.0, suggested_price: 24.5, is_active: true, created_at: new Date().toISOString() },
+  { id: "abp-tc-10", network: "telecel", size: "10GB", base_price: 39.0, suggested_price: 48.0, is_active: true, created_at: new Date().toISOString() },
+  { id: "abp-at-1", network: "at", size: "1GB", base_price: 4.0, suggested_price: 5.0, is_active: true, created_at: new Date().toISOString() },
+  { id: "abp-at-2", network: "at", size: "2GB", base_price: 8.0, suggested_price: 10.0, is_active: true, created_at: new Date().toISOString() },
+  { id: "abp-at-5", network: "at", size: "5GB", base_price: 19.0, suggested_price: 23.5, is_active: true, created_at: new Date().toISOString() },
+  { id: "abp-at-10", network: "at", size: "10GB", base_price: 37.0, suggested_price: 45.0, is_active: true, created_at: new Date().toISOString() },
+];
+
 const globalStore = globalThis as unknown as {
   __bmgh_products?: Product[];
   __bmgh_settings?: Settings;
@@ -251,6 +349,12 @@ const globalStore = globalThis as unknown as {
   __bmgh_messages?: Message[];
   __bmgh_vouchers?: Voucher[];
   __bmgh_voucher_claims?: VoucherClaim[];
+  __bmgh_agent_config?: AgentStoreConfig;
+  __bmgh_agent_base_products?: AgentBaseProduct[];
+  __bmgh_agents?: Agent[];
+  __bmgh_agent_products?: AgentCustomProduct[];
+  __bmgh_agent_orders?: AgentOrder[];
+  __bmgh_agent_withdrawals?: AgentWithdrawal[];
 };
 
 function saveToDisk() {
@@ -266,6 +370,12 @@ function saveToDisk() {
         messages: globalStore.__bmgh_messages,
         vouchers: globalStore.__bmgh_vouchers,
         voucher_claims: globalStore.__bmgh_voucher_claims,
+        agent_config: globalStore.__bmgh_agent_config,
+        agent_base_products: globalStore.__bmgh_agent_base_products,
+        agents: globalStore.__bmgh_agents,
+        agent_products: globalStore.__bmgh_agent_products,
+        agent_orders: globalStore.__bmgh_agent_orders,
+        agent_withdrawals: globalStore.__bmgh_agent_withdrawals,
       };
       fs.writeFileSync(STORE_FILE, JSON.stringify(dataToSave, null, 2), "utf-8");
     }
@@ -284,6 +394,16 @@ if (!globalStore.__bmgh_orders) globalStore.__bmgh_orders = diskData?.orders || 
 if (!globalStore.__bmgh_messages) globalStore.__bmgh_messages = diskData?.messages || initialMessages;
 if (!globalStore.__bmgh_vouchers) globalStore.__bmgh_vouchers = diskData?.vouchers || [];
 if (!globalStore.__bmgh_voucher_claims) globalStore.__bmgh_voucher_claims = diskData?.voucher_claims || [];
+if (!globalStore.__bmgh_agent_config) {
+  globalStore.__bmgh_agent_config = diskData?.agent_config || { is_enabled: true, registration_fee: 0 };
+}
+if (!globalStore.__bmgh_agent_base_products) {
+  globalStore.__bmgh_agent_base_products = diskData?.agent_base_products || initialAgentBaseProducts;
+}
+if (!globalStore.__bmgh_agents) globalStore.__bmgh_agents = diskData?.agents || [];
+if (!globalStore.__bmgh_agent_products) globalStore.__bmgh_agent_products = diskData?.agent_products || [];
+if (!globalStore.__bmgh_agent_orders) globalStore.__bmgh_agent_orders = diskData?.agent_orders || [];
+if (!globalStore.__bmgh_agent_withdrawals) globalStore.__bmgh_agent_withdrawals = diskData?.agent_withdrawals || [];
 
 export const db = {
   // SETTINGS
@@ -1300,5 +1420,294 @@ export const db = {
       }
     }
     return globalStore.__bmgh_voucher_claims || [];
+  },
+
+  // ================= AGENT STORE METHODS =================
+  async getAgentStoreConfig(): Promise<AgentStoreConfig> {
+    if (isSupabaseConfigured && supabaseAdmin) {
+      try {
+        const { data } = await supabaseAdmin
+          .from("settings")
+          .select("store_name, announcement_text")
+          .eq("id", "agent_store_config")
+          .maybeSingle();
+        if (data && data.store_name) {
+          const is_enabled = data.store_name === "true" || data.store_name === "1";
+          const registration_fee = Number(data.announcement_text) || 0;
+          globalStore.__bmgh_agent_config = { is_enabled, registration_fee };
+          return globalStore.__bmgh_agent_config;
+        }
+      } catch (err) {
+        // Fallback to local
+      }
+    }
+    return globalStore.__bmgh_agent_config || { is_enabled: false, registration_fee: 0 };
+  },
+
+  async updateAgentStoreConfig(config: Partial<AgentStoreConfig>): Promise<AgentStoreConfig> {
+    const current = globalStore.__bmgh_agent_config || { is_enabled: false, registration_fee: 0 };
+    globalStore.__bmgh_agent_config = {
+      ...current,
+      ...config,
+    };
+    saveToDisk();
+
+    if (isSupabaseConfigured && supabaseAdmin) {
+      try {
+        await supabaseAdmin.from("settings").upsert({
+          id: "agent_store_config",
+          store_name: globalStore.__bmgh_agent_config.is_enabled ? "true" : "false",
+          announcement_text: String(globalStore.__bmgh_agent_config.registration_fee || 0),
+        });
+      } catch (err) {
+        console.warn("Agent store config Supabase save error:", err);
+      }
+    }
+
+    return globalStore.__bmgh_agent_config;
+  },
+
+  async getAgentBaseProducts(): Promise<AgentBaseProduct[]> {
+    return globalStore.__bmgh_agent_base_products || [];
+  },
+
+  async createAgentBaseProduct(p: Omit<AgentBaseProduct, "id" | "created_at">): Promise<AgentBaseProduct> {
+    const newProduct: AgentBaseProduct = {
+      ...p,
+      id: "abp-" + crypto.randomUUID().slice(0, 8),
+      created_at: new Date().toISOString(),
+    };
+    if (!globalStore.__bmgh_agent_base_products) globalStore.__bmgh_agent_base_products = [];
+    globalStore.__bmgh_agent_base_products.push(newProduct);
+    saveToDisk();
+    return newProduct;
+  },
+
+  async updateAgentBaseProduct(id: string, updates: Partial<AgentBaseProduct>): Promise<AgentBaseProduct | null> {
+    const list = globalStore.__bmgh_agent_base_products || [];
+    const idx = list.findIndex((x) => x.id === id);
+    if (idx === -1) return null;
+    list[idx] = { ...list[idx], ...updates };
+    saveToDisk();
+    return list[idx];
+  },
+
+  async deleteAgentBaseProduct(id: string): Promise<boolean> {
+    if (globalStore.__bmgh_agent_base_products) {
+      globalStore.__bmgh_agent_base_products = globalStore.__bmgh_agent_base_products.filter((x) => x.id !== id);
+      saveToDisk();
+      return true;
+    }
+    return false;
+  },
+
+  // AGENTS
+  async getAgents(): Promise<Agent[]> {
+    return globalStore.__bmgh_agents || [];
+  },
+
+  async getAgentById(id: string): Promise<Agent | null> {
+    return (globalStore.__bmgh_agents || []).find((a) => a.id === id) || null;
+  },
+
+  async getAgentBySlug(slug: string): Promise<Agent | null> {
+    const clean = slug.toLowerCase().trim();
+    return (globalStore.__bmgh_agents || []).find((a) => a.store_slug.toLowerCase() === clean) || null;
+  },
+
+  async getAgentByEmail(email: string): Promise<Agent | null> {
+    const clean = email.toLowerCase().trim();
+    return (globalStore.__bmgh_agents || []).find((a) => a.email.toLowerCase() === clean) || null;
+  },
+
+  async getAgentByPhone(phone: string): Promise<Agent | null> {
+    const clean = phone.replace(/[^0-9]/g, "");
+    return (globalStore.__bmgh_agents || []).find((a) => a.phone.replace(/[^0-9]/g, "").endsWith(clean.slice(-9))) || null;
+  },
+
+  async createAgent(agentData: Omit<Agent, "id" | "wallet_balance" | "total_earned" | "total_withdrawn" | "created_at">): Promise<Agent> {
+    const newAgent: Agent = {
+      ...agentData,
+      id: "agent-" + crypto.randomUUID().slice(0, 8),
+      store_slug: agentData.store_slug.toLowerCase().trim().replace(/[^a-z0-9-_]/g, "-"),
+      wallet_balance: 0,
+      total_earned: 0,
+      total_withdrawn: 0,
+      is_active: true,
+      created_at: new Date().toISOString(),
+    };
+    if (!globalStore.__bmgh_agents) globalStore.__bmgh_agents = [];
+    globalStore.__bmgh_agents.unshift(newAgent);
+
+    // Initialize custom products with suggested prices from base products
+    const baseProducts = globalStore.__bmgh_agent_base_products || [];
+    if (!globalStore.__bmgh_agent_products) globalStore.__bmgh_agent_products = [];
+    baseProducts.forEach((bp) => {
+      globalStore.__bmgh_agent_products!.push({
+        id: "acp-" + crypto.randomUUID().slice(0, 8),
+        agent_id: newAgent.id,
+        base_product_id: bp.id,
+        network: bp.network,
+        size: bp.size,
+        base_price: bp.base_price,
+        selling_price: bp.suggested_price || bp.base_price + 1.0,
+        is_active: bp.is_active,
+      });
+    });
+
+    saveToDisk();
+    return newAgent;
+  },
+
+  async updateAgent(id: string, updates: Partial<Agent>): Promise<Agent | null> {
+    const agents = globalStore.__bmgh_agents || [];
+    const idx = agents.findIndex((a) => a.id === id);
+    if (idx === -1) return null;
+    agents[idx] = { ...agents[idx], ...updates };
+    saveToDisk();
+    return agents[idx];
+  },
+
+  // AGENT CUSTOM PRODUCTS
+  async getAgentProducts(agentId: string): Promise<AgentCustomProduct[]> {
+    const custom = (globalStore.__bmgh_agent_products || []).filter((p) => p.agent_id === agentId);
+    const baseProducts = globalStore.__bmgh_agent_base_products || [];
+
+    // Ensure all base products exist in the agent's product catalog
+    baseProducts.forEach((bp) => {
+      const exists = custom.find((c) => c.base_product_id === bp.id);
+      if (!exists) {
+        const added: AgentCustomProduct = {
+          id: "acp-" + crypto.randomUUID().slice(0, 8),
+          agent_id: agentId,
+          base_product_id: bp.id,
+          network: bp.network,
+          size: bp.size,
+          base_price: bp.base_price,
+          selling_price: bp.suggested_price || bp.base_price + 1.0,
+          is_active: bp.is_active,
+        };
+        custom.push(added);
+        if (!globalStore.__bmgh_agent_products) globalStore.__bmgh_agent_products = [];
+        globalStore.__bmgh_agent_products.push(added);
+      } else {
+        exists.base_price = bp.base_price;
+      }
+    });
+
+    saveToDisk();
+    return custom;
+  },
+
+  async updateAgentProduct(agentId: string, baseProductId: string, sellingPrice: number, isActive: boolean): Promise<AgentCustomProduct | null> {
+    const list = globalStore.__bmgh_agent_products || [];
+    let item = list.find((p) => p.agent_id === agentId && p.base_product_id === baseProductId);
+    if (!item) {
+      const bp = (globalStore.__bmgh_agent_base_products || []).find((b) => b.id === baseProductId);
+      if (!bp) return null;
+      item = {
+        id: "acp-" + crypto.randomUUID().slice(0, 8),
+        agent_id: agentId,
+        base_product_id: bp.id,
+        network: bp.network,
+        size: bp.size,
+        base_price: bp.base_price,
+        selling_price: Math.max(bp.base_price, sellingPrice),
+        is_active: isActive,
+      };
+      list.push(item);
+    } else {
+      item.selling_price = Math.max(item.base_price, sellingPrice);
+      item.is_active = isActive;
+    }
+    saveToDisk();
+    return item;
+  },
+
+  // AGENT ORDERS
+  async getAgentOrders(agentId?: string): Promise<AgentOrder[]> {
+    const orders = globalStore.__bmgh_agent_orders || [];
+    if (agentId) return orders.filter((o) => o.agent_id === agentId);
+    return orders;
+  },
+
+  async createAgentOrder(orderData: Omit<AgentOrder, "id" | "created_at">): Promise<AgentOrder> {
+    const newOrder: AgentOrder = {
+      ...orderData,
+      id: "agord-" + crypto.randomUUID().slice(0, 8),
+      created_at: new Date().toISOString(),
+    };
+    if (!globalStore.__bmgh_agent_orders) globalStore.__bmgh_agent_orders = [];
+    globalStore.__bmgh_agent_orders.unshift(newOrder);
+
+    // If order is paid, automatically credit the agent's wallet
+    if (newOrder.payment_status === "paid" && newOrder.agent_profit > 0) {
+      const agent = (globalStore.__bmgh_agents || []).find((a) => a.id === newOrder.agent_id);
+      if (agent) {
+        agent.wallet_balance = Number((agent.wallet_balance + newOrder.agent_profit).toFixed(2));
+        agent.total_earned = Number((agent.total_earned + newOrder.agent_profit).toFixed(2));
+      }
+    }
+
+    saveToDisk();
+    return newOrder;
+  },
+
+  async updateAgentOrderStatus(orderId: string, deliveryStatus: string, response?: any): Promise<AgentOrder | null> {
+    const orders = globalStore.__bmgh_agent_orders || [];
+    const o = orders.find((x) => x.id === orderId || x.reference === orderId);
+    if (!o) return null;
+    o.delivery_status = deliveryStatus;
+    o.status = deliveryStatus;
+    if (response) o.datamart_response = response;
+    saveToDisk();
+    return o;
+  },
+
+  // AGENT WITHDRAWALS
+  async getAgentWithdrawals(agentId?: string): Promise<AgentWithdrawal[]> {
+    const list = globalStore.__bmgh_agent_withdrawals || [];
+    if (agentId) return list.filter((w) => w.agent_id === agentId);
+    return list;
+  },
+
+  async createAgentWithdrawal(w: Omit<AgentWithdrawal, "id" | "status" | "verified" | "created_at">): Promise<AgentWithdrawal> {
+    const newWithdrawal: AgentWithdrawal = {
+      ...w,
+      id: "wd-" + crypto.randomUUID().slice(0, 8),
+      status: "pending",
+      verified: true,
+      created_at: new Date().toISOString(),
+    };
+    if (!globalStore.__bmgh_agent_withdrawals) globalStore.__bmgh_agent_withdrawals = [];
+    globalStore.__bmgh_agent_withdrawals.unshift(newWithdrawal);
+
+    // Deduct from agent wallet
+    const agent = (globalStore.__bmgh_agents || []).find((a) => a.id === w.agent_id);
+    if (agent) {
+      agent.wallet_balance = Math.max(0, Number((agent.wallet_balance - w.amount).toFixed(2)));
+      agent.total_withdrawn = Number((agent.total_withdrawn + w.amount).toFixed(2));
+    }
+
+    saveToDisk();
+    return newWithdrawal;
+  },
+
+  async updateWithdrawalStatus(id: string, status: "pending" | "completed" | "rejected", note?: string): Promise<AgentWithdrawal | null> {
+    const list = globalStore.__bmgh_agent_withdrawals || [];
+    const w = list.find((x) => x.id === id);
+    if (!w) return null;
+
+    if (status === "rejected" && w.status !== "rejected") {
+      const agent = (globalStore.__bmgh_agents || []).find((a) => a.id === w.agent_id);
+      if (agent) {
+        agent.wallet_balance = Number((agent.wallet_balance + w.amount).toFixed(2));
+        agent.total_withdrawn = Math.max(0, Number((agent.total_withdrawn - w.amount).toFixed(2)));
+      }
+    }
+    w.status = status;
+    if (note) w.note = note;
+    saveToDisk();
+    return w;
   },
 };

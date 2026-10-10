@@ -22,21 +22,27 @@ interface Props {
   storeName?: string;
   whatsappNumber?: string;
   whatsappChannelUrl?: string;
+  isAgentStoreEnabled?: boolean;
 }
 
 export default function Navbar({
   storeName = "BundleMartGh",
   whatsappNumber = "233551234567",
   whatsappChannelUrl = "",
+  isAgentStoreEnabled,
 }: Props) {
   const [isOpen, setIsOpen] = useState(false);
   const [channelUrl, setChannelUrl] = useState(whatsappChannelUrl || "");
+  const [agentStoreLive, setAgentStoreLive] = useState<boolean>(isAgentStoreEnabled ?? true);
   const pathname = usePathname();
 
-  // Load WhatsApp channel URL from prop, localStorage cache, and fetch latest from settings
+  // Load WhatsApp channel URL and agent store status from prop, localStorage cache, and fetch latest
   useEffect(() => {
     if (whatsappChannelUrl) {
       setChannelUrl(whatsappChannelUrl);
+    }
+    if (isAgentStoreEnabled !== undefined) {
+      setAgentStoreLive(isAgentStoreEnabled);
     }
     // Check localStorage cache so link NEVER disappears even if server is cold starting
     try {
@@ -56,9 +62,12 @@ export default function Navbar({
             localStorage.setItem("bigjay_whatsapp_channel_url", fresh);
           } catch {}
         }
+        if (d?.agent_store_enabled !== undefined) {
+          setAgentStoreLive(Boolean(d.agent_store_enabled));
+        }
       })
       .catch(() => {});
-  }, [whatsappChannelUrl]);
+  }, [whatsappChannelUrl, isAgentStoreEnabled]);
 
   const sanitizeUrl = (url?: string) => {
     if (!url) return "";
@@ -124,7 +133,12 @@ export default function Navbar({
     { label: "AT (AirtelTigo) Bundles", href: "/buy/at", icon: null, dot: "bg-blue-500", badge: null },
     { label: "Track Order Status", href: "/track", icon: Search, badge: "Live" },
     { label: "Install App", href: "/install", icon: Smartphone, badge: "APK / iOS" },
-    { label: "Agent Store", href: "/agent-store", icon: Store, badge: "Coming Soon" },
+    {
+      label: "Agent Store",
+      href: "/agent-store",
+      icon: Store,
+      badge: agentStoreLive ? "Reseller" : "Coming Soon",
+    },
   ];
 
   return (

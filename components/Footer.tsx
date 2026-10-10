@@ -9,6 +9,7 @@ interface Props {
   supportPhone?: string;
   whatsappNumber?: string;
   email?: string;
+  isAgentStoreEnabled?: boolean;
 }
 
 export default function Footer({
@@ -16,6 +17,7 @@ export default function Footer({
   supportPhone = "+233 55 123 4567",
   whatsappNumber = "233551234567",
   email = "support@bundlemartgh.com",
+  isAgentStoreEnabled = true,
 }: Props) {
   const currentYear = new Date().getFullYear();
 
@@ -97,7 +99,7 @@ export default function Footer({
               </li>
               <li>
                 <Link href="/agent-store" className="hover:text-amber-400 transition-colors flex items-center gap-1.5">
-                  <span>Agent Store (Coming Soon)</span>
+                  <span>{isAgentStoreEnabled ? "Agent Store (Become an Agent)" : "Agent Store (Coming Soon)"}</span>
                 </Link>
               </li>
               <li>

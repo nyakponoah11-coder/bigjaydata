@@ -30,6 +30,7 @@ export const revalidate = 0; // Dynamic on every request to reflect admin settin
 export default async function HomePage() {
   const settings = await db.getSettings();
   const products = await db.getProducts();
+  const config = await db.getAgentStoreConfig();
 
   // Group products by network dynamically
   const networksMap = new Map<string, typeof products>();
@@ -54,6 +55,7 @@ export default async function HomePage() {
           storeName={settings.store_name}
           whatsappNumber={settings.whatsapp_number}
           whatsappChannelUrl={settings.whatsapp_channel_url}
+          isAgentStoreEnabled={config.is_enabled}
         />
 
       {/* Customer Comments Cards with Avatars (Comes First) */}
@@ -170,6 +172,7 @@ export default async function HomePage() {
         supportPhone={settings.support_phone}
         whatsappNumber={settings.whatsapp_number}
         email={settings.email}
+        isAgentStoreEnabled={config.is_enabled}
       />
       </div>
     </div>

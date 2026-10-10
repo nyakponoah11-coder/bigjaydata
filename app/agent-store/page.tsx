@@ -4,10 +4,12 @@ import Footer from "@/components/Footer";
 import WhatsAppButton from "@/components/WhatsAppButton";
 import AgentStoreClientView from "./AgentStoreClientView";
 
+export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 export default async function AgentStorePage() {
   const settings = await db.getSettings();
+  const config = await db.getAgentStoreConfig();
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-950 text-slate-100">
@@ -15,12 +17,14 @@ export default async function AgentStorePage() {
         storeName={settings.store_name}
         whatsappNumber={settings.whatsapp_number}
         whatsappChannelUrl={settings.whatsapp_channel_url}
+        isAgentStoreEnabled={config.is_enabled}
       />
 
       <main className="flex-1 max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full">
         <AgentStoreClientView
           storeName={settings.store_name}
           whatsappNumber={settings.whatsapp_number}
+          isEnabled={config.is_enabled}
         />
       </main>
 
@@ -35,6 +39,7 @@ export default async function AgentStorePage() {
         supportPhone={settings.support_phone}
         whatsappNumber={settings.whatsapp_number}
         email={settings.email}
+        isAgentStoreEnabled={config.is_enabled}
       />
     </div>
   );
