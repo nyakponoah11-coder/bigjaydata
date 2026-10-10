@@ -19,6 +19,7 @@ import {
   Sliders,
   Users,
   Store,
+  Globe,
 } from "lucide-react";
 
 export default function DeveloperPage() {
@@ -29,6 +30,8 @@ export default function DeveloperPage() {
 
   const [loading, setLoading] = useState(false);
   const [isEnabled, setIsEnabled] = useState<boolean | null>(null);
+  const [customDomain, setCustomDomain] = useState("");
+  const [savingDomain, setSavingDomain] = useState(false);
   const [stats, setStats] = useState<{ total_agents: number; total_orders: number } | null>(null);
   const [toggling, setToggling] = useState(false);
   const [message, setMessage] = useState("");
@@ -54,6 +57,7 @@ export default function DeveloperPage() {
         setPasskey(key);
         localStorage.setItem("stony_dev_passkey", key);
         setIsEnabled(data.is_enabled);
+        setCustomDomain(data.custom_domain || "");
         setStats(data.stats);
       }
     } catch (err: any) {
@@ -122,6 +126,35 @@ export default function DeveloperPage() {
       setError(err.message || "Toggle failed");
     } finally {
       setToggling(false);
+    }
+  };
+
+  const handleSaveDomain = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSavingDomain(true);
+    setError("");
+    setMessage("");
+    try {
+      const res = await fetch("/api/developer/agent-store", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ passkey, custom_domain: customDomain.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.message || "Failed to save domain");
+      }
+      setCustomDomain(data.custom_domain || "");
+      setMessage(
+        data.custom_domain
+          ? `Storefront domain cloaked! All agent links now prefix with "${data.custom_domain}". bundlemartgh.com is hidden.`
+          : "White-label domain cleared. Links will use the current origin."
+      );
+      setTimeout(() => setMessage(""), 6000);
+    } catch (err: any) {
+      setError(err.message || "Failed to update domain");
+    } finally {
+      setSavingDomain(false);
     }
   };
 
@@ -306,6 +339,60 @@ export default function DeveloperPage() {
               </button>
             </div>
           </div>
+        </div>
+
+        {/* White-Label Domain Cloaking Card (Hide bundlemartgh.com) */}
+        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-xl space-y-4">
+          <div className="flex items-start justify-between gap-4">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2 text-cyan-400 text-xs font-black uppercase tracking-wider">
+                <Globe className="w-4 h-4" />
+                <span>Custom Domain Cloaking</span>
+              </div>
+              <h3 className="text-lg font-bold text-white">White-Label Storefront Domain</h3>
+              <p className="text-xs text-slate-400 max-w-xl">
+                Do not want <strong>bundlemartgh.com</strong> to show in customer links? Attach any secondary neutral domain to your Vercel project (e.g. <code>fastdatagh.shop</code> or <code>quickportal.vercel.app</code>) and save it below. All agent shareable links will immediately use this domain instead!
+              </p>
+            </div>
+          </div>
+
+          <form onSubmit={handleSaveDomain} className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 pt-2">
+            <div className="flex-1 relative">
+              <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 font-mono text-xs">https://</span>
+              <input
+                type="text"
+                placeholder="e.g. fastdatagh.shop or portal.example.com"
+                value={customDomain}
+                onChange={(e) => setCustomDomain(e.target.value)}
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-20 pr-4 py-2.5 text-xs text-white font-mono focus:outline-none focus:ring-2 focus:ring-cyan-500"
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={savingDomain}
+              className="px-6 py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-black text-xs transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+            >
+              {savingDomain ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+              <span>Save Domain</span>
+            </button>
+            {customDomain && (
+              <button
+                type="button"
+                onClick={() => {
+                  setCustomDomain("");
+                  handleSaveDomain({ preventDefault: () => {} } as any);
+                }}
+                className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white text-xs font-bold transition-all"
+              >
+                Clear
+              </button>
+            )}
+          </form>
+          {customDomain && (
+            <p className="text-[11px] text-emerald-400 font-mono bg-emerald-950/40 border border-emerald-900/50 px-3 py-1.5 rounded-lg">
+              ✓ Active Domain Mask: <strong>https://{customDomain.replace(/^https?:\/\//i, "").replace(/\/+$/, "")}/s/[agent-slug]</strong>
+            </p>
+          )}
         </div>
 
         {/* Live Preview Links */}

@@ -15,7 +15,12 @@ export async function GET(req: Request) {
       return NextResponse.json({ success: false, message: "Agent not found" }, { status: 404 });
     }
 
-    return NextResponse.json({ success: true, agent });
+    const config = await db.getAgentStoreConfig();
+    return NextResponse.json({
+      success: true,
+      agent,
+      custom_domain: config.custom_domain || process.env.NEXT_PUBLIC_STORE_DOMAIN || "",
+    });
   } catch (error: any) {
     return NextResponse.json({ success: false, message: error?.message }, { status: 500 });
   }

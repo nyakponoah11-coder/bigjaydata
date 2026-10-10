@@ -11,6 +11,7 @@ export async function GET() {
     return NextResponse.json({
       success: true,
       is_enabled: config.is_enabled,
+      custom_domain: config.custom_domain || "",
       stats: {
         total_agents: agents.length,
         total_orders: orders.length,
@@ -24,7 +25,7 @@ export async function GET() {
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { passkey, is_enabled } = body;
+    const { passkey, is_enabled, custom_domain } = body;
 
     const inputKey = passkey ? String(passkey).trim() : "";
     const envPass = process.env.ADMIN_PASSWORD?.trim();
@@ -37,15 +38,25 @@ export async function POST(req: Request) {
       );
     }
 
-    const targetMaster = Boolean(is_enabled);
-    const updated = await db.updateAgentStoreConfig({ developer_master_enabled: targetMaster });
+    const updates: any = {};
+    if (is_enabled !== undefined) {
+      updates.developer_master_enabled = Boolean(is_enabled);
+    }
+    if (custom_domain !== undefined) {
+      updates.custom_domain = String(custom_domain).trim();
+    }
+
+    const updated = await db.updateAgentStoreConfig(updates);
     return NextResponse.json({
       success: true,
       is_enabled: updated.is_enabled,
       developer_master_enabled: updated.developer_master_enabled,
-      message: targetMaster
-        ? "Developer Master Key: Agent Store is now UNLOCKED and active."
-        : "Developer Master Key: Agent Store is now LOCKED. Admin cannot activate until unlocked here.",
+      custom_domain: updated.custom_domain || "",
+      message: is_enabled !== undefined
+        ? updates.developer_master_enabled
+          ? "Developer Master Key: Agent Store is now UNLOCKED and active."
+          : "Developer Master Key: Agent Store is now LOCKED. Admin cannot activate until unlocked here."
+        : "Settings updated successfully",
     });
   } catch (error: any) {
     return NextResponse.json({ success: false, message: error?.message }, { status: 500 });

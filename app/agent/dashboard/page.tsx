@@ -43,7 +43,10 @@ export default function AgentDashboardPage() {
   const [agent, setAgent] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<"home" | "products" | "orders" | "withdrawals" | "settings">("home");
-  const [linkMode, setLinkMode] = useState<"masked" | "standard">("masked");
+  const [linkMode, setLinkMode] = useState<"short" | "masked" | "standard">("short");
+  const [customDomain, setCustomDomain] = useState<string>("");
+  const [tinyUrl, setTinyUrl] = useState<string>("");
+  const [shortening, setShortening] = useState<boolean>(false);
 
   // Home / Dashboard States
   const [selectedDate, setSelectedDate] = useState<string>(
@@ -154,6 +157,9 @@ export default function AgentDashboardPage() {
         setWhatsappNumber(profData.agent.whatsapp_number || profData.agent.phone || "");
         setWhatsappChannelUrl(profData.agent.whatsapp_channel_url || "");
         setSupportEmail(profData.agent.support_email || profData.agent.email || "");
+        if (profData.custom_domain) {
+          setCustomDomain(profData.custom_domain);
+        }
         localStorage.setItem("bmgh_agent_session", JSON.stringify(profData.agent));
       }
       if (prodData.success) {
@@ -174,22 +180,58 @@ export default function AgentDashboardPage() {
   };
 
   const encryptedToken = agent ? encodeAgentToken(agent.store_slug) : "";
+  const shortPath = agent ? `/s/${agent.store_slug}` : "";
   const standardPath = agent ? `/store/${agent.store_slug}` : "";
   const maskedPath = agent ? `/d/${encryptedToken}` : "";
 
-  const storeUrl = agent
-    ? typeof window !== "undefined"
-      ? `${window.location.origin}${linkMode === "masked" ? maskedPath : standardPath}`
-      : linkMode === "masked"
-      ? maskedPath
-      : standardPath
+  const selectedPath =
+    linkMode === "short" ? shortPath : linkMode === "masked" ? maskedPath : standardPath;
+
+  const baseOrigin = customDomain
+    ? `https://${customDomain.replace(/^https?:\/\//i, "").replace(/\/+$/, "")}`
+    : typeof window !== "undefined"
+    ? window.location.origin
     : "";
 
-  const handleCopyLink = () => {
-    if (typeof window !== "undefined" && storeUrl) {
-      navigator.clipboard.writeText(storeUrl);
+  const storeUrl = agent && baseOrigin ? `${baseOrigin}${selectedPath}` : "";
+
+  const handleCopyLink = (textToCopy?: string) => {
+    const target = textToCopy || tinyUrl || storeUrl;
+    if (typeof window !== "undefined" && target) {
+      navigator.clipboard.writeText(target);
       setCopied(true);
       setTimeout(() => setCopied(false), 2500);
+    }
+  };
+
+  const handleGenerateTinyUrl = async () => {
+    if (!storeUrl) return;
+    try {
+      setShortening(true);
+      setError("");
+      const res = await fetch(`https://tinyurl.com/api-create.php?url=${encodeURIComponent(storeUrl)}`);
+      if (res.ok) {
+        const text = await res.text();
+        if (text && text.startsWith("http")) {
+          const short = text.trim();
+          setTinyUrl(short);
+          if (typeof window !== "undefined") {
+            navigator.clipboard.writeText(short);
+          }
+          setCopied(true);
+          setNotice("Cloaked Short Link created & copied to clipboard! bundlemartgh.com is hidden.");
+          setTimeout(() => {
+            setCopied(false);
+            setNotice("");
+          }, 4500);
+          return;
+        }
+      }
+      throw new Error();
+    } catch {
+      setError("Unable to auto-shorten link. You can also paste your link directly into tinyurl.com or is.gd.");
+    } finally {
+      setShortening(false);
     }
   };
 
@@ -465,13 +507,27 @@ export default function AgentDashboardPage() {
         {/* Store Link Banner */}
         <div className="bg-gradient-to-r from-emerald-950 via-slate-900 to-slate-900 border border-emerald-800/40 rounded-3xl p-5 sm:p-6 shadow-xl relative overflow-hidden flex flex-col gap-4">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div>
-              <div className="inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-emerald-400 bg-emerald-500/10 px-2.5 py-0.5 rounded-full mb-1.5">
+            <div className="space-y-2">
+              <div className="inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-emerald-400 bg-emerald-500/10 px-2.5 py-0.5 rounded-full">
                 <Sparkles className="w-3 h-3" />
                 Customer Storefront URL
               </div>
               <h2 className="text-lg font-black text-white">Share Your Store with Customers</h2>
-              <div className="flex items-center gap-2 mt-2">
+
+              {/* Link Mode Selector */}
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setLinkMode("short")}
+                  className={`px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                    linkMode === "short"
+                      ? "bg-emerald-500 text-slate-950 shadow-sm"
+                      : "bg-slate-800 text-slate-400 hover:text-white"
+                  }`}
+                >
+                  <Sparkles className="w-3 h-3" />
+                  <span>Short Link (/s/)</span>
+                </button>
                 <button
                   type="button"
                   onClick={() => setLinkMode("masked")}
@@ -482,7 +538,7 @@ export default function AgentDashboardPage() {
                   }`}
                 >
                   <Lock className="w-3 h-3" />
-                  <span>Encrypted Link (Masked)</span>
+                  <span>Encrypted Link (/d/)</span>
                 </button>
                 <button
                   type="button"
@@ -494,37 +550,65 @@ export default function AgentDashboardPage() {
                   }`}
                 >
                   <Globe className="w-3 h-3" />
-                  <span>Direct Link</span>
+                  <span>Direct Store (/store/)</span>
                 </button>
               </div>
-              <p className="text-xs text-emerald-300 mt-2 font-mono bg-slate-950/80 px-3 py-2 rounded-xl border border-slate-800 break-all select-all">
+
+              {/* Active URL display */}
+              <p className="text-xs text-emerald-300 font-mono bg-slate-950/80 px-3 py-2 rounded-xl border border-slate-800 break-all select-all">
                 {storeUrl}
               </p>
+
+              {/* TinyURL Cloaked Display if generated */}
+              {tinyUrl && (
+                <div className="p-2.5 rounded-xl bg-cyan-950/60 border border-cyan-800/60 flex items-center justify-between gap-3 animate-fade-in">
+                  <div className="min-w-0">
+                    <span className="text-[10px] uppercase font-bold text-cyan-400 block">Cloaked Short Link (100% Hidden):</span>
+                    <span className="font-mono text-xs text-cyan-200 truncate block select-all">{tinyUrl}</span>
+                  </div>
+                  <button
+                    onClick={() => handleCopyLink(tinyUrl)}
+                    className="shrink-0 px-2.5 py-1 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-black text-[11px] rounded-lg transition-colors cursor-pointer"
+                  >
+                    Copy Cloaked
+                  </button>
+                </div>
+              )}
             </div>
 
             <div className="flex flex-wrap items-center gap-2 shrink-0 md:self-end">
               <button
-                onClick={handleCopyLink}
+                onClick={() => handleCopyLink(tinyUrl || storeUrl)}
                 className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs shadow-md transition-all cursor-pointer"
               >
                 {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                <span>{copied ? "Link Copied!" : "Copy Link"}</span>
+                <span>{copied ? "Copied!" : "Copy Link"}</span>
+              </button>
+
+              <button
+                onClick={handleGenerateTinyUrl}
+                disabled={shortening}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-cyan-950 hover:bg-cyan-900 border border-cyan-800/80 text-cyan-300 font-bold text-xs transition-all cursor-pointer disabled:opacity-50"
+                title="Generates a free short link hiding the bundlemartgh.com domain"
+              >
+                {shortening ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5 text-cyan-400" />}
+                <span>{tinyUrl ? "Re-shorten" : "Cloak Domain (TinyURL)"}</span>
               </button>
 
               <a
                 href={`https://wa.me/?text=${encodeURIComponent(
-                  `Buy cheap MTN, Telecel & AT data bundles instantly on my portal: ${storeUrl}`
+                  `Buy cheap MTN, Telecel & AT data bundles instantly on my portal: ${tinyUrl || storeUrl}`
                 )}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs border border-slate-700 transition-colors"
               >
                 <Share2 className="w-3.5 h-3.5 text-emerald-400" />
-                <span>Share on WhatsApp</span>
+                <span>WhatsApp</span>
               </a>
 
               <a
-                href={storeUrl}
+                href={tinyUrl || storeUrl}
                 target="_blank"
                 className="p-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors"
                 title="Open storefront"
@@ -534,13 +618,22 @@ export default function AgentDashboardPage() {
             </div>
           </div>
 
-          <div className="text-[11px] text-slate-400 border-t border-slate-800/80 pt-2 flex items-center gap-1.5">
-            <Lock className="w-3 h-3 text-cyan-400 shrink-0" />
-            <span>
-              {linkMode === "masked"
-                ? "The Encrypted Link disguises your store path so customers cannot see the internal store structure."
-                : "The Direct Link displays your custom slug (/store/slug)."}
-            </span>
+          <div className="text-[11px] text-slate-400 border-t border-slate-800/80 pt-2 flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5">
+              <Lock className="w-3 h-3 text-cyan-400 shrink-0" />
+              <span>
+                {linkMode === "short"
+                  ? "Short Link: Concise and easy to remember (/s/slug)."
+                  : linkMode === "masked"
+                  ? "Encrypted Link: Obfuscates the internal path."
+                  : "Direct Store: Full public storefront address."}
+              </span>
+            </div>
+            {customDomain && (
+              <span className="text-emerald-400 font-mono text-[10px] bg-emerald-950/60 border border-emerald-800/50 px-2 py-0.5 rounded-full">
+                Custom Domain Active: {customDomain}
+              </span>
+            )}
           </div>
         </div>
 

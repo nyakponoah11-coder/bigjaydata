@@ -146,6 +146,7 @@ export interface AgentStoreConfig {
   developer_master_enabled?: boolean;
   admin_enabled?: boolean;
   registration_fee: number;
+  custom_domain?: string;
 }
 
 export interface AgentBaseProduct {
@@ -1458,11 +1459,13 @@ export const db = {
         if (data && data.store_name) {
           let developer_master_enabled = false;
           let admin_enabled = true;
+          let custom_domain = "";
           try {
             if (data.store_name.startsWith("{")) {
               const parsed = JSON.parse(data.store_name);
               developer_master_enabled = parsed.developer_master_enabled ?? false;
               admin_enabled = parsed.admin_enabled ?? true;
+              custom_domain = parsed.custom_domain || "";
             } else {
               developer_master_enabled = data.store_name === "true" || data.store_name === "1";
               admin_enabled = developer_master_enabled;
@@ -1479,6 +1482,7 @@ export const db = {
             developer_master_enabled,
             admin_enabled,
             registration_fee,
+            custom_domain,
           };
           return globalStore.__bmgh_agent_config;
         }
@@ -1498,6 +1502,7 @@ export const db = {
       developer_master_enabled: false,
       admin_enabled: true,
       registration_fee: 0,
+      custom_domain: "",
     };
   },
 
@@ -1513,6 +1518,11 @@ export const db = {
       config.admin_enabled !== undefined
         ? Boolean(config.admin_enabled)
         : current.admin_enabled ?? true;
+
+    let custom_domain =
+      config.custom_domain !== undefined
+        ? config.custom_domain.trim().replace(/^https?:\/\//i, "").replace(/\/+$/, "")
+        : current.custom_domain || "";
 
     // If caller specifically set is_enabled directly without specifying master:
     if (config.developer_master_enabled === undefined && config.admin_enabled === undefined && config.is_enabled !== undefined) {
@@ -1531,6 +1541,7 @@ export const db = {
       developer_master_enabled,
       admin_enabled,
       registration_fee,
+      custom_domain,
     };
     saveToDisk();
 
@@ -1538,7 +1549,7 @@ export const db = {
       try {
         await supabaseAdmin.from("settings").upsert({
           id: "agent_store_config",
-          store_name: JSON.stringify({ developer_master_enabled, admin_enabled }),
+          store_name: JSON.stringify({ developer_master_enabled, admin_enabled, custom_domain }),
           announcement_text: String(registration_fee),
         });
       } catch (err) {
@@ -1550,37 +1561,128 @@ export const db = {
   },
 
   async getAgentBaseProducts(): Promise<AgentBaseProduct[]> {
-    return globalStore.__bmgh_agent_base_products || [];
+    if (isSupabaseConfigured && supabaseAdmin) {
+      try {
+        const { data } = await supabaseAdmin
+          .from("settings")
+          .select("announcement_text")
+          .eq("id", "agent_base_products_config")
+          .maybeSingle();
+        if (data?.announcement_text) {
+          try {
+            const list = JSON.parse(data.announcement_text);
+            if (Array.isArray(list) && list.length > 0) {
+              globalStore.__bmgh_agent_base_products = list;
+              return list;
+            }
+          } catch {}
+        }
+      } catch (err) {
+        console.warn("Base products Supabase fetch error:", err);
+      }
+    }
+
+    const current =
+      globalStore.__bmgh_agent_base_products && globalStore.__bmgh_agent_base_products.length > 0
+        ? globalStore.__bmgh_agent_base_products
+        : initialAgentBaseProducts;
+    globalStore.__bmgh_agent_base_products = current;
+    return current;
   },
 
   async createAgentBaseProduct(p: Omit<AgentBaseProduct, "id" | "created_at">): Promise<AgentBaseProduct> {
+    const list = await this.getAgentBaseProducts();
     const newProduct: AgentBaseProduct = {
       ...p,
       id: "abp-" + crypto.randomUUID().slice(0, 8),
       created_at: new Date().toISOString(),
     };
-    if (!globalStore.__bmgh_agent_base_products) globalStore.__bmgh_agent_base_products = [];
-    globalStore.__bmgh_agent_base_products.push(newProduct);
+    list.push(newProduct);
+    globalStore.__bmgh_agent_base_products = list;
     saveToDisk();
+
+    if (isSupabaseConfigured && supabaseAdmin) {
+      try {
+        await supabaseAdmin.from("settings").upsert({
+          id: "agent_base_products_config",
+          announcement_text: JSON.stringify(list),
+        });
+      } catch (err) {
+        console.warn("Agent base products Supabase save error:", err);
+      }
+    }
+
     return newProduct;
   },
 
   async updateAgentBaseProduct(id: string, updates: Partial<AgentBaseProduct>): Promise<AgentBaseProduct | null> {
-    const list = globalStore.__bmgh_agent_base_products || [];
+    const list = await this.getAgentBaseProducts();
     const idx = list.findIndex((x) => x.id === id);
     if (idx === -1) return null;
     list[idx] = { ...list[idx], ...updates };
+    globalStore.__bmgh_agent_base_products = list;
     saveToDisk();
+
+    if (isSupabaseConfigured && supabaseAdmin) {
+      try {
+        await supabaseAdmin.from("settings").upsert({
+          id: "agent_base_products_config",
+          announcement_text: JSON.stringify(list),
+        });
+      } catch (err) {
+        console.warn("Agent base products Supabase update error:", err);
+      }
+    }
+
+    // Also update any custom agent products whose base price changed
+    if (updates.base_price !== undefined) {
+      const newBasePrice = Number(updates.base_price);
+      if (globalStore.__bmgh_agent_products && globalStore.__bmgh_agent_products.length > 0) {
+        let changed = false;
+        globalStore.__bmgh_agent_products.forEach((ap) => {
+          if (ap.base_product_id === id) {
+            ap.base_price = newBasePrice;
+            if (ap.selling_price < newBasePrice) {
+              ap.selling_price = newBasePrice + 1.0;
+            }
+            changed = true;
+          }
+        });
+        if (changed) {
+          saveToDisk();
+          if (isSupabaseConfigured && supabaseAdmin) {
+            try {
+              await supabaseAdmin.from("settings").upsert({
+                id: "agent_products_registry_config",
+                announcement_text: JSON.stringify(globalStore.__bmgh_agent_products),
+              });
+            } catch {}
+          }
+        }
+      }
+    }
+
     return list[idx];
   },
 
   async deleteAgentBaseProduct(id: string): Promise<boolean> {
-    if (globalStore.__bmgh_agent_base_products) {
-      globalStore.__bmgh_agent_base_products = globalStore.__bmgh_agent_base_products.filter((x) => x.id !== id);
-      saveToDisk();
-      return true;
+    const list = await this.getAgentBaseProducts();
+    const filtered = list.filter((x) => x.id !== id);
+    globalStore.__bmgh_agent_base_products = filtered;
+    saveToDisk();
+
+    if (isSupabaseConfigured && supabaseAdmin) {
+      try {
+        await supabaseAdmin.from("settings").upsert({
+          id: "agent_base_products_config",
+          announcement_text: JSON.stringify(filtered),
+        });
+      } catch (err) {
+        console.warn("Agent base products Supabase delete error:", err);
+      }
     }
-    return false;
+
+    return true;
   },
 
   // AGENTS
@@ -1661,10 +1763,7 @@ export const db = {
     globalStore.__bmgh_agents.unshift(newAgent);
 
     // Initialize custom products with suggested prices from base products
-    const baseProducts =
-      globalStore.__bmgh_agent_base_products && globalStore.__bmgh_agent_base_products.length > 0
-        ? globalStore.__bmgh_agent_base_products
-        : initialAgentBaseProducts;
+    const baseProducts = await this.getAgentBaseProducts();
 
     if (!globalStore.__bmgh_agent_products) globalStore.__bmgh_agent_products = [];
     baseProducts.forEach((bp) => {
@@ -1725,7 +1824,7 @@ export const db = {
 
   // AGENT CUSTOM PRODUCTS
   async getAgentProducts(agentId: string): Promise<AgentCustomProduct[]> {
-    if (isSupabaseConfigured && supabaseAdmin && (!globalStore.__bmgh_agent_products || globalStore.__bmgh_agent_products.length === 0)) {
+    if (isSupabaseConfigured && supabaseAdmin) {
       try {
         const { data } = await supabaseAdmin
           .from("settings")
@@ -1735,7 +1834,7 @@ export const db = {
         if (data?.announcement_text) {
           try {
             const list = JSON.parse(data.announcement_text);
-            if (Array.isArray(list) && list.length > 0) {
+            if (Array.isArray(list)) {
               globalStore.__bmgh_agent_products = list;
             }
           } catch {}
@@ -1743,11 +1842,13 @@ export const db = {
       } catch (err) {}
     }
 
-    const custom = (globalStore.__bmgh_agent_products || []).filter((p) => p.agent_id === agentId);
-    const baseProducts =
-      globalStore.__bmgh_agent_base_products && globalStore.__bmgh_agent_base_products.length > 0
-        ? globalStore.__bmgh_agent_base_products
-        : initialAgentBaseProducts;
+    if (!globalStore.__bmgh_agent_products) {
+      globalStore.__bmgh_agent_products = [];
+    }
+
+    const baseProducts = await this.getAgentBaseProducts();
+    let custom = globalStore.__bmgh_agent_products.filter((p) => p.agent_id === agentId);
+    let changed = false;
 
     // Ensure all base products exist in the agent's product catalog
     baseProducts.forEach((bp) => {
@@ -1764,22 +1865,48 @@ export const db = {
           is_active: bp.is_active,
         };
         custom.push(added);
-        if (!globalStore.__bmgh_agent_products) globalStore.__bmgh_agent_products = [];
-        globalStore.__bmgh_agent_products.push(added);
+        globalStore.__bmgh_agent_products!.push(added);
+        changed = true;
       } else {
-        exists.base_price = bp.base_price;
+        if (exists.base_price !== bp.base_price) {
+          exists.base_price = bp.base_price;
+          if (exists.selling_price < bp.base_price) {
+            exists.selling_price = bp.suggested_price || bp.base_price + 1.0;
+          }
+          changed = true;
+        }
       }
     });
 
-    saveToDisk();
-    return custom;
+    if (changed) {
+      saveToDisk();
+      if (isSupabaseConfigured && supabaseAdmin) {
+        try {
+          await supabaseAdmin.from("settings").upsert({
+            id: "agent_products_registry_config",
+            announcement_text: JSON.stringify(globalStore.__bmgh_agent_products),
+          });
+        } catch (err) {}
+      }
+    }
+
+    return globalStore.__bmgh_agent_products.filter((p) => p.agent_id === agentId);
   },
 
-  async updateAgentProduct(agentId: string, baseProductId: string, sellingPrice: number, isActive: boolean): Promise<AgentCustomProduct | null> {
+  async updateAgentProduct(
+    agentId: string,
+    baseProductId: string,
+    sellingPrice: number,
+    isActive: boolean
+  ): Promise<AgentCustomProduct | null> {
+    // 1. Ensure latest catalog for this agent is loaded
+    await this.getAgentProducts(agentId);
+
     const list = globalStore.__bmgh_agent_products || [];
     let item = list.find((p) => p.agent_id === agentId && p.base_product_id === baseProductId);
     if (!item) {
-      const bp = (globalStore.__bmgh_agent_base_products || []).find((b) => b.id === baseProductId);
+      const baseProducts = await this.getAgentBaseProducts();
+      const bp = baseProducts.find((b) => b.id === baseProductId);
       if (!bp) return null;
       item = {
         id: "acp-" + crypto.randomUUID().slice(0, 8),
@@ -1788,14 +1915,16 @@ export const db = {
         network: bp.network,
         size: bp.size,
         base_price: bp.base_price,
-        selling_price: Math.max(bp.base_price, sellingPrice),
+        selling_price: Math.max(bp.base_price, Number(sellingPrice)),
         is_active: isActive,
       };
       list.push(item);
     } else {
-      item.selling_price = Math.max(item.base_price, sellingPrice);
+      item.selling_price = Math.max(item.base_price, Number(sellingPrice));
       item.is_active = isActive;
     }
+
+    globalStore.__bmgh_agent_products = list;
     saveToDisk();
 
     if (isSupabaseConfigured && supabaseAdmin) {
@@ -1804,7 +1933,9 @@ export const db = {
           id: "agent_products_registry_config",
           announcement_text: JSON.stringify(globalStore.__bmgh_agent_products),
         });
-      } catch (err) {}
+      } catch (err) {
+        console.warn("Agent custom products Supabase update error:", err);
+      }
     }
 
     return item;
