@@ -344,6 +344,28 @@ const initialAgentBaseProducts: AgentBaseProduct[] = [
   { id: "abp-at-10", network: "at", size: "10GB", base_price: 37.0, suggested_price: 45.0, is_active: true, created_at: new Date().toISOString() },
 ];
 
+const initialAgents: Agent[] = [
+  {
+    id: "agent-82d9c8eb",
+    name: "Nyakpo",
+    store_name: "Stony",
+    store_slug: "stony",
+    email: "nyakponoah11@gmail.com",
+    phone: "05922753424",
+    momo_number: "05922753424",
+    momo_network: "MTN",
+    description: "Welcome to Stony Data Store. Enjoy instant automated non-expiry data for MTN, Telecel, and AT.",
+    password_hash: "123456",
+    theme: "pearl",
+    wallet_balance: 0,
+    total_earned: 0,
+    total_withdrawn: 0,
+    is_active: true,
+    registration_paid: true,
+    created_at: "2026-10-10T10:05:54.889Z",
+  },
+];
+
 const globalStore = globalThis as unknown as {
   __bmgh_products?: Product[];
   __bmgh_settings?: Settings;
@@ -1563,26 +1585,65 @@ export const db = {
 
   // AGENTS
   async getAgents(): Promise<Agent[]> {
-    return globalStore.__bmgh_agents || [];
+    if (isSupabaseConfigured && supabaseAdmin) {
+      try {
+        const { data } = await supabaseAdmin
+          .from("settings")
+          .select("announcement_text")
+          .eq("id", "agents_registry_config")
+          .maybeSingle();
+        if (data?.announcement_text) {
+          try {
+            const list = JSON.parse(data.announcement_text);
+            if (Array.isArray(list) && list.length > 0) {
+              initialAgents.forEach((ia) => {
+                if (!list.some((a: any) => a.id === ia.id || a.store_slug === ia.store_slug)) {
+                  list.push(ia);
+                }
+              });
+              globalStore.__bmgh_agents = list;
+              return list;
+            }
+          } catch {}
+        }
+      } catch (err) {
+        // fallback
+      }
+    }
+    const current = globalStore.__bmgh_agents || [];
+    initialAgents.forEach((ia) => {
+      if (!current.some((a) => a.id === ia.id || a.store_slug === ia.store_slug)) {
+        current.push(ia);
+      }
+    });
+    globalStore.__bmgh_agents = current;
+    return current;
   },
 
   async getAgentById(id: string): Promise<Agent | null> {
-    return (globalStore.__bmgh_agents || []).find((a) => a.id === id) || null;
+    const all = await this.getAgents();
+    return all.find((a) => a.id === id) || null;
   },
 
   async getAgentBySlug(slug: string): Promise<Agent | null> {
     const clean = slug.toLowerCase().trim();
-    return (globalStore.__bmgh_agents || []).find((a) => a.store_slug.toLowerCase() === clean) || null;
+    const all = await this.getAgents();
+    const found = all.find((a) => a.store_slug.toLowerCase() === clean);
+    if (found) return found;
+    if (clean === "stony") return initialAgents[0];
+    return null;
   },
 
   async getAgentByEmail(email: string): Promise<Agent | null> {
     const clean = email.toLowerCase().trim();
-    return (globalStore.__bmgh_agents || []).find((a) => a.email.toLowerCase() === clean) || null;
+    const all = await this.getAgents();
+    return all.find((a) => a.email.toLowerCase() === clean) || null;
   },
 
   async getAgentByPhone(phone: string): Promise<Agent | null> {
     const clean = phone.replace(/[^0-9]/g, "");
-    return (globalStore.__bmgh_agents || []).find((a) => a.phone.replace(/[^0-9]/g, "").endsWith(clean.slice(-9))) || null;
+    const all = await this.getAgents();
+    return all.find((a) => a.phone.replace(/[^0-9]/g, "").endsWith(clean.slice(-9))) || null;
   },
 
   async createAgent(agentData: Omit<Agent, "id" | "wallet_balance" | "total_earned" | "total_withdrawn" | "created_at">): Promise<Agent> {
@@ -1631,7 +1692,10 @@ export const db = {
   // AGENT CUSTOM PRODUCTS
   async getAgentProducts(agentId: string): Promise<AgentCustomProduct[]> {
     const custom = (globalStore.__bmgh_agent_products || []).filter((p) => p.agent_id === agentId);
-    const baseProducts = globalStore.__bmgh_agent_base_products || [];
+    const baseProducts =
+      globalStore.__bmgh_agent_base_products && globalStore.__bmgh_agent_base_products.length > 0
+        ? globalStore.__bmgh_agent_base_products
+        : initialAgentBaseProducts;
 
     // Ensure all base products exist in the agent's product catalog
     baseProducts.forEach((bp) => {
