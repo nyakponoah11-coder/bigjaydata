@@ -33,13 +33,17 @@ import {
   Mail,
   Trash2,
   Radio,
+  Lock,
+  Globe,
 } from "lucide-react";
+import { encodeAgentToken } from "@/lib/agent-link";
 
 export default function AgentDashboardPage() {
   const router = useRouter();
   const [agent, setAgent] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<"home" | "products" | "orders" | "withdrawals" | "settings">("home");
+  const [linkMode, setLinkMode] = useState<"masked" | "standard">("masked");
 
   // Home / Dashboard States
   const [selectedDate, setSelectedDate] = useState<string>(
@@ -169,10 +173,16 @@ export default function AgentDashboardPage() {
     }
   };
 
+  const encryptedToken = agent ? encodeAgentToken(agent.store_slug) : "";
+  const standardPath = agent ? `/store/${agent.store_slug}` : "";
+  const maskedPath = agent ? `/d/${encryptedToken}` : "";
+
   const storeUrl = agent
     ? typeof window !== "undefined"
-      ? `${window.location.origin}/store/${agent.store_slug}`
-      : `/store/${agent.store_slug}`
+      ? `${window.location.origin}${linkMode === "masked" ? maskedPath : standardPath}`
+      : linkMode === "masked"
+      ? maskedPath
+      : standardPath
     : "";
 
   const handleCopyLink = () => {
@@ -453,47 +463,84 @@ export default function AgentDashboardPage() {
         )}
 
         {/* Store Link Banner */}
-        <div className="bg-gradient-to-r from-emerald-950 via-slate-900 to-slate-900 border border-emerald-800/40 rounded-3xl p-5 sm:p-6 shadow-xl relative overflow-hidden flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div>
-            <div className="inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-emerald-400 bg-emerald-500/10 px-2.5 py-0.5 rounded-full mb-1.5">
-              <Sparkles className="w-3 h-3" />
-              Your Customer Store Link
+        <div className="bg-gradient-to-r from-emerald-950 via-slate-900 to-slate-900 border border-emerald-800/40 rounded-3xl p-5 sm:p-6 shadow-xl relative overflow-hidden flex flex-col gap-4">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <div className="inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-emerald-400 bg-emerald-500/10 px-2.5 py-0.5 rounded-full mb-1.5">
+                <Sparkles className="w-3 h-3" />
+                Customer Storefront URL
+              </div>
+              <h2 className="text-lg font-black text-white">Share Your Store with Customers</h2>
+              <div className="flex items-center gap-2 mt-2">
+                <button
+                  type="button"
+                  onClick={() => setLinkMode("masked")}
+                  className={`px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                    linkMode === "masked"
+                      ? "bg-emerald-500 text-slate-950 shadow-sm"
+                      : "bg-slate-800 text-slate-400 hover:text-white"
+                  }`}
+                >
+                  <Lock className="w-3 h-3" />
+                  <span>Encrypted Link (Masked)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setLinkMode("standard")}
+                  className={`px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                    linkMode === "standard"
+                      ? "bg-emerald-500 text-slate-950 shadow-sm"
+                      : "bg-slate-800 text-slate-400 hover:text-white"
+                  }`}
+                >
+                  <Globe className="w-3 h-3" />
+                  <span>Direct Link</span>
+                </button>
+              </div>
+              <p className="text-xs text-emerald-300 mt-2 font-mono bg-slate-950/80 px-3 py-2 rounded-xl border border-slate-800 break-all select-all">
+                {storeUrl}
+              </p>
             </div>
-            <h2 className="text-lg font-black text-white">Share Your Store with Customers</h2>
-            <p className="text-xs text-slate-400 mt-0.5 font-mono truncate max-w-md">
-              {storeUrl}
-            </p>
+
+            <div className="flex flex-wrap items-center gap-2 shrink-0 md:self-end">
+              <button
+                onClick={handleCopyLink}
+                className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs shadow-md transition-all cursor-pointer"
+              >
+                {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                <span>{copied ? "Link Copied!" : "Copy Link"}</span>
+              </button>
+
+              <a
+                href={`https://wa.me/?text=${encodeURIComponent(
+                  `Buy cheap MTN, Telecel & AT data bundles instantly on my portal: ${storeUrl}`
+                )}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs border border-slate-700 transition-colors"
+              >
+                <Share2 className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Share on WhatsApp</span>
+              </a>
+
+              <a
+                href={storeUrl}
+                target="_blank"
+                className="p-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors"
+                title="Open storefront"
+              >
+                <ExternalLink className="w-4 h-4" />
+              </a>
+            </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2 shrink-0">
-            <button
-              onClick={handleCopyLink}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-md transition-all"
-            >
-              {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-              <span>{copied ? "Link Copied!" : "Copy Link"}</span>
-            </button>
-
-            <a
-              href={`https://wa.me/?text=${encodeURIComponent(
-                `Buy cheap MTN, Telecel & AT data bundles instantly on my store: ${storeUrl}`
-              )}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs border border-slate-700 transition-colors"
-            >
-              <Share2 className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Share on WhatsApp</span>
-            </a>
-
-            <a
-              href={storeUrl}
-              target="_blank"
-              className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors"
-              title="Open storefront"
-            >
-              <ExternalLink className="w-4 h-4" />
-            </a>
+          <div className="text-[11px] text-slate-400 border-t border-slate-800/80 pt-2 flex items-center gap-1.5">
+            <Lock className="w-3 h-3 text-cyan-400 shrink-0" />
+            <span>
+              {linkMode === "masked"
+                ? "The Encrypted Link disguises your store path so customers cannot see the internal store structure."
+                : "The Direct Link displays your custom slug (/store/slug)."}
+            </span>
           </div>
         </div>
 

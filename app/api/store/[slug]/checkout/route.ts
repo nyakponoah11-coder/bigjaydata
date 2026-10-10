@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { sendDataMartDelivery } from "@/lib/datamart";
 import { verifyPaystackTransaction } from "@/lib/paystack";
+import { decodeAgentToken } from "@/lib/agent-link";
 
 export async function POST(
   req: Request,
@@ -19,7 +20,13 @@ export async function POST(
       );
     }
 
-    const agent = await db.getAgentBySlug(cleanSlug);
+    const resolvedSlug = decodeAgentToken(cleanSlug);
+
+    let agent = await db.getAgentBySlug(cleanSlug);
+    if (!agent && resolvedSlug !== cleanSlug) {
+      agent = await db.getAgentBySlug(resolvedSlug);
+    }
+
     if (!agent || !agent.is_active) {
       return NextResponse.json(
         { success: false, message: "Store is inactive or not found." },
