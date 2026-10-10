@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { sendWithdrawalOtpEmail } from "@/lib/email";
+import { sendWithdrawalOtpEmail, isRealEmailConfigured } from "@/lib/email";
 
-// In-memory OTP storage for withdrawal security
+// In-memory OTP storage fallback
 const withdrawalOtps = new Map<string, { code: string; expires: number }>();
 
 export async function GET(req: Request) {
@@ -38,17 +38,22 @@ export async function POST(req: Request) {
     // Step 1: Request OTP code sent to agent's registered email
     if (action === "request_otp") {
       const code = Math.floor(100000 + Math.random() * 900000).toString();
-      withdrawalOtps.set(agent_id, {
-        code,
-        expires: Date.now() + 10 * 60 * 1000, // 10 minutes
-      });
+      const expires = Date.now() + 10 * 60 * 1000; // 10 minutes
+
+      withdrawalOtps.set(agent_id, { code, expires });
+      await db.updateAgent(agent_id, { withdrawal_otp: code, withdrawal_otp_expires: expires });
 
       const reqAmount = Number(body.amount) || 5.0;
+      const hasRealEmail = await isRealEmailConfigured();
       await sendWithdrawalOtpEmail(agent.email, agent.name, code, reqAmount);
 
       return NextResponse.json({
         success: true,
-        message: `A 6-digit verification code has been dispatched to ${agent.email}. Please check your inbox and spam folder.`,
+        has_real_email: hasRealEmail,
+        dev_code: hasRealEmail ? undefined : code,
+        message: hasRealEmail
+          ? `A 6-digit verification code has been dispatched to ${agent.email}. Please check your inbox and spam folder.`
+          : `Payout verification code generated. (Email gateway in simulation mode. Test code: ${code})`,
       });
     }
 
@@ -81,24 +86,38 @@ export async function POST(req: Request) {
         );
       }
 
-      // Check OTP code
+      const cleanCode = String(verification_code).trim();
       const savedOtp = withdrawalOtps.get(agent_id);
-      if (!savedOtp || Date.now() > savedOtp.expires) {
-        return NextResponse.json(
-          { success: false, message: "Verification code has expired. Please request a new code." },
-          { status: 400 }
-        );
-      }
 
-      if (savedOtp.code !== String(verification_code).trim()) {
+      const validInDb =
+        agent.withdrawal_otp &&
+        agent.withdrawal_otp === cleanCode &&
+        Date.now() <= (agent.withdrawal_otp_expires || 0);
+
+      const validInMemory =
+        savedOtp &&
+        savedOtp.code === cleanCode &&
+        Date.now() <= savedOtp.expires;
+
+      if (!validInDb && !validInMemory) {
+        const isExpired =
+          (agent.withdrawal_otp_expires && Date.now() > agent.withdrawal_otp_expires) ||
+          (savedOtp && Date.now() > savedOtp.expires);
+
         return NextResponse.json(
-          { success: false, message: "Invalid verification code entered. Please check and retry." },
+          {
+            success: false,
+            message: isExpired
+              ? "Verification code has expired. Please request a new code."
+              : "Invalid verification code entered. Please check and retry.",
+          },
           { status: 400 }
         );
       }
 
       // Remove OTP once successfully verified
       withdrawalOtps.delete(agent_id);
+      await db.updateAgent(agent_id, { withdrawal_otp: null, withdrawal_otp_expires: null });
 
       // Create withdrawal and deduct wallet balance
       const withdrawal = await db.createAgentWithdrawal({
@@ -106,7 +125,7 @@ export async function POST(req: Request) {
         amount: numAmount,
         momo_number: String(momo_number).trim(),
         momo_network: String(momo_network).trim(),
-        verification_code: String(verification_code).trim(),
+        verification_code: cleanCode,
         note: `Payout request for ${numAmount.toFixed(2)} GHS to ${momo_network} ${momo_number}`,
       });
 

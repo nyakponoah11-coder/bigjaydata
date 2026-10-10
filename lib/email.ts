@@ -1,4 +1,5 @@
 import nodemailer from "nodemailer";
+import { db } from "@/lib/db";
 
 export interface EmailPayload {
   to: string;
@@ -11,19 +12,41 @@ export interface EmailResult {
   success: boolean;
   message: string;
   messageId?: string;
+  isFallback?: boolean;
+}
+
+/**
+ * Checks whether a real outbound email service (Resend or SMTP) is active
+ */
+export async function isRealEmailConfigured(): Promise<boolean> {
+  if (process.env.RESEND_API_KEY?.trim() || (process.env.SMTP_USER?.trim() && process.env.SMTP_PASS?.trim())) {
+    return true;
+  }
+  try {
+    const settings = await db.getSettings();
+    if (settings?.resend_api_key?.trim() || (settings?.smtp_user?.trim() && settings?.smtp_pass?.trim())) {
+      return true;
+    }
+  } catch {}
+  return false;
 }
 
 /**
  * Universal email dispatcher:
- * 1. Uses Resend API if RESEND_API_KEY is present
- * 2. Uses SMTP / Gmail if SMTP_USER & SMTP_PASS (or SMTP_HOST) are present
+ * 1. Uses Resend API if configured in env or settings
+ * 2. Uses SMTP / Gmail if configured in env or settings
  * 3. Gracefully logs to server stdout if no credentials configured yet
  */
 export async function sendAgentEmail({ to, subject, html, text }: EmailPayload): Promise<EmailResult> {
   const cleanTo = String(to).trim().toLowerCase();
 
+  let settings: any = null;
+  try {
+    settings = await db.getSettings();
+  } catch {}
+
   // 1. Try Resend API if configured
-  const resendApiKey = process.env.RESEND_API_KEY?.trim();
+  const resendApiKey = process.env.RESEND_API_KEY?.trim() || settings?.resend_api_key?.trim();
   if (resendApiKey) {
     try {
       const fromEmail = process.env.EMAIL_FROM || "FastData Partner Portal <onboarding@resend.dev>";
@@ -54,10 +77,10 @@ export async function sendAgentEmail({ to, subject, html, text }: EmailPayload):
   }
 
   // 2. Try SMTP (Nodemailer) if configured
-  const smtpUser = process.env.SMTP_USER?.trim() || process.env.EMAIL_USER?.trim();
-  const smtpPass = process.env.SMTP_PASS?.trim() || process.env.EMAIL_PASS?.trim();
-  const smtpHost = process.env.SMTP_HOST?.trim() || "smtp.gmail.com";
-  const smtpPort = Number(process.env.SMTP_PORT) || 465;
+  const smtpUser = process.env.SMTP_USER?.trim() || process.env.EMAIL_USER?.trim() || settings?.smtp_user?.trim();
+  const smtpPass = process.env.SMTP_PASS?.trim() || process.env.EMAIL_PASS?.trim() || settings?.smtp_pass?.trim();
+  const smtpHost = process.env.SMTP_HOST?.trim() || settings?.smtp_host?.trim() || "smtp.gmail.com";
+  const smtpPort = Number(process.env.SMTP_PORT || settings?.smtp_port) || 465;
 
   if (smtpUser && smtpPass) {
     try {
@@ -88,7 +111,7 @@ export async function sendAgentEmail({ to, subject, html, text }: EmailPayload):
 
   // 3. Fallback / Dev Logger
   console.log(`=======================================================`);
-  console.log(`[EMAIL DISPATCH - TRANSACTIONAL]`);
+  console.log(`[EMAIL DISPATCH - SIMULATION MODE] (No SMTP/Resend key configured yet)`);
   console.log(`TO: ${cleanTo}`);
   console.log(`SUBJECT: ${subject}`);
   console.log(`CONTENT: ${text || html.replace(/<[^>]+>/g, " ")}`);
@@ -96,7 +119,8 @@ export async function sendAgentEmail({ to, subject, html, text }: EmailPayload):
 
   return {
     success: true,
-    message: `Verification message generated and dispatched to ${cleanTo}.`,
+    isFallback: true,
+    message: `Verification message generated for ${cleanTo}.`,
   };
 }
 

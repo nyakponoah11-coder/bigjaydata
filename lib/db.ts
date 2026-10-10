@@ -97,6 +97,11 @@ export interface Settings {
   openai_api_key?: string;
   openai_model?: string;
   ai_system_instructions?: string;
+  resend_api_key?: string;
+  smtp_user?: string;
+  smtp_pass?: string;
+  smtp_host?: string;
+  smtp_port?: number;
   created_at?: string;
   updated_at?: string;
 }
@@ -187,6 +192,12 @@ export interface Agent {
   total_withdrawn: number;
   is_active: boolean;
   registration_paid: boolean;
+  login_otp?: string | null;
+  login_otp_expires?: number | null;
+  withdrawal_otp?: string | null;
+  withdrawal_otp_expires?: number | null;
+  reset_otp?: string | null;
+  reset_otp_expires?: number | null;
   created_at: string;
   logo_url?: string;
   whatsapp_number?: string;
@@ -1900,10 +1911,11 @@ export const db = {
   },
 
   async updateAgent(id: string, updates: Partial<Agent>): Promise<Agent | null> {
-    const agents = globalStore.__bmgh_agents || [];
+    const agents = await this.getAgents();
     const idx = agents.findIndex((a) => a.id === id);
     if (idx === -1) return null;
     agents[idx] = { ...agents[idx], ...updates };
+    globalStore.__bmgh_agents = agents;
     saveToDisk();
 
     if (isSupabaseConfigured && supabaseAdmin) {

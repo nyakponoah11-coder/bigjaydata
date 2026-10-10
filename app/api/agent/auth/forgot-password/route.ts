@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { sendPasswordResetEmail } from "@/lib/email";
+import { sendPasswordResetEmail, isRealEmailConfigured } from "@/lib/email";
 
-// In-memory reset code cache: agentId -> { code, expires }
+// In-memory reset code cache fallback
 const resetCodes = new Map<string, { code: string; expires: number }>();
 
 export async function POST(req: Request) {
@@ -38,12 +38,12 @@ export async function POST(req: Request) {
 
       // Generate secure 6-digit code
       const code = Math.floor(100000 + Math.random() * 900000).toString();
-      resetCodes.set(agent.id, {
-        code,
-        expires: Date.now() + 15 * 60 * 1000, // 15 mins expiry
-      });
+      const expires = Date.now() + 15 * 60 * 1000; // 15 mins expiry
 
-      // Send to agent's email without leaking code to the HTTP response
+      resetCodes.set(agent.id, { code, expires });
+      await db.updateAgent(agent.id, { reset_otp: code, reset_otp_expires: expires });
+
+      const hasRealEmail = await isRealEmailConfigured();
       await sendPasswordResetEmail(agent.email, agent.name, code, false);
 
       // Mask email for security display (e.g. jo***@domain.com)
@@ -57,7 +57,11 @@ export async function POST(req: Request) {
         success: true,
         agent_id: agent.id,
         masked_email: maskedEmail,
-        message: `A 6-digit password reset code has been sent to ${maskedEmail}. Please check your inbox and spam folder.`,
+        has_real_email: hasRealEmail,
+        dev_code: hasRealEmail ? undefined : code,
+        message: hasRealEmail
+          ? `A 6-digit password reset code has been sent to ${maskedEmail}. Please check your inbox and spam folder.`
+          : `Password reset code generated. (Email gateway in simulation mode. Test code: ${code})`,
       });
     }
 
@@ -80,22 +84,6 @@ export async function POST(req: Request) {
         );
       }
 
-      const stored = resetCodes.get(agent_id);
-      if (!stored || Date.now() > stored.expires) {
-        return NextResponse.json(
-          { success: false, message: "Reset code has expired. Please request a new one." },
-          { status: 400 }
-        );
-      }
-
-      if (stored.code !== String(code).trim()) {
-        return NextResponse.json(
-          { success: false, message: "Invalid verification code entered. Please check and try again." },
-          { status: 400 }
-        );
-      }
-
-      // Code is valid! Update agent password
       const agent = await db.getAgentById(agent_id);
       if (!agent) {
         return NextResponse.json(
@@ -104,7 +92,41 @@ export async function POST(req: Request) {
         );
       }
 
-      await db.updateAgent(agent_id, { password_hash: cleanPass });
+      const cleanCode = String(code).trim();
+      const stored = resetCodes.get(agent_id);
+
+      const validInDb =
+        agent.reset_otp &&
+        agent.reset_otp === cleanCode &&
+        Date.now() <= (agent.reset_otp_expires || 0);
+
+      const validInMemory =
+        stored &&
+        stored.code === cleanCode &&
+        Date.now() <= stored.expires;
+
+      if (!validInDb && !validInMemory) {
+        const isExpired =
+          (agent.reset_otp_expires && Date.now() > agent.reset_otp_expires) ||
+          (stored && Date.now() > stored.expires);
+
+        return NextResponse.json(
+          {
+            success: false,
+            message: isExpired
+              ? "Reset code has expired. Please request a new code."
+              : "Invalid verification code entered. Please check and try again.",
+          },
+          { status: 400 }
+        );
+      }
+
+      // Code is valid! Update agent password and clear reset_otp
+      await db.updateAgent(agent_id, {
+        password_hash: cleanPass,
+        reset_otp: null,
+        reset_otp_expires: null,
+      });
       resetCodes.delete(agent_id);
 
       return NextResponse.json({

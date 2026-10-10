@@ -641,6 +641,10 @@ export default function AdminAgentStorePage() {
                         <td className="py-3 px-4 font-mono text-slate-300">
                           <div>{a.phone}</div>
                           <div className="text-[10px] text-slate-500">{a.email}</div>
+                          <div className="inline-flex items-center gap-1 mt-1 px-1.5 py-0.5 rounded bg-slate-800 text-[10px] text-amber-400 font-bold border border-slate-700">
+                            <span>PIN:</span>
+                            <span className="text-white">{a.password_hash || "123456"}</span>
+                          </div>
                         </td>
                         <td className="py-3 px-4 font-mono font-black text-emerald-400 text-sm">
                           GHS {Number(a.wallet_balance || 0).toFixed(2)}

@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { sendLoginOtpEmail } from "@/lib/email";
+import { sendLoginOtpEmail, isRealEmailConfigured } from "@/lib/email";
 
-// In-memory 2FA code storage: agentId -> { code, expires }
+// In-memory fallback cache
 const loginOtpCodes = new Map<string, { code: string; expires: number }>();
 
 export async function POST(req: Request) {
@@ -36,23 +36,40 @@ export async function POST(req: Request) {
         );
       }
 
-      const storedOtp = loginOtpCodes.get(agent_id);
-      if (!storedOtp || Date.now() > storedOtp.expires) {
-        return NextResponse.json(
-          { success: false, message: "Verification code has expired. Please log in again." },
-          { status: 400 }
-        );
-      }
+      const cleanCode = String(verification_code).trim();
+      const inMemoryOtp = loginOtpCodes.get(agent_id);
 
-      if (storedOtp.code !== String(verification_code).trim()) {
+      // Check DB stored OTP or memory fallback
+      const validInDb =
+        agent.login_otp &&
+        agent.login_otp === cleanCode &&
+        Date.now() <= (agent.login_otp_expires || 0);
+
+      const validInMemory =
+        inMemoryOtp &&
+        inMemoryOtp.code === cleanCode &&
+        Date.now() <= inMemoryOtp.expires;
+
+      if (!validInDb && !validInMemory) {
+        // Check if expired
+        const isExpired =
+          (agent.login_otp_expires && Date.now() > agent.login_otp_expires) ||
+          (inMemoryOtp && Date.now() > inMemoryOtp.expires);
+
         return NextResponse.json(
-          { success: false, message: "Invalid verification code. Please check your email and try again." },
+          {
+            success: false,
+            message: isExpired
+              ? "Verification code has expired. Please request a new code or sign in again."
+              : "Invalid verification code. Please check and try again.",
+          },
           { status: 400 }
         );
       }
 
       // Code matched! Invalidate code
       loginOtpCodes.delete(agent_id);
+      await db.updateAgent(agent_id, { login_otp: null, login_otp_expires: null });
 
       return NextResponse.json({
         success: true,
@@ -74,21 +91,25 @@ export async function POST(req: Request) {
       }
 
       const code = Math.floor(100000 + Math.random() * 900000).toString();
-      loginOtpCodes.set(agent.id, {
-        code,
-        expires: Date.now() + 10 * 60 * 1000,
-      });
+      const expires = Date.now() + 10 * 60 * 1000;
+      loginOtpCodes.set(agent.id, { code, expires });
+      await db.updateAgent(agent.id, { login_otp: code, login_otp_expires: expires });
 
+      const hasRealEmail = await isRealEmailConfigured();
       await sendLoginOtpEmail(agent.email, agent.name, code);
 
       return NextResponse.json({
         success: true,
-        message: `A new 6-digit login verification code has been dispatched to ${agent.email}.`,
+        has_real_email: hasRealEmail,
+        dev_code: hasRealEmail ? undefined : code,
+        message: hasRealEmail
+          ? `A new 6-digit login verification code was sent to ${agent.email}.`
+          : `Code regenerated. (Email gateway is in simulation mode. Test code: ${code})`,
       });
     }
 
     // Step 1: Initial Login with Identifier + Password
-    const { identifier, password } = body;
+    const { identifier, password, direct_login } = body;
 
     if (!identifier || !password) {
       return NextResponse.json(
@@ -100,7 +121,7 @@ export async function POST(req: Request) {
     const cleanInput = String(identifier).trim().toLowerCase();
     const cleanPass = String(password).trim();
 
-    // Find agent by email or phone
+    // Find agent by email, phone, or store slug
     const agents = await db.getAgents();
     const agent = agents.find(
       (a) =>
@@ -125,22 +146,32 @@ export async function POST(req: Request) {
 
     if (!agent.is_active) {
       return NextResponse.json(
-        { success: false, message: "Your agent account has been suspended. Please contact the administrator." },
+        { success: false, message: "Your agent account has been suspended. Please contact platform administration." },
         { status: 403 }
       );
     }
 
+    // Direct Login override (if user explicitly chooses password-only sign in)
+    if (direct_login === true) {
+      return NextResponse.json({
+        success: true,
+        agent,
+        token: `agtok_${agent.id}_${Date.now()}`,
+      });
+    }
+
     // Generate 6-digit 2FA login verification code
     const code = Math.floor(100000 + Math.random() * 900000).toString();
-    loginOtpCodes.set(agent.id, {
-      code,
-      expires: Date.now() + 10 * 60 * 1000, // 10 minutes
-    });
+    const expires = Date.now() + 10 * 60 * 1000;
 
-    // Send email to agent's registered email
+    // Save in DB and memory
+    loginOtpCodes.set(agent.id, { code, expires });
+    await db.updateAgent(agent.id, { login_otp: code, login_otp_expires: expires });
+
+    const hasRealEmail = await isRealEmailConfigured();
     await sendLoginOtpEmail(agent.email, agent.name, code);
 
-    // Mask email for security display (e.g. jo***@domain.com)
+    // Mask email for security display (e.g. ny***@gmail.com)
     const emailParts = agent.email.split("@");
     const maskedEmail =
       emailParts[0].length > 2
@@ -150,10 +181,14 @@ export async function POST(req: Request) {
     return NextResponse.json({
       success: true,
       requires_verification: true,
+      has_real_email: hasRealEmail,
       agent_id: agent.id,
       agent_name: agent.name,
       masked_email: maskedEmail,
-      message: `A 6-digit verification code has been dispatched to ${maskedEmail}.`,
+      dev_code: hasRealEmail ? undefined : code,
+      message: hasRealEmail
+        ? `A 6-digit verification code has been dispatched to ${maskedEmail}.`
+        : `A 6-digit verification code was generated for ${maskedEmail}.`,
     });
   } catch (error: any) {
     console.error("[Agent Login Route Error]:", error);

@@ -29,6 +29,8 @@ export default function AgentLoginPage() {
   const [pendingAgentId, setPendingAgentId] = useState("");
   const [maskedEmail, setMaskedEmail] = useState("");
   const [verificationCode, setVerificationCode] = useState("");
+  const [devCode, setDevCode] = useState<string | null>(null);
+  const [hasRealEmail, setHasRealEmail] = useState(true);
   const [verifying, setVerifying] = useState(false);
   const [resending, setResending] = useState(false);
   const [verificationNotice, setVerificationNotice] = useState("");
@@ -66,7 +68,14 @@ export default function AgentLoginPage() {
         setPendingAgentId(data.agent_id);
         setMaskedEmail(data.masked_email);
         setVerificationNotice(data.message);
-        setVerificationCode("");
+        setHasRealEmail(data.has_real_email ?? true);
+        if (data.dev_code) {
+          setDevCode(data.dev_code);
+          setVerificationCode(data.dev_code);
+        } else {
+          setDevCode(null);
+          setVerificationCode("");
+        }
         setLoading(false);
         return;
       }
@@ -76,6 +85,30 @@ export default function AgentLoginPage() {
         localStorage.setItem("bmgh_agent_token", data.token);
       }
 
+      router.push("/agent/dashboard");
+    } catch (err: any) {
+      setError(err.message || "Failed to log in");
+      setLoading(false);
+    }
+  };
+
+  const handleDirectPasswordLogin = async () => {
+    setError("");
+    setLoading(true);
+    try {
+      const res = await fetch("/api/agent/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ identifier, password, direct_login: true }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.message || "Login failed");
+      }
+      if (typeof window !== "undefined") {
+        localStorage.setItem("bmgh_agent_session", JSON.stringify(data.agent));
+        localStorage.setItem("bmgh_agent_token", data.token);
+      }
       router.push("/agent/dashboard");
     } catch (err: any) {
       setError(err.message || "Failed to log in");
@@ -133,6 +166,10 @@ export default function AgentLoginPage() {
         throw new Error(data.message || "Failed to resend code");
       }
       setVerificationNotice(data.message);
+      if (data.dev_code) {
+        setDevCode(data.dev_code);
+        setVerificationCode(data.dev_code);
+      }
     } catch (err: any) {
       setError(err.message || "Failed to resend code");
     } finally {
@@ -198,6 +235,9 @@ export default function AgentLoginPage() {
       setForgotAgentId(data.agent_id);
       setForgotMaskedEmail(data.masked_email);
       setForgotMsg(data.message);
+      if (data.dev_code) {
+        setForgotCode(data.dev_code);
+      }
       setForgotStep("verify");
     } catch (err: any) {
       setForgotError(err.message || "Could not request code");
@@ -276,7 +316,9 @@ export default function AgentLoginPage() {
                 </div>
                 <h3 className="text-lg font-black text-white">Login Verification</h3>
                 <p className="text-xs text-slate-300">
-                  A 6-digit verification code has been dispatched to your email:
+                  {hasRealEmail
+                    ? "A 6-digit verification code has been dispatched to your email:"
+                    : "Enter your 6-digit login verification code:"}
                 </p>
                 <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-800 border border-slate-700 text-xs font-mono text-emerald-400 font-bold">
                   <Mail className="w-3.5 h-3.5" />
@@ -284,7 +326,22 @@ export default function AgentLoginPage() {
                 </div>
               </div>
 
-              {verificationNotice && (
+              {devCode && (
+                <div className="p-3 bg-amber-950/60 border border-amber-800 text-amber-300 text-xs rounded-xl space-y-1">
+                  <div className="font-bold text-amber-200">
+                    Simulation Mode (No outbound email key configured)
+                  </div>
+                  <div>
+                    Your login verification code is:{" "}
+                    <strong className="font-mono text-white text-sm tracking-wider px-1.5 py-0.5 bg-slate-900 rounded">
+                      {devCode}
+                    </strong>
+                  </div>
+                  <div className="text-[10px] text-amber-400/80">Code has been prefilled for you below.</div>
+                </div>
+              )}
+
+              {verificationNotice && !devCode && (
                 <div className="p-3 bg-emerald-950/60 border border-emerald-800 text-emerald-300 text-xs rounded-xl flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
                   <span>{verificationNotice}</span>
@@ -307,11 +364,11 @@ export default function AgentLoginPage() {
                     className="w-full py-3.5 px-4 bg-slate-800 border border-slate-700 rounded-2xl text-white text-center font-mono text-2xl font-black tracking-[0.5em] focus:outline-none focus:ring-2 focus:ring-emerald-500"
                   />
                   <p className="text-[11px] text-slate-500 text-center mt-1.5">
-                    Valid for 10 minutes. Check your inbox and spam folder.
+                    Valid for 10 minutes.
                   </p>
                 </div>
 
-                <div className="pt-2">
+                <div className="pt-2 space-y-2">
                   <button
                     type="submit"
                     disabled={verifying || verificationCode.length < 6}
@@ -319,6 +376,15 @@ export default function AgentLoginPage() {
                   >
                     {verifying ? <Loader2 className="w-5 h-5 animate-spin" /> : "Verify & Access Dashboard"}
                     <ArrowRight className="w-4 h-4" />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleDirectPasswordLogin}
+                    disabled={loading}
+                    className="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold border border-slate-700 transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+                  >
+                    {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Skip & Sign In Directly with Password"}
                   </button>
                 </div>
               </form>
