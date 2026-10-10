@@ -199,34 +199,45 @@ export default function CheckoutModal({ product, isOpen, onClose, settings }: Pr
 
     const isMock = !publicKey || publicKey.includes("placeholder") || publicKey.includes("sample");
 
-    if (typeof window !== "undefined" && window.PaystackPop && !isMock) {
-      try {
-        const handler = window.PaystackPop.setup({
-          key: publicKey,
-          email: customerEmail,
-          amount: amountInPesewas,
-          currency: "GHS",
-          ref: reference,
-          metadata: {
-            custom_fields: [
-              { display_name: "Phone Number", variable_name: "phone_number", value: cleanPhone },
-              { display_name: "Network", variable_name: "network", value: product.network.toUpperCase() },
-              { display_name: "Package", variable_name: "package", value: product.size },
-            ],
-          },
-          callback: (response: any) => {
-            triggerDataMartAndFinalize(response.reference || reference);
-          },
-          onClose: () => {
-            setLoading(false);
-          },
-        });
-        handler.openIframe();
-      } catch (e: any) {
-        await triggerDataMartAndFinalize(`test_${reference}`);
-      }
-    } else {
-      await triggerDataMartAndFinalize(`demo_${reference}`);
+    if (isMock) {
+      setError("Payment gateway is not configured. Please add your live Paystack keys in Admin Settings.");
+      setLoading(false);
+      return;
+    }
+
+    if (typeof window === "undefined" || !window.PaystackPop) {
+      setError("Payment gateway failed to load. Please check your internet connection or disable ad blockers and refresh the page.");
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const handler = window.PaystackPop.setup({
+        key: publicKey,
+        email: customerEmail,
+        amount: amountInPesewas,
+        currency: "GHS",
+        ref: reference,
+        metadata: {
+          custom_fields: [
+            { display_name: "Phone Number", variable_name: "phone_number", value: cleanPhone },
+            { display_name: "Network", variable_name: "network", value: product.network.toUpperCase() },
+            { display_name: "Package", variable_name: "package", value: product.size },
+          ],
+        },
+        callback: (response: any) => {
+          const finalPaystackRef = response?.reference || response?.trxref || reference;
+          triggerDataMartAndFinalize(finalPaystackRef);
+        },
+        onClose: () => {
+          setLoading(false);
+        },
+      });
+      handler.openIframe();
+    } catch (e: any) {
+      console.error("Paystack open error:", e);
+      setError("Could not open payment window: " + (e?.message || "Please try again."));
+      setLoading(false);
     }
   };
 

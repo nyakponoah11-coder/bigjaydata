@@ -17,6 +17,20 @@ export async function POST(request: Request) {
       );
     }
 
+    if (order.payment_status !== "paid") {
+      return NextResponse.json(
+        { success: false, message: "Cannot dispatch unpaid order" },
+        { status: 403 }
+      );
+    }
+
+    if (order.delivery_status === "delivered" || order.status === "delivered") {
+      return NextResponse.json(
+        { success: false, message: "Order already delivered" },
+        { status: 400 }
+      );
+    }
+
     const deliveryResult = await sendDataMartDelivery({
       network: order.network,
       package_size: order.package_size,

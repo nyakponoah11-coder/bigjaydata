@@ -15,15 +15,24 @@ export async function verifyPaystackTransaction(paystackRef: string): Promise<Pa
     const settings = await db.getSettings();
     const secretKey = settings.paystack_secret_key || process.env.PAYSTACK_SECRET_KEY || "";
 
-    const isTestMode = !secretKey || secretKey.length < 20 || secretKey.includes("sample");
-
-    if (isTestMode) {
-      console.log(`[Paystack] Verifying in test/mock mode for ref: ${paystackRef}`);
+    if (!paystackRef || paystackRef.startsWith("demo_") || paystackRef.startsWith("test_")) {
       return {
-        success: true,
-        amount: 0, // indicates verified in test mode
+        success: false,
+        amount: 0,
+        reference: paystackRef || "",
+        message: "Demo or test reference cannot be verified for live orders",
+      };
+    }
+
+    const isInvalidSecret = !secretKey || secretKey.length < 20 || secretKey.includes("sample") || secretKey.includes("placeholder");
+
+    if (isInvalidSecret) {
+      console.warn(`[Paystack] Paystack secret key is missing or dummy. Cannot verify ref: ${paystackRef}`);
+      return {
+        success: false,
+        amount: 0,
         reference: paystackRef,
-        message: "Transaction verified successfully (Test mode)",
+        message: "Paystack secret key is not properly configured in Admin Settings.",
       };
     }
 

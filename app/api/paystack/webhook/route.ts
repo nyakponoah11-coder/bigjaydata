@@ -12,17 +12,25 @@ export async function POST(request: Request) {
     const secretKey = settings.paystack_secret_key || process.env.PAYSTACK_SECRET_KEY || "";
 
     // Verify HMAC SHA512 signature only if secret key is a real production key
-    const isMockSecret = !secretKey || secretKey.includes("sample") || secretKey.includes("placeholder") || secretKey.includes("test_sample");
-    if (!isMockSecret && signature) {
-      const hash = crypto
-        .createHmac("sha512", secretKey)
-        .update(rawBody)
-        .digest("hex");
+    const isMockSecret = !secretKey || secretKey.length < 20 || secretKey.includes("sample") || secretKey.includes("placeholder") || secretKey.includes("test_sample");
+    if (isMockSecret) {
+      console.warn("[Paystack Webhook] Paystack secret key is unconfigured or sample. Ignoring webhook event.");
+      return NextResponse.json({ message: "Secret key not configured" }, { status: 400 });
+    }
 
-      if (hash !== signature) {
-        console.warn("[Paystack Webhook] Signature mismatch received");
-        return NextResponse.json({ message: "Invalid signature" }, { status: 400 });
-      }
+    if (!signature) {
+      console.warn("[Paystack Webhook] Missing x-paystack-signature header");
+      return NextResponse.json({ message: "Missing signature" }, { status: 401 });
+    }
+
+    const hash = crypto
+      .createHmac("sha512", secretKey)
+      .update(rawBody)
+      .digest("hex");
+
+    if (hash !== signature) {
+      console.warn("[Paystack Webhook] Signature mismatch received");
+      return NextResponse.json({ message: "Invalid signature" }, { status: 400 });
     }
 
     const event = JSON.parse(rawBody);

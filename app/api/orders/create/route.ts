@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { sendDataMartDelivery } from "@/lib/datamart";
+import { verifyPaystackTransaction } from "@/lib/paystack";
 
 export async function POST(request: Request) {
   try {
@@ -14,7 +15,36 @@ export async function POST(request: Request) {
       );
     }
 
-    // 1. Check if order already exists (e.g. created by Paystack webhook)
+    // Security check: Block any demo or mock references from receiving live bundle deliveries
+    if (!paystack_ref || paystack_ref.startsWith("demo_") || paystack_ref.startsWith("test_")) {
+      console.warn(`[Security Block] Rejected unverified/demo order attempt: ref=${reference}, paystack_ref=${paystack_ref}`);
+      return NextResponse.json(
+        { success: false, message: "Invalid or demo payment reference. Orders cannot be fulfilled without verified payment." },
+        { status: 400 }
+      );
+    }
+
+    // 1. Verify payment with Paystack server-side before proceeding
+    const verification = await verifyPaystackTransaction(paystack_ref);
+    if (!verification.success) {
+      console.error(`[Security Block] Paystack verification failed for ${paystack_ref}:`, verification.message);
+      return NextResponse.json(
+        { success: false, message: `Payment verification failed: ${verification.message}` },
+        { status: 402 }
+      );
+    }
+
+    // Verify paid amount matches expected price (with small rounding margin)
+    const expectedAmount = Number(amount);
+    if (verification.amount > 0 && verification.amount < expectedAmount - 0.05) {
+      console.error(`[Security Block] Underpaid: expected GHS ${expectedAmount}, received GHS ${verification.amount}`);
+      return NextResponse.json(
+        { success: false, message: "Paid amount does not match package price." },
+        { status: 400 }
+      );
+    }
+
+    // 2. Check if order already exists (e.g. created by Paystack webhook)
     let order = await db.getOrderByReference(reference);
 
     if (!order) {
@@ -25,7 +55,7 @@ export async function POST(request: Request) {
           package_size,
           phone,
           amount: Number(amount),
-          paystack_ref: paystack_ref || null,
+          paystack_ref: verification.reference || paystack_ref,
           payment_status: "paid",
           delivery_status: "processing",
           status: "pending",
