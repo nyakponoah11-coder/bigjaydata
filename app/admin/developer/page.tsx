@@ -639,30 +639,6 @@ export default function AdminDeveloperPage() {
           </div>
         )}
 
-        {/* Master Key Link Card */}
-        <div className="p-5 sm:p-6 rounded-3xl border bg-gradient-to-br from-slate-900 via-slate-900 to-indigo-950/30 border-indigo-800/50 shadow-xl">
-          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-5">
-            <div className="space-y-1.5 max-w-2xl">
-              <div className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full animate-pulse bg-indigo-400" />
-                <span className="text-xs font-black uppercase tracking-wider text-indigo-300">
-                  Master Key Portal
-                </span>
-              </div>
-              <h2 className="text-lg sm:text-xl font-black text-white">
-                Developer Master Key Access
-              </h2>
-              <p className="text-xs text-slate-400 leading-relaxed">
-                Direct link for developers to access their API keys: <span className="font-mono text-indigo-300 cursor-default select-all">bundlemartgh.com/key</span>
-              </p>
-            </div>
-            <div className="px-5 py-3 rounded-2xl font-black text-xs uppercase tracking-wider flex items-center gap-2.5 bg-slate-800 border border-slate-700 text-slate-300 shrink-0">
-              <ExternalLink className="w-4 h-4 text-slate-500" />
-              <span className="cursor-default select-all">bundlemartgh.com/key</span>
-            </div>
-          </div>
-        </div>
-
         {/* Quick Stats Grid */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-md">
