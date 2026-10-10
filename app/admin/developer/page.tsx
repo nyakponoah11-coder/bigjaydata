@@ -28,7 +28,6 @@ import {
   DollarSign,
   TrendingUp,
   Package,
-  Store,
 } from "lucide-react";
 
 interface DeveloperConfig {
@@ -80,11 +79,7 @@ export default function AdminDeveloperPage() {
   // Notifications
   const [notice, setNotice] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
-  // Master switch toggling state
-  const [togglingMaster, setTogglingMaster] = useState(false);
-  const [togglingAgentStore, setTogglingAgentStore] = useState(false);
-
-  // Agent Store config
+  // Agent Store config (read-only display)
   const [agentStoreConfig, setAgentStoreConfig] = useState<AgentStoreConfig | null>(null);
 
   // Pricing editing state
@@ -147,84 +142,6 @@ export default function AdminDeveloperPage() {
   const showNotification = (type: "success" | "error", message: string) => {
     setNotice({ type, message });
     setTimeout(() => setNotice(null), 4000);
-  };
-
-  // 1. Toggle Master Switch
-  const handleToggleMaster = async () => {
-    if (!config) return;
-    const newState = !config.is_enabled;
-    const confirmMsg = newState
-      ? "Turn ON Developer API? Developers will be able to access the API Portal, generate keys, and make API purchases."
-      : "Turn OFF Developer API? When disabled, the public developer page will display 'Coming Soon' and all live API requests will return 403 Forbidden.";
-
-    if (!window.confirm(confirmMsg)) return;
-
-    setTogglingMaster(true);
-    try {
-      const res = await fetch("/api/admin/developer", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "update_config",
-          is_enabled: newState,
-        }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        setConfig(data.config);
-        showNotification(
-          "success",
-          newState
-            ? "Developer API is now LIVE and active!"
-            : "Developer API paused. Public portal now displays 'Coming Soon'."
-        );
-      } else {
-        showNotification("error", data.message || "Failed to toggle switch.");
-      }
-    } catch {
-      showNotification("error", "Error connecting to server.");
-    } finally {
-      setTogglingMaster(false);
-    }
-  };
-
-  // 2. Toggle Agent Store Switch
-  const handleToggleAgentStore = async () => {
-    if (!agentStoreConfig) return;
-    const newState = !agentStoreConfig.is_enabled;
-    const confirmMsg = newState
-      ? "Turn ON Agent Store? All agent storefronts will become accessible to customers."
-      : "Turn OFF Agent Store? All agent storefronts will display 'Coming Soon' and customers cannot purchase.";
-
-    if (!window.confirm(confirmMsg)) return;
-
-    setTogglingAgentStore(true);
-    try {
-      const res = await fetch("/api/admin/agent-store-config", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "update_config",
-          is_enabled: newState,
-        }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        setAgentStoreConfig(data.config);
-        showNotification(
-          "success",
-          newState
-            ? "Agent Store is now LIVE - all storefronts are active!"
-            : "Agent Store paused. All storefronts now display 'Coming Soon'."
-        );
-      } else {
-        showNotification("error", data.message || "Failed to toggle agent store.");
-      }
-    } catch {
-      showNotification("error", "Error connecting to server.");
-    } finally {
-      setTogglingAgentStore(false);
-    }
   };
 
   // 2. Save Settings (API Key Price, etc.)
@@ -509,7 +426,7 @@ export default function AdminDeveloperPage() {
           </div>
         </div>
 
-        {/* Global Notice Toast */}
+{/* Global Notice Toast */}
         {notice && (
           <div
             className={`p-3.5 rounded-2xl text-xs font-bold flex items-center gap-2 transition-all shadow-lg animate-in fade-in ${
@@ -523,17 +440,18 @@ export default function AdminDeveloperPage() {
           </div>
         )}
 
-        {/* Master Switch Hero Card */}
-        {config && (
-          <div
-            className={`p-5 sm:p-6 rounded-3xl border transition-all shadow-xl relative overflow-hidden ${
-              config.is_enabled
-                ? "bg-gradient-to-br from-indigo-950/40 via-slate-900 to-slate-900 border-indigo-800/80 shadow-indigo-950/30"
-                : "bg-gradient-to-br from-amber-950/30 via-slate-900 to-slate-900 border-amber-900/60 shadow-amber-950/20"
-            }`}
-          >
-            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-5 relative z-10">
-              <div className="space-y-1.5 max-w-2xl">
+        {/* Status Display Cards (Read-only) */}
+        {config && agentStoreConfig && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Developer API Status */}
+            <div
+              className={`p-5 sm:p-6 rounded-3xl border transition-all shadow-xl relative overflow-hidden ${
+                config.is_enabled
+                  ? "bg-gradient-to-br from-indigo-950/40 via-slate-900 to-slate-900 border-indigo-800/80 shadow-indigo-950/30"
+                  : "bg-gradient-to-br from-amber-950/30 via-slate-900 to-slate-900 border-amber-900/60 shadow-amber-950/20"
+              }`}
+            >
+              <div className="space-y-1.5">
                 <div className="flex items-center gap-2">
                   <span
                     className={`w-2.5 h-2.5 rounded-full animate-pulse ${
@@ -558,40 +476,21 @@ export default function AdminDeveloperPage() {
                     ? "Developers can generate secret API keys, check balances, and automate data fulfillment via REST endpoints. All purchases deduct from developer wallets."
                     : "The public developer portal at /developer currently displays the 'Coming Soon' maintenance banner. Programmatic API calls return 403 Forbidden until turned on."}
                 </p>
+                <p className="text-xs text-slate-500 mt-3">
+                  Control: <span className="font-mono text-indigo-300">bundlemartgh.com/key</span>
+                </p>
               </div>
-
-              {/* Master Power Toggle */}
-              <button
-                onClick={handleToggleMaster}
-                disabled={togglingMaster}
-                className={`px-5 py-3 rounded-2xl font-black text-xs uppercase tracking-wider flex items-center gap-2.5 shadow-xl transition-all transform active:scale-95 shrink-0 ${
-                  config.is_enabled
-                    ? "bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-600/30 ring-2 ring-emerald-400/40"
-                    : "bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700"
-                }`}
-              >
-                {togglingMaster ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Power className={`w-4 h-4 ${config.is_enabled ? "text-white" : "text-amber-400"}`} />
-                )}
-                <span>{config.is_enabled ? "Master Switch: ON" : "Master Switch: OFF"}</span>
-              </button>
             </div>
-          </div>
-        )}
 
-        {/* Agent Store Switch Card */}
-        {agentStoreConfig && (
-          <div
-            className={`p-5 sm:p-6 rounded-3xl border transition-all shadow-xl relative overflow-hidden ${
-              agentStoreConfig.is_enabled
-                ? "bg-gradient-to-br from-emerald-950/40 via-slate-900 to-slate-900 border-emerald-800/80 shadow-emerald-950/30"
-                : "bg-gradient-to-br from-rose-950/30 via-slate-900 to-slate-900 border-rose-900/60 shadow-rose-950/20"
-            }`}
-          >
-            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-5 relative z-10">
-              <div className="space-y-1.5 max-w-2xl">
+            {/* Agent Store Status */}
+            <div
+              className={`p-5 sm:p-6 rounded-3xl border transition-all shadow-xl relative overflow-hidden ${
+                agentStoreConfig.is_enabled
+                  ? "bg-gradient-to-br from-emerald-950/40 via-slate-900 to-slate-900 border-emerald-800/80 shadow-emerald-950/30"
+                  : "bg-gradient-to-br from-rose-950/30 via-slate-900 to-slate-900 border-rose-900/60 shadow-rose-950/20"
+              }`}
+            >
+              <div className="space-y-1.5">
                 <div className="flex items-center gap-2">
                   <span
                     className={`w-2.5 h-2.5 rounded-full animate-pulse ${
@@ -616,25 +515,10 @@ export default function AdminDeveloperPage() {
                     ? "All agent storefronts are accessible. Customers can browse and purchase data bundles instantly."
                     : "All agent storefronts at /s/[slug] and /d/[token] display 'Coming Soon'. Customers cannot make purchases until enabled."}
                 </p>
+                <p className="text-xs text-slate-500 mt-3">
+                  Control: <span className="font-mono text-indigo-300">bundlemartgh.com/key</span>
+                </p>
               </div>
-
-              {/* Agent Store Power Toggle */}
-              <button
-                onClick={handleToggleAgentStore}
-                disabled={togglingAgentStore}
-                className={`px-5 py-3 rounded-2xl font-black text-xs uppercase tracking-wider flex items-center gap-2.5 shadow-xl transition-all transform active:scale-95 shrink-0 ${
-                  agentStoreConfig.is_enabled
-                    ? "bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-600/30 ring-2 ring-emerald-400/40"
-                    : "bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700"
-                }`}
-              >
-                {togglingAgentStore ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Store className={`w-4 h-4 ${agentStoreConfig.is_enabled ? "text-white" : "text-rose-400"}`} />
-                )}
-                <span>{agentStoreConfig.is_enabled ? "Agent Store: ON" : "Agent Store: OFF"}</span>
-              </button>
             </div>
           </div>
         )}
