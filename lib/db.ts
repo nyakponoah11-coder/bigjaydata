@@ -1627,7 +1627,7 @@ export const db = {
     let developer_master_enabled =
       config.developer_master_enabled !== undefined
         ? Boolean(config.developer_master_enabled)
-        : current.developer_master_enabled ?? false;
+        : current.developer_master_enabled ?? true;
 
     let admin_enabled =
       config.admin_enabled !== undefined
