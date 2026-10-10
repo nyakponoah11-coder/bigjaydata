@@ -192,6 +192,7 @@ export interface Agent {
   whatsapp_number?: string;
   whatsapp_channel_url?: string;
   support_email?: string;
+  cloaked_url?: string;
 }
 
 export interface AgentOrder {
@@ -363,6 +364,7 @@ const initialAgents: Agent[] = [
     total_withdrawn: 0,
     is_active: true,
     registration_paid: true,
+    cloaked_url: "https://tinyurl.com/265syqzn",
     created_at: "2026-10-10T10:05:54.889Z",
   },
 ];
@@ -1759,6 +1761,29 @@ export const db = {
       is_active: true,
       created_at: new Date().toISOString(),
     };
+
+    // Auto-generate cloaked neutral link so bundlemartgh.com never shows in customer links
+    let cloaked_url = agentData.cloaked_url || "";
+    if (!cloaked_url) {
+      try {
+        const config = await this.getAgentStoreConfig();
+        const baseOrigin = config.custom_domain
+          ? `https://${config.custom_domain.replace(/^https?:\/\//i, "").replace(/\/+$/, "")}`
+          : process.env.NEXT_PUBLIC_BASE_URL || "https://www.bundlemartgh.com";
+        const target = `${baseOrigin.replace(/\/+$/, "")}/s/${newAgent.store_slug}`;
+        const res = await fetch(`https://tinyurl.com/api-create.php?url=${encodeURIComponent(target)}`, {
+          signal: AbortSignal.timeout(3500),
+        });
+        if (res.ok) {
+          const text = await res.text();
+          if (text && text.startsWith("http")) {
+            cloaked_url = text.trim();
+          }
+        }
+      } catch {}
+    }
+    newAgent.cloaked_url = cloaked_url;
+
     if (!globalStore.__bmgh_agents) globalStore.__bmgh_agents = [];
     globalStore.__bmgh_agents.unshift(newAgent);
 

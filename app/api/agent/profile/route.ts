@@ -16,6 +16,27 @@ export async function GET(req: Request) {
     }
 
     const config = await db.getAgentStoreConfig();
+
+    // Auto-generate cloaked neutral link if missing
+    if (!agent.cloaked_url) {
+      try {
+        const baseOrigin = config.custom_domain
+          ? `https://${config.custom_domain.replace(/^https?:\/\//i, "").replace(/\/+$/, "")}`
+          : process.env.NEXT_PUBLIC_BASE_URL || "https://www.bundlemartgh.com";
+        const target = `${baseOrigin.replace(/\/+$/, "")}/s/${agent.store_slug}`;
+        const res = await fetch(`https://tinyurl.com/api-create.php?url=${encodeURIComponent(target)}`, {
+          signal: AbortSignal.timeout(3000),
+        });
+        if (res.ok) {
+          const text = await res.text();
+          if (text && text.startsWith("http")) {
+            agent.cloaked_url = text.trim();
+            await db.updateAgent(agent.id, { cloaked_url: agent.cloaked_url });
+          }
+        }
+      } catch {}
+    }
+
     return NextResponse.json({
       success: true,
       agent,
@@ -41,6 +62,7 @@ export async function PUT(req: Request) {
       whatsapp_number,
       whatsapp_channel_url,
       support_email,
+      cloaked_url,
     } = body;
 
     if (!agent_id) {
@@ -58,6 +80,7 @@ export async function PUT(req: Request) {
     if (whatsapp_number !== undefined) updates.whatsapp_number = String(whatsapp_number).trim();
     if (whatsapp_channel_url !== undefined) updates.whatsapp_channel_url = String(whatsapp_channel_url).trim();
     if (support_email !== undefined) updates.support_email = String(support_email).trim();
+    if (cloaked_url !== undefined) updates.cloaked_url = String(cloaked_url).trim();
 
     const updated = await db.updateAgent(agent_id, updates);
     if (!updated) {
