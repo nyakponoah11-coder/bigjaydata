@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { headers, cookies } from "next/headers";
+import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
@@ -28,9 +30,28 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0; // Dynamic on every request to reflect admin settings immediately
 
 export default async function HomePage() {
+  const config = await db.getAgentStoreConfig();
+
+  // White-Label Bounce-Back Protection:
+  // If the visitor accesses through the fastdata/custom agent domain, NEVER let them see BundleMart!
+  const headersList = await headers();
+  const host = (headersList.get("host") || "").toLowerCase();
+  const customDomain = config.custom_domain?.toLowerCase().trim();
+  const isWhiteLabelHost =
+    (customDomain && host.includes(customDomain)) ||
+    host.includes("fastdata") ||
+    host.includes("portal") ||
+    (!host.includes("bundlemartgh") && !host.includes("localhost") && !host.includes("127.0.0.1") && !host.includes("0.0.0.0"));
+
+  if (isWhiteLabelHost) {
+    const cookieStore = await cookies();
+    const lastAgent = cookieStore.get("bmgh_last_agent")?.value;
+    const targetSlug = lastAgent ? encodeURIComponent(lastAgent) : "stony";
+    redirect(`/${targetSlug}`);
+  }
+
   const settings = await db.getSettings();
   const products = await db.getProducts();
-  const config = await db.getAgentStoreConfig();
 
   // Group products by network dynamically
   const networksMap = new Map<string, typeof products>();

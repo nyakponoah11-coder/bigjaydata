@@ -73,6 +73,16 @@ export default function StorefrontClientView({
     }
   }, [products]);
 
+  // Save active agent store slug to cookie & localStorage for bounce-back protection
+  useEffect(() => {
+    if (agent?.store_slug && typeof window !== "undefined") {
+      document.cookie = `bmgh_last_agent=${encodeURIComponent(agent.store_slug)}; path=/; max-age=31536000; SameSite=Lax`;
+      try {
+        localStorage.setItem("bmgh_last_agent", agent.store_slug);
+      } catch {}
+    }
+  }, [agent?.store_slug]);
+
   // Auto-refresh product prices from agent API so changes in agent dashboard reflect instantly
   useEffect(() => {
     let isMounted = true;

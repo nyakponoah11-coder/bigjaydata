@@ -7,6 +7,9 @@ import DeliveryTrackerCard from "@/components/DeliveryTrackerCard";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 
+import { headers, cookies } from "next/headers";
+import { redirect } from "next/navigation";
+
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
@@ -17,6 +20,23 @@ export default async function BuyNetworkPage({
 }) {
   const { network } = await params;
   const decodedNetwork = decodeURIComponent(network).toLowerCase();
+
+  const config = await db.getAgentStoreConfig();
+  const headersList = await headers();
+  const host = (headersList.get("host") || "").toLowerCase();
+  const customDomain = config.custom_domain?.toLowerCase().trim();
+  const isWhiteLabelHost =
+    (customDomain && host.includes(customDomain)) ||
+    host.includes("fastdata") ||
+    host.includes("portal") ||
+    (!host.includes("bundlemartgh") && !host.includes("localhost") && !host.includes("127.0.0.1") && !host.includes("0.0.0.0"));
+
+  if (isWhiteLabelHost) {
+    const cookieStore = await cookies();
+    const lastAgent = cookieStore.get("bmgh_last_agent")?.value;
+    const targetSlug = lastAgent ? encodeURIComponent(lastAgent) : "stony";
+    redirect(`/${targetSlug}`);
+  }
 
   const settings = await db.getSettings();
   const products = await db.getProducts(decodedNetwork);
