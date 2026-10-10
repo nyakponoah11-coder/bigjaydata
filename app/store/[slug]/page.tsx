@@ -54,8 +54,13 @@ export default async function AgentStorefrontPage({
   const { slug } = await params;
   const cleanSlug = decodeURIComponent(slug).toLowerCase().trim();
 
+  const agent = await db.getAgentBySlug(cleanSlug);
+  if (!agent) {
+    notFound();
+  }
+
   const config = await db.getAgentStoreConfig();
-  if (!config.is_enabled) {
+  if (!config.is_enabled && !agent.is_active) {
     return (
       <div className="min-h-screen bg-slate-950 text-white flex items-center justify-center p-6 text-center">
         <div className="max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-8">
@@ -66,11 +71,6 @@ export default async function AgentStorefrontPage({
         </div>
       </div>
     );
-  }
-
-  const agent = await db.getAgentBySlug(cleanSlug);
-  if (!agent) {
-    notFound();
   }
 
   if (!agent.is_active) {

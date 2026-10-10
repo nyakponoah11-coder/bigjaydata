@@ -15,14 +15,6 @@ export async function POST(
     const { slug } = await params;
     const cleanSlug = decodeURIComponent(slug).toLowerCase().trim();
 
-    const config = await db.getAgentStoreConfig();
-    if (!config.is_enabled) {
-      return NextResponse.json(
-        { success: false, message: "Agent stores are currently closed." },
-        { status: 503 }
-      );
-    }
-
     const resolvedSlug = decodeAgentToken(cleanSlug);
 
     let agent = await db.getAgentBySlug(cleanSlug);
@@ -34,6 +26,14 @@ export async function POST(
       return NextResponse.json(
         { success: false, message: "Store is inactive or not found." },
         { status: 404 }
+      );
+    }
+
+    const config = await db.getAgentStoreConfig();
+    if (!config.is_enabled && !agent.is_active) {
+      return NextResponse.json(
+        { success: false, message: "Agent stores are currently closed." },
+        { status: 503 }
       );
     }
 

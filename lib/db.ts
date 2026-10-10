@@ -1464,21 +1464,21 @@ export const db = {
           .eq("id", "agent_store_config")
           .maybeSingle();
         if (data && data.store_name) {
-          let developer_master_enabled = false;
+          let developer_master_enabled = true;
           let admin_enabled = true;
           let custom_domain = "";
           try {
             if (data.store_name.startsWith("{")) {
               const parsed = JSON.parse(data.store_name);
-              developer_master_enabled = parsed.developer_master_enabled ?? false;
-              admin_enabled = parsed.admin_enabled ?? true;
+              developer_master_enabled = parsed.developer_master_enabled !== false;
+              admin_enabled = parsed.admin_enabled !== false;
               custom_domain = parsed.custom_domain || "";
             } else {
-              developer_master_enabled = data.store_name === "true" || data.store_name === "1";
+              developer_master_enabled = data.store_name !== "false" && data.store_name !== "0";
               admin_enabled = developer_master_enabled;
             }
           } catch {
-            developer_master_enabled = data.store_name === "true";
+            developer_master_enabled = data.store_name !== "false";
             admin_enabled = developer_master_enabled;
           }
 
@@ -1499,14 +1499,14 @@ export const db = {
     }
     const current = globalStore.__bmgh_agent_config;
     if (current) {
-      const devMaster = current.developer_master_enabled ?? false;
-      const adminEn = current.admin_enabled ?? true;
+      const devMaster = current.developer_master_enabled !== false;
+      const adminEn = current.admin_enabled !== false;
       current.is_enabled = Boolean(devMaster && adminEn);
       return current;
     }
     return {
-      is_enabled: false,
-      developer_master_enabled: false,
+      is_enabled: true,
+      developer_master_enabled: true,
       admin_enabled: true,
       registration_fee: 0,
       custom_domain: "",
@@ -2022,7 +2022,10 @@ export const db = {
     });
 
     // 5. Direct Agent custom_prices override (GUARANTEES agent-set prices always win)
-    const current = (globalStore.__bmgh_agents || initialAgents).find(
+    const allAgents = (globalStore.__bmgh_agents && globalStore.__bmgh_agents.length > 0)
+      ? globalStore.__bmgh_agents
+      : await this.getAgents();
+    const current = (allAgents || initialAgents).find(
       (a) => a.id === agentId || a.store_slug === agentId
     );
     if (current?.custom_prices) {

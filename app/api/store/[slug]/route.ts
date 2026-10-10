@@ -12,21 +12,21 @@ export async function GET(
     const { slug } = await params;
     const cleanSlug = decodeURIComponent(slug).toLowerCase().trim();
 
-    const config = await db.getAgentStoreConfig();
-    if (!config.is_enabled) {
-      return NextResponse.json({
-        success: false,
-        is_closed: true,
-        message: "Agent Store network is temporarily unavailable.",
-      }, { status: 503 });
-    }
-
     const agent = await db.getAgentBySlug(cleanSlug);
     if (!agent) {
       return NextResponse.json(
         { success: false, message: "Store not found" },
         { status: 404 }
       );
+    }
+
+    const config = await db.getAgentStoreConfig();
+    if (!config.is_enabled && !agent.is_active) {
+      return NextResponse.json({
+        success: false,
+        is_closed: true,
+        message: "Agent Store network is temporarily unavailable.",
+      }, { status: 503 });
     }
 
     if (!agent.is_active) {

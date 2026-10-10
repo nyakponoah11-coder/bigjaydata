@@ -58,8 +58,18 @@ export default async function DisguisedAgentStorePage({
   const { token } = await params;
   const decodedSlug = decodeAgentToken(decodeURIComponent(token));
 
+  // Look up agent by decoded slug, or raw token as slug
+  let agent = await db.getAgentBySlug(decodedSlug);
+  if (!agent && decodedSlug !== token) {
+    agent = await db.getAgentBySlug(token.toLowerCase().trim());
+  }
+
+  if (!agent) {
+    notFound();
+  }
+
   const config = await db.getAgentStoreConfig();
-  if (!config.is_enabled) {
+  if (!config.is_enabled && !agent.is_active) {
     return (
       <div className="min-h-screen bg-slate-950 text-white flex items-center justify-center p-6 text-center">
         <div className="max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-8">
@@ -70,16 +80,6 @@ export default async function DisguisedAgentStorePage({
         </div>
       </div>
     );
-  }
-
-  // Look up agent by decoded slug, or raw token as slug
-  let agent = await db.getAgentBySlug(decodedSlug);
-  if (!agent && decodedSlug !== token) {
-    agent = await db.getAgentBySlug(token.toLowerCase().trim());
-  }
-
-  if (!agent) {
-    notFound();
   }
 
   if (!agent.is_active) {
