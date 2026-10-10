@@ -73,6 +73,7 @@ export async function PUT(req: Request) {
     const body = await req.json();
     const {
       agent_id,
+      store_slug,
       store_name,
       description,
       theme,
@@ -91,6 +92,40 @@ export async function PUT(req: Request) {
     }
 
     const updates: any = {};
+    if (store_slug !== undefined) {
+      const cleanSlug = String(store_slug)
+        .toLowerCase()
+        .trim()
+        .replace(/[^a-z0-9-_]/g, "-")
+        .replace(/-+/g, "-")
+        .replace(/^-|-$/g, "");
+
+      if (cleanSlug.length < 2) {
+        return NextResponse.json(
+          { success: false, message: "Store link handle must be at least 2 characters long." },
+          { status: 400 }
+        );
+      }
+
+      const reserved = ["admin", "agent", "api", "buy", "store", "s", "d", "developer", "track", "receipt", "help", "install"];
+      if (reserved.includes(cleanSlug)) {
+        return NextResponse.json(
+          { success: false, message: `The link handle "/${cleanSlug}" is reserved. Please pick another name.` },
+          { status: 400 }
+        );
+      }
+
+      const existing = await db.getAgentBySlug(cleanSlug);
+      if (existing && existing.id !== agent_id) {
+        return NextResponse.json(
+          { success: false, message: `The link handle "/${cleanSlug}" is already taken by another agent.` },
+          { status: 400 }
+        );
+      }
+
+      updates.store_slug = cleanSlug;
+    }
+
     if (store_name !== undefined) updates.store_name = String(store_name).trim();
     if (description !== undefined) updates.description = String(description).trim();
     if (theme !== undefined) updates.theme = String(theme).trim();

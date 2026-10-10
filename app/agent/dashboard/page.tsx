@@ -43,8 +43,9 @@ export default function AgentDashboardPage() {
   const [agent, setAgent] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<"home" | "products" | "orders" | "withdrawals" | "settings">("home");
-  const [linkMode, setLinkMode] = useState<"cloaked" | "short" | "masked" | "standard">("cloaked");
+  const [linkMode, setLinkMode] = useState<"clean" | "cloaked" | "short" | "masked" | "standard">("clean");
   const [customDomain, setCustomDomain] = useState<string>("");
+  const [storeSlug, setStoreSlug] = useState<string>("");
   const [tinyUrl, setTinyUrl] = useState<string>("");
   const [shortening, setShortening] = useState<boolean>(false);
 
@@ -115,6 +116,7 @@ export default function AgentDashboardPage() {
     try {
       const parsed = JSON.parse(rawSession);
       setAgent(parsed);
+      setStoreSlug(parsed.store_slug || "");
       setStoreName(parsed.store_name || "");
       setStoreDescription(parsed.description || "");
       setStorePhone(parsed.phone || "");
@@ -150,6 +152,7 @@ export default function AgentDashboardPage() {
 
       if (profData.success && profData.agent) {
         setAgent(profData.agent);
+        setStoreSlug(profData.agent.store_slug || "");
         setStoreName(profData.agent.store_name || "");
         setStoreDescription(profData.agent.description || "");
         setStorePhone(profData.agent.phone || "");
@@ -181,6 +184,7 @@ export default function AgentDashboardPage() {
   };
 
   const encryptedToken = agent ? encodeAgentToken(agent.store_slug) : "";
+  const cleanPath = agent ? `/${agent.store_slug}` : "";
   const shortPath = agent ? `/s/${agent.store_slug}` : "";
   const standardPath = agent ? `/store/${agent.store_slug}` : "";
   const maskedPath = agent ? `/d/${encryptedToken}` : "";
@@ -191,16 +195,19 @@ export default function AgentDashboardPage() {
     ? window.location.origin
     : "";
 
+  const directCleanUrl = agent && baseOrigin ? `${baseOrigin}${cleanPath}` : "";
   const directShortUrl = agent && baseOrigin ? `${baseOrigin}${shortPath}` : "";
   const directMaskedUrl = agent && baseOrigin ? `${baseOrigin}${maskedPath}` : "";
   const directStoreUrl = agent && baseOrigin ? `${baseOrigin}${standardPath}` : "";
 
-  // Cloaked URL (100% white-label, bundlemartgh.com is completely hidden)
+  // Cloaked URL (100% white-label)
   const cloakedUrl = tinyUrl || agent?.cloaked_url || "";
 
   const activeDisplayUrl =
-    linkMode === "cloaked"
-      ? (cloakedUrl || directShortUrl)
+    linkMode === "clean"
+      ? (directCleanUrl || directShortUrl)
+      : linkMode === "cloaked"
+      ? (cloakedUrl || directCleanUrl || directShortUrl)
       : linkMode === "short"
       ? directShortUrl
       : linkMode === "masked"
@@ -475,6 +482,7 @@ export default function AgentDashboardPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           agent_id: agent.id,
+          store_slug: storeSlug.trim(),
           store_name: storeName,
           description: storeDescription,
           phone: storePhone,
@@ -490,12 +498,16 @@ export default function AgentDashboardPage() {
       const data = await res.json();
       if (data.success) {
         setAgent(data.agent);
+        if (data.agent?.store_slug) setStoreSlug(data.agent.store_slug);
+        if (data.agent?.store_name) setStoreName(data.agent.store_name);
         localStorage.setItem("bmgh_agent_session", JSON.stringify(data.agent));
-        setNotice("Store settings & theme saved successfully!");
-        setTimeout(() => setNotice(""), 3000);
+        setNotice("Store settings & custom link saved successfully!");
+        setTimeout(() => setNotice(""), 3500);
+      } else {
+        setError(data.message || "Failed to save settings");
       }
-    } catch (err) {
-      setError("Failed to save settings");
+    } catch (err: any) {
+      setError(err?.message || "Failed to save settings");
     } finally {
       setSavingSettings(false);
     }
@@ -610,24 +622,13 @@ export default function AgentDashboardPage() {
               {/* Active URL display */}
               <div className="space-y-1.5">
                 <p className="text-xs text-emerald-300 font-mono bg-slate-950/80 px-3 py-2 rounded-xl border border-slate-800 break-all select-all flex items-center justify-between gap-2">
-                  <span>
-                    {shortening && !activeDisplayUrl ? (
-                      <span className="text-slate-400 flex items-center gap-1.5">
-                        <Loader2 className="w-3.5 h-3.5 animate-spin text-cyan-400" />
-                        Generating your cloaked link...
-                      </span>
-                    ) : (
-                      activeDisplayUrl || directShortUrl
-                    )}
-                  </span>
+                  <span>{activeDisplayUrl || directShortUrl}</span>
                 </p>
 
-                {linkMode === "cloaked" && (
-                  <p className="text-[11px] text-cyan-300 font-semibold flex items-center gap-1.5 pt-0.5">
-                    <ShieldCheck className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
-                    <span>Auto-Cloaked: bundlemartgh.com is completely hidden from customers.</span>
-                  </p>
-                )}
+                <p className="text-[11px] text-cyan-300 font-semibold flex items-center gap-1.5 pt-0.5">
+                  <ShieldCheck className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                  <span>Direct Agent Link: Opens your personalized store with your custom prices.</span>
+                </p>
               </div>
             </div>
 
@@ -638,6 +639,15 @@ export default function AgentDashboardPage() {
               >
                 {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
                 <span>{copied ? "Copied!" : "Copy Link"}</span>
+              </button>
+
+              <button
+                onClick={() => setActiveTab("settings")}
+                className="inline-flex items-center gap-1.5 px-3 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs border border-slate-700 transition-colors cursor-pointer"
+                title="Edit your store name or URL slug"
+              >
+                <Settings className="w-3.5 h-3.5 text-amber-400" />
+                <span>Edit Link</span>
               </button>
 
               <a
@@ -667,13 +677,7 @@ export default function AgentDashboardPage() {
             <div className="flex items-center gap-1.5">
               <Lock className="w-3 h-3 text-cyan-400 shrink-0" />
               <span>
-                {linkMode === "cloaked"
-                  ? "Cloaked Link: Your custom short link with bundlemartgh.com completely masked out."
-                  : linkMode === "short"
-                  ? "Direct Short: Concise /s/slug path."
-                  : linkMode === "masked"
-                  ? "Encrypted Link: Obfuscates internal store paths."
-                  : "Full Store: Standard /store/slug URL."}
+                Your store link is: <strong className="text-white font-mono">{activeDisplayUrl || directShortUrl}</strong>. You can customize this link anytime in Settings.
               </span>
             </div>
             {customDomain && (
@@ -1359,12 +1363,35 @@ export default function AgentDashboardPage() {
                     required
                     value={storeName}
                     onChange={(e) => setStoreName(e.target.value)}
-                    placeholder="e.g. Samuel K. Data Services"
+                    placeholder="e.g. Stony Data Store"
                     className="w-full px-4 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
                   />
+                  <p className="text-[10px] text-slate-400 mt-1">Displayed at the top of your customer storefront</p>
                 </div>
 
                 <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-300 mb-1">
+                    Your Store Link Handle (Slug) *
+                  </label>
+                  <div className="flex items-center">
+                    <span className="px-3 py-2.5 bg-slate-800 border border-r-0 border-slate-700 rounded-l-xl text-slate-400 text-xs font-mono font-bold select-none">
+                      {baseOrigin ? baseOrigin.replace(/^https?:\/\//i, "") : "store"}/
+                    </span>
+                    <input
+                      type="text"
+                      required
+                      value={storeSlug}
+                      onChange={(e) => setStoreSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-_]/g, "-"))}
+                      placeholder="e.g. stony"
+                      className="w-full px-3 py-2.5 bg-slate-900 border border-slate-700 rounded-r-xl text-emerald-400 text-sm font-mono font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    />
+                  </div>
+                  <p className="text-[10px] text-slate-400 mt-1">
+                    Live link: <span className="text-emerald-400 font-mono font-bold">{baseOrigin}/{storeSlug || "your-name"}</span> • You can edit this anytime!
+                  </p>
+                </div>
+
+                <div className="sm:col-span-2">
                   <label className="block text-xs font-bold uppercase tracking-wider text-slate-300 mb-1">
                     Customer Support Phone *
                   </label>
