@@ -57,6 +57,7 @@ export default function AgentDashboardPage() {
   // Products States
   const [products, setProducts] = useState<any[]>([]);
   const [savingProductId, setSavingProductId] = useState<string | null>(null);
+  const [recentlySavedId, setRecentlySavedId] = useState<string | null>(null);
   const [editPrices, setEditPrices] = useState<Record<string, string>>({});
 
   // Orders States
@@ -285,7 +286,8 @@ export default function AgentDashboardPage() {
 
   // Update Product Retail Price
   const handleSaveProductPrice = async (p: any) => {
-    const newPrice = parseFloat(editPrices[p.base_product_id]);
+    const rawVal = editPrices[p.base_product_id] !== undefined ? editPrices[p.base_product_id] : String(p.selling_price);
+    const newPrice = parseFloat(rawVal);
     if (isNaN(newPrice) || newPrice < p.base_price) {
       setError(`Selling price cannot be less than base price (GHS ${p.base_price.toFixed(2)})`);
       return;
@@ -307,12 +309,16 @@ export default function AgentDashboardPage() {
       const data = await res.json();
       if (data.success) {
         setNotice("Retail price updated successfully!");
+        setRecentlySavedId(p.base_product_id);
         setProducts((prev) =>
           prev.map((item) =>
             item.base_product_id === p.base_product_id ? { ...item, selling_price: newPrice } : item
           )
         );
-        setTimeout(() => setNotice(""), 3000);
+        setTimeout(() => {
+          setNotice("");
+          setRecentlySavedId(null);
+        }, 3000);
       }
     } catch (err) {
       setError("Failed to update product");
@@ -925,13 +931,25 @@ export default function AgentDashboardPage() {
                               type="number"
                               step="0.1"
                               min={p.base_price}
-                              value={editPrices[p.base_product_id] || ""}
+                              value={editPrices[p.base_product_id] !== undefined ? editPrices[p.base_product_id] : p.selling_price}
                               onChange={(e) =>
                                 setEditPrices((prev) => ({
                                   ...prev,
                                   [p.base_product_id]: e.target.value,
                                 }))
                               }
+                              onBlur={() => {
+                                const val = editPrices[p.base_product_id];
+                                if (val !== undefined && val !== "" && parseFloat(val) !== p.selling_price) {
+                                  handleSaveProductPrice(p);
+                                }
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") {
+                                  (e.target as HTMLInputElement).blur();
+                                  handleSaveProductPrice(p);
+                                }
+                              }}
                               className="w-24 bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-1 text-white font-mono text-xs font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500"
                             />
                           </div>
@@ -954,13 +972,31 @@ export default function AgentDashboardPage() {
                           </button>
                         </td>
                         <td className="py-3 px-4 text-right">
-                          <button
-                            onClick={() => handleSaveProductPrice(p)}
-                            disabled={isSaving}
-                            className="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] rounded-lg shadow-sm transition-all disabled:opacity-50"
-                          >
-                            {isSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Save"}
-                          </button>
+                          {recentlySavedId === p.base_product_id ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-500/20 text-emerald-400 font-bold text-[11px] rounded-lg border border-emerald-500/30">
+                              ✓ Saved
+                            </span>
+                          ) : (
+                            <button
+                              onClick={() => handleSaveProductPrice(p)}
+                              disabled={isSaving}
+                              className={`px-3 py-1 font-bold text-[11px] rounded-lg shadow-sm transition-all disabled:opacity-50 cursor-pointer ${
+                                editPrices[p.base_product_id] !== undefined &&
+                                parseFloat(editPrices[p.base_product_id]) !== p.selling_price
+                                  ? "bg-amber-500 hover:bg-amber-400 text-slate-950 ring-2 ring-amber-400 animate-pulse font-black"
+                                  : "bg-emerald-600 hover:bg-emerald-500 text-white"
+                              }`}
+                            >
+                              {isSaving ? (
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              ) : editPrices[p.base_product_id] !== undefined &&
+                                parseFloat(editPrices[p.base_product_id]) !== p.selling_price ? (
+                                "Save ⚡"
+                              ) : (
+                                "Save"
+                              )}
+                            </button>
+                          )}
                         </td>
                       </tr>
                     );

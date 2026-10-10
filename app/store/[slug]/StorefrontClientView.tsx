@@ -78,7 +78,13 @@ export default function StorefrontClientView({
     let isMounted = true;
     const fetchFreshProducts = async () => {
       try {
-        const res = await fetch(`/api/agent/products?agent_id=${agent.id}`, { cache: "no-store" });
+        const res = await fetch(`/api/agent/products?agent_id=${agent.id}&t=${Date.now()}`, {
+          cache: "no-store",
+          headers: {
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            Pragma: "no-cache",
+          },
+        });
         const data = await res.json();
         if (data.success && Array.isArray(data.products) && isMounted) {
           const mapped: ProductItem[] = data.products
@@ -97,7 +103,7 @@ export default function StorefrontClientView({
     };
 
     fetchFreshProducts();
-    const interval = setInterval(fetchFreshProducts, 15000);
+    const interval = setInterval(fetchFreshProducts, 6000);
     return () => {
       isMounted = false;
       clearInterval(interval);

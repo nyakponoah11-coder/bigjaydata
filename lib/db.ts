@@ -1924,8 +1924,31 @@ export const db = {
     const baseProducts = await this.getAgentBaseProducts();
     const productMap = new Map<string, AgentCustomProduct>();
 
-    // 1. Load from settings config row (contains all configured agent custom products)
     if (isSupabaseConfigured && supabaseAdmin) {
+      // 1. First, read direct agent_products table as the base layer
+      try {
+        const { data: directProds, error: dpErr } = await supabaseAdmin
+          .from("agent_products")
+          .select("*")
+          .eq("agent_id", agentId);
+        if (!dpErr && Array.isArray(directProds) && directProds.length > 0) {
+          directProds.forEach((dp: any) => {
+            productMap.set(dp.base_product_id, {
+              id: dp.id,
+              agent_id: dp.agent_id,
+              base_product_id: dp.base_product_id,
+              network: dp.network,
+              size: dp.size,
+              base_price: Number(dp.base_price),
+              selling_price: Number(dp.selling_price),
+              is_active: dp.is_active !== false,
+            });
+          });
+        }
+      } catch {}
+
+      // 2. OVERLAY with settings config row
+      // This MUST run after agent_products table so custom retail prices saved by the agent in their dashboard always win and are never clobbered by older rows!
       try {
         const { data } = await supabaseAdmin
           .from("settings")
@@ -1955,28 +1978,6 @@ export const db = {
           } catch {}
         }
       } catch (err) {}
-
-      // 2. Also overlay with direct agent_products table for any individually updated rows
-      try {
-        const { data: directProds, error: dpErr } = await supabaseAdmin
-          .from("agent_products")
-          .select("*")
-          .eq("agent_id", agentId);
-        if (!dpErr && Array.isArray(directProds) && directProds.length > 0) {
-          directProds.forEach((dp: any) => {
-            productMap.set(dp.base_product_id, {
-              id: dp.id,
-              agent_id: dp.agent_id,
-              base_product_id: dp.base_product_id,
-              network: dp.network,
-              size: dp.size,
-              base_price: Number(dp.base_price),
-              selling_price: Number(dp.selling_price),
-              is_active: dp.is_active !== false,
-            });
-          });
-        }
-      } catch {}
     }
 
     // 3. Fallback to memory store if productMap is missing entries
@@ -2090,45 +2091,7 @@ export const db = {
     saveToDisk();
 
     if (isSupabaseConfigured && supabaseAdmin) {
-      // 1. Synchronize direct agent_products table
-      try {
-        // Query to find ANY existing row for this agent and base_product_id
-        const { data: existingRows } = await supabaseAdmin
-          .from("agent_products")
-          .select("id")
-          .eq("agent_id", agentId)
-          .eq("base_product_id", baseProductId);
-
-        const targetId = existingRows && existingRows.length > 0 ? existingRows[0].id : item.id;
-        item.id = targetId;
-
-        // Upsert by targetId
-        await supabaseAdmin.from("agent_products").upsert({
-          id: targetId,
-          agent_id: agentId,
-          base_product_id: baseProductId,
-          network: item.network,
-          size: item.size,
-          base_price: item.base_price,
-          selling_price: item.selling_price,
-          is_active: item.is_active,
-        });
-
-        // Also update all matching rows by (agent_id, base_product_id) to eliminate any duplicates
-        await supabaseAdmin
-          .from("agent_products")
-          .update({
-            selling_price: item.selling_price,
-            base_price: item.base_price,
-            is_active: item.is_active,
-          })
-          .eq("agent_id", agentId)
-          .eq("base_product_id", baseProductId);
-      } catch (directErr) {
-        console.warn("Direct agent_products upsert warning:", directErr);
-      }
-
-      // 2. Also save to settings config row with required columns
+      // 1. Save to settings config row first (guaranteed single source of truth across Vercel serverless)
       try {
         await supabaseAdmin.from("settings").upsert({
           id: "agent_products_registry_config",
@@ -2139,7 +2102,29 @@ export const db = {
           announcement_text: JSON.stringify(globalStore.__bmgh_agent_products),
         });
       } catch (err) {
-        console.warn("Agent custom products Supabase update error:", err);
+        console.warn("Agent custom products Supabase settings update error:", err);
+      }
+
+      // 2. Cleanly synchronize direct agent_products table: delete any stale rows for this item, then re-insert
+      try {
+        await supabaseAdmin
+          .from("agent_products")
+          .delete()
+          .eq("agent_id", agentId)
+          .eq("base_product_id", baseProductId);
+
+        await supabaseAdmin.from("agent_products").insert({
+          id: item.id,
+          agent_id: agentId,
+          base_product_id: baseProductId,
+          network: item.network,
+          size: item.size,
+          base_price: item.base_price,
+          selling_price: item.selling_price,
+          is_active: item.is_active,
+        });
+      } catch (directErr) {
+        console.warn("Direct agent_products table sync warning:", directErr);
       }
     }
 
