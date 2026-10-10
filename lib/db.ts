@@ -1661,7 +1661,11 @@ export const db = {
     globalStore.__bmgh_agents.unshift(newAgent);
 
     // Initialize custom products with suggested prices from base products
-    const baseProducts = globalStore.__bmgh_agent_base_products || [];
+    const baseProducts =
+      globalStore.__bmgh_agent_base_products && globalStore.__bmgh_agent_base_products.length > 0
+        ? globalStore.__bmgh_agent_base_products
+        : initialAgentBaseProducts;
+
     if (!globalStore.__bmgh_agent_products) globalStore.__bmgh_agent_products = [];
     baseProducts.forEach((bp) => {
       globalStore.__bmgh_agent_products!.push({
@@ -1677,6 +1681,24 @@ export const db = {
     });
 
     saveToDisk();
+
+    if (isSupabaseConfigured && supabaseAdmin) {
+      try {
+        await Promise.all([
+          supabaseAdmin.from("settings").upsert({
+            id: "agents_registry_config",
+            announcement_text: JSON.stringify(globalStore.__bmgh_agents),
+          }),
+          supabaseAdmin.from("settings").upsert({
+            id: "agent_products_registry_config",
+            announcement_text: JSON.stringify(globalStore.__bmgh_agent_products),
+          }),
+        ]);
+      } catch (err) {
+        console.warn("Agents registry save error:", err);
+      }
+    }
+
     return newAgent;
   },
 
@@ -1686,11 +1708,41 @@ export const db = {
     if (idx === -1) return null;
     agents[idx] = { ...agents[idx], ...updates };
     saveToDisk();
+
+    if (isSupabaseConfigured && supabaseAdmin) {
+      try {
+        await supabaseAdmin.from("settings").upsert({
+          id: "agents_registry_config",
+          announcement_text: JSON.stringify(globalStore.__bmgh_agents),
+        });
+      } catch (err) {
+        console.warn("Agents registry update error:", err);
+      }
+    }
+
     return agents[idx];
   },
 
   // AGENT CUSTOM PRODUCTS
   async getAgentProducts(agentId: string): Promise<AgentCustomProduct[]> {
+    if (isSupabaseConfigured && supabaseAdmin && (!globalStore.__bmgh_agent_products || globalStore.__bmgh_agent_products.length === 0)) {
+      try {
+        const { data } = await supabaseAdmin
+          .from("settings")
+          .select("announcement_text")
+          .eq("id", "agent_products_registry_config")
+          .maybeSingle();
+        if (data?.announcement_text) {
+          try {
+            const list = JSON.parse(data.announcement_text);
+            if (Array.isArray(list) && list.length > 0) {
+              globalStore.__bmgh_agent_products = list;
+            }
+          } catch {}
+        }
+      } catch (err) {}
+    }
+
     const custom = (globalStore.__bmgh_agent_products || []).filter((p) => p.agent_id === agentId);
     const baseProducts =
       globalStore.__bmgh_agent_base_products && globalStore.__bmgh_agent_base_products.length > 0
@@ -1745,11 +1797,37 @@ export const db = {
       item.is_active = isActive;
     }
     saveToDisk();
+
+    if (isSupabaseConfigured && supabaseAdmin) {
+      try {
+        await supabaseAdmin.from("settings").upsert({
+          id: "agent_products_registry_config",
+          announcement_text: JSON.stringify(globalStore.__bmgh_agent_products),
+        });
+      } catch (err) {}
+    }
+
     return item;
   },
 
   // AGENT ORDERS
   async getAgentOrders(agentId?: string): Promise<AgentOrder[]> {
+    if (isSupabaseConfigured && supabaseAdmin && (!globalStore.__bmgh_agent_orders || globalStore.__bmgh_agent_orders.length === 0)) {
+      try {
+        const { data } = await supabaseAdmin
+          .from("settings")
+          .select("announcement_text")
+          .eq("id", "agent_orders_registry_config")
+          .maybeSingle();
+        if (data?.announcement_text) {
+          try {
+            const list = JSON.parse(data.announcement_text);
+            if (Array.isArray(list)) globalStore.__bmgh_agent_orders = list;
+          } catch {}
+        }
+      } catch (err) {}
+    }
+
     const orders = globalStore.__bmgh_agent_orders || [];
     if (agentId) return orders.filter((o) => o.agent_id === agentId);
     return orders;
@@ -1774,6 +1852,22 @@ export const db = {
     }
 
     saveToDisk();
+
+    if (isSupabaseConfigured && supabaseAdmin) {
+      try {
+        await Promise.all([
+          supabaseAdmin.from("settings").upsert({
+            id: "agent_orders_registry_config",
+            announcement_text: JSON.stringify(globalStore.__bmgh_agent_orders),
+          }),
+          supabaseAdmin.from("settings").upsert({
+            id: "agents_registry_config",
+            announcement_text: JSON.stringify(globalStore.__bmgh_agents),
+          }),
+        ]);
+      } catch (err) {}
+    }
+
     return newOrder;
   },
 
@@ -1785,11 +1879,37 @@ export const db = {
     o.status = deliveryStatus;
     if (response) o.datamart_response = response;
     saveToDisk();
+
+    if (isSupabaseConfigured && supabaseAdmin) {
+      try {
+        await supabaseAdmin.from("settings").upsert({
+          id: "agent_orders_registry_config",
+          announcement_text: JSON.stringify(globalStore.__bmgh_agent_orders),
+        });
+      } catch (err) {}
+    }
+
     return o;
   },
 
   // AGENT WITHDRAWALS
   async getAgentWithdrawals(agentId?: string): Promise<AgentWithdrawal[]> {
+    if (isSupabaseConfigured && supabaseAdmin && (!globalStore.__bmgh_agent_withdrawals || globalStore.__bmgh_agent_withdrawals.length === 0)) {
+      try {
+        const { data } = await supabaseAdmin
+          .from("settings")
+          .select("announcement_text")
+          .eq("id", "agent_withdrawals_registry_config")
+          .maybeSingle();
+        if (data?.announcement_text) {
+          try {
+            const list = JSON.parse(data.announcement_text);
+            if (Array.isArray(list)) globalStore.__bmgh_agent_withdrawals = list;
+          } catch {}
+        }
+      } catch (err) {}
+    }
+
     const list = globalStore.__bmgh_agent_withdrawals || [];
     if (agentId) return list.filter((w) => w.agent_id === agentId);
     return list;
@@ -1814,6 +1934,22 @@ export const db = {
     }
 
     saveToDisk();
+
+    if (isSupabaseConfigured && supabaseAdmin) {
+      try {
+        await Promise.all([
+          supabaseAdmin.from("settings").upsert({
+            id: "agent_withdrawals_registry_config",
+            announcement_text: JSON.stringify(globalStore.__bmgh_agent_withdrawals),
+          }),
+          supabaseAdmin.from("settings").upsert({
+            id: "agents_registry_config",
+            announcement_text: JSON.stringify(globalStore.__bmgh_agents),
+          }),
+        ]);
+      } catch (err) {}
+    }
+
     return newWithdrawal;
   },
 
@@ -1832,6 +1968,22 @@ export const db = {
     w.status = status;
     if (note) w.note = note;
     saveToDisk();
+
+    if (isSupabaseConfigured && supabaseAdmin) {
+      try {
+        await Promise.all([
+          supabaseAdmin.from("settings").upsert({
+            id: "agent_withdrawals_registry_config",
+            announcement_text: JSON.stringify(globalStore.__bmgh_agent_withdrawals),
+          }),
+          supabaseAdmin.from("settings").upsert({
+            id: "agents_registry_config",
+            announcement_text: JSON.stringify(globalStore.__bmgh_agents),
+          }),
+        ]);
+      } catch (err) {}
+    }
+
     return w;
   },
 };
