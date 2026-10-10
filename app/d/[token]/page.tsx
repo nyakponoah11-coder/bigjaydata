@@ -1,4 +1,5 @@
 import React from "react";
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { decodeAgentToken } from "@/lib/agent-link";
@@ -6,6 +7,48 @@ import StorefrontClientView from "@/app/store/[slug]/StorefrontClientView";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ token: string }>;
+}): Promise<Metadata> {
+  const { token } = await params;
+  const decodedSlug = decodeAgentToken(decodeURIComponent(token));
+  let agent = await db.getAgentBySlug(decodedSlug);
+  if (!agent && decodedSlug !== token) {
+    agent = await db.getAgentBySlug(token.toLowerCase().trim());
+  }
+
+  if (!agent) {
+    return {
+      title: "Automated Data Portal",
+      description: "Buy cheap MTN, Telecel, and AT data bundles with instant automated delivery.",
+    };
+  }
+
+  const storeTitle = `${agent.store_name} | Instant Automated Data Portal`;
+  const storeDesc =
+    agent.description ||
+    `Get fast, non-expiry MTN, Telecel, and AT data bundles from ${agent.store_name}. 100% automated delivery to your line in 60s.`;
+
+  return {
+    title: storeTitle,
+    description: storeDesc,
+    applicationName: agent.store_name,
+    openGraph: {
+      title: storeTitle,
+      description: storeDesc,
+      siteName: agent.store_name,
+      type: "website",
+    },
+    twitter: {
+      card: "summary",
+      title: storeTitle,
+      description: storeDesc,
+    },
+  };
+}
 
 export default async function DisguisedAgentStorePage({
   params,

@@ -330,8 +330,9 @@ export default function StorefrontClientView({
 
     setCheckoutLoading(true);
 
-    const random8 = Math.floor(10000000 + Math.random() * 90000000);
-    const reference = `BMGH-AG-${random8}`;
+    const storePrefix = agent.store_slug.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 4) || "DATA";
+    const random8 = Math.floor(10000000 + Math.random() * 90000000).toString();
+    const reference = `${storePrefix}-${random8}`;
     const amountInPesewas = Math.round(checkoutProduct.price * 100);
 
     try {
@@ -511,7 +512,7 @@ export default function StorefrontClientView({
             <form onSubmit={handleTrackOrder} className="flex gap-2">
               <input
                 type="text"
-                placeholder="Enter 8-digit Reference (e.g. BMGH-AG-12345678) or Phone Number"
+                placeholder={`Enter Reference (e.g. ${agent.store_slug.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 4) || "ORD"}-12345678) or Phone Number`}
                 value={trackingQuery}
                 onChange={(e) => setTrackingQuery(e.target.value)}
                 className="flex-1 px-4 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-xs sm:text-sm font-mono text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
