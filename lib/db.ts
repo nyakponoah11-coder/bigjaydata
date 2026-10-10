@@ -513,7 +513,12 @@ if (!globalStore.__bmgh_messages) globalStore.__bmgh_messages = diskData?.messag
 if (!globalStore.__bmgh_vouchers) globalStore.__bmgh_vouchers = diskData?.vouchers || [];
 if (!globalStore.__bmgh_voucher_claims) globalStore.__bmgh_voucher_claims = diskData?.voucher_claims || [];
 if (!globalStore.__bmgh_agent_config) {
-  globalStore.__bmgh_agent_config = diskData?.agent_config || { is_enabled: true, registration_fee: 0 };
+  globalStore.__bmgh_agent_config = diskData?.agent_config || { 
+    is_enabled: true, 
+    developer_master_enabled: true,
+    admin_enabled: true,
+    registration_fee: 0 
+  };
 }
 if (!globalStore.__bmgh_agent_base_products) {
   globalStore.__bmgh_agent_base_products = diskData?.agent_base_products || initialAgentBaseProducts;
@@ -1641,8 +1646,9 @@ export const db = {
 
     // If caller specifically set is_enabled directly without specifying master:
     if (config.developer_master_enabled === undefined && config.admin_enabled === undefined && config.is_enabled !== undefined) {
-      // Default direct caller to admin_enabled, respecting master lock
+      // Default direct caller to admin_enabled AND developer_master_enabled, respecting master lock
       admin_enabled = Boolean(config.is_enabled);
+      developer_master_enabled = true;
     }
 
     const is_enabled = Boolean(developer_master_enabled && admin_enabled);
