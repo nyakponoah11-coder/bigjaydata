@@ -1837,6 +1837,10 @@ export const db = {
       try {
         await supabaseAdmin.from("settings").upsert({
           id: "agents_registry_config",
+          store_name: "AgentsRegistry",
+          support_phone: "+233551234567",
+          whatsapp_number: "233551234567",
+          email: "support@bundlemartgh.com",
           announcement_text: JSON.stringify(globalStore.__bmgh_agents),
         });
       } catch (err) {
@@ -1850,6 +1854,33 @@ export const db = {
   // AGENT CUSTOM PRODUCTS
   async getAgentProducts(agentId: string): Promise<AgentCustomProduct[]> {
     if (isSupabaseConfigured && supabaseAdmin) {
+      // 1. Try direct agent_products table if it exists
+      try {
+        const { data: directProds, error: dpErr } = await supabaseAdmin
+          .from("agent_products")
+          .select("*")
+          .eq("agent_id", agentId);
+        if (!dpErr && Array.isArray(directProds) && directProds.length > 0) {
+          const mapped: AgentCustomProduct[] = directProds.map((dp: any) => ({
+            id: dp.id,
+            agent_id: dp.agent_id,
+            base_product_id: dp.base_product_id,
+            network: dp.network,
+            size: dp.size,
+            base_price: Number(dp.base_price),
+            selling_price: Number(dp.selling_price),
+            is_active: dp.is_active !== false,
+          }));
+          if (!globalStore.__bmgh_agent_products) globalStore.__bmgh_agent_products = [];
+          globalStore.__bmgh_agent_products = [
+            ...globalStore.__bmgh_agent_products.filter((p) => p.agent_id !== agentId),
+            ...mapped,
+          ];
+          return mapped;
+        }
+      } catch {}
+
+      // 2. Fallback to settings config row
       try {
         const { data } = await supabaseAdmin
           .from("settings")
@@ -1909,6 +1940,10 @@ export const db = {
         try {
           await supabaseAdmin.from("settings").upsert({
             id: "agent_products_registry_config",
+            store_name: "AgentProductsRegistry",
+            support_phone: "+233551234567",
+            whatsapp_number: "233551234567",
+            email: "support@bundlemartgh.com",
             announcement_text: JSON.stringify(globalStore.__bmgh_agent_products),
           });
         } catch (err) {}
@@ -1953,9 +1988,28 @@ export const db = {
     saveToDisk();
 
     if (isSupabaseConfigured && supabaseAdmin) {
+      // 1. Try direct agent_products table
+      try {
+        await supabaseAdmin.from("agent_products").upsert({
+          id: item.id,
+          agent_id: agentId,
+          base_product_id: baseProductId,
+          network: item.network,
+          size: item.size,
+          base_price: item.base_price,
+          selling_price: item.selling_price,
+          is_active: item.is_active,
+        });
+      } catch {}
+
+      // 2. Also save to settings config row with required columns
       try {
         await supabaseAdmin.from("settings").upsert({
           id: "agent_products_registry_config",
+          store_name: "AgentProductsRegistry",
+          support_phone: "+233551234567",
+          whatsapp_number: "233551234567",
+          email: "support@bundlemartgh.com",
           announcement_text: JSON.stringify(globalStore.__bmgh_agent_products),
         });
       } catch (err) {
@@ -2014,10 +2068,18 @@ export const db = {
         await Promise.all([
           supabaseAdmin.from("settings").upsert({
             id: "agent_orders_registry_config",
+            store_name: "AgentOrdersRegistry",
+            support_phone: "+233551234567",
+            whatsapp_number: "233551234567",
+            email: "support@bundlemartgh.com",
             announcement_text: JSON.stringify(globalStore.__bmgh_agent_orders),
           }),
           supabaseAdmin.from("settings").upsert({
             id: "agents_registry_config",
+            store_name: "AgentsRegistry",
+            support_phone: "+233551234567",
+            whatsapp_number: "233551234567",
+            email: "support@bundlemartgh.com",
             announcement_text: JSON.stringify(globalStore.__bmgh_agents),
           }),
         ]);
@@ -2040,6 +2102,10 @@ export const db = {
       try {
         await supabaseAdmin.from("settings").upsert({
           id: "agent_orders_registry_config",
+          store_name: "AgentOrdersRegistry",
+          support_phone: "+233551234567",
+          whatsapp_number: "233551234567",
+          email: "support@bundlemartgh.com",
           announcement_text: JSON.stringify(globalStore.__bmgh_agent_orders),
         });
       } catch (err) {}

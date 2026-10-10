@@ -263,6 +263,41 @@ export async function sendDataMartDelivery(params: DataMartDeliveryParams): Prom
       }
     }
 
+    // If auth failed on user-provided key, immediately attempt with ACTIVE_DATAMART_KEY fallback
+    if (
+      !response.ok &&
+      apiKey !== ACTIVE_DATAMART_KEY &&
+      (response.status === 401 ||
+        response.status === 403 ||
+        responseData?.message?.toLowerCase().includes("key") ||
+        responseData?.message?.toLowerCase().includes("unauthorized"))
+    ) {
+      console.log(`[DataMart API] Key failed with status ${response.status}. Retrying with active system key fallback...`);
+      try {
+        const fbHeaders = {
+          ...baseHeaders,
+          "X-API-Key": ACTIVE_DATAMART_KEY,
+          "Authorization": `Bearer ${ACTIVE_DATAMART_KEY}`,
+          "X-Idempotency-Key": crypto.randomUUID(),
+        };
+        const fbResponse = await fetch(purchaseUrl, {
+          method: "POST",
+          headers: fbHeaders,
+          body: JSON.stringify(requestBody),
+        });
+        const fbText = await fbResponse.text();
+        let fbData: any = null;
+        try { fbData = JSON.parse(fbText); } catch { fbData = { text: fbText }; }
+        if (fbResponse.ok && (fbData?.status === "success" || fbData?.data?.purchaseId)) {
+          response = fbResponse;
+          responseText = fbText;
+          responseData = fbData;
+        }
+      } catch (fbErr) {
+        console.warn("[DataMart API] System key fallback error:", fbErr);
+      }
+    }
+
     // If rejected due to string capacity, attempt with numeric capacity
     if (!response.ok && (responseData?.message?.toLowerCase().includes("capacity") || response.status === 400)) {
       const numCapacity = Number(capacityGb);

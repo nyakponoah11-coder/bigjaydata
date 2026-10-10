@@ -24,15 +24,33 @@ export async function GET(req: Request) {
           ? `https://${config.custom_domain.replace(/^https?:\/\//i, "").replace(/\/+$/, "")}`
           : process.env.NEXT_PUBLIC_BASE_URL || "https://www.bundlemartgh.com";
         const target = `${baseOrigin.replace(/\/+$/, "")}/s/${agent.store_slug}`;
-        const res = await fetch(`https://tinyurl.com/api-create.php?url=${encodeURIComponent(target)}`, {
-          signal: AbortSignal.timeout(3000),
-        });
-        if (res.ok) {
-          const text = await res.text();
-          if (text && text.startsWith("http")) {
-            agent.cloaked_url = text.trim();
-            await db.updateAgent(agent.id, { cloaked_url: agent.cloaked_url });
+
+        let shortLink = "";
+        try {
+          const res = await fetch(`https://tinyurl.com/api-create.php?url=${encodeURIComponent(target)}`, {
+            signal: AbortSignal.timeout(4000),
+          });
+          if (res.ok) {
+            const text = await res.text();
+            if (text && text.startsWith("http")) shortLink = text.trim();
           }
+        } catch {}
+
+        if (!shortLink) {
+          try {
+            const res2 = await fetch(`https://is.gd/create.php?format=simple&url=${encodeURIComponent(target)}`, {
+              signal: AbortSignal.timeout(4000),
+            });
+            if (res2.ok) {
+              const text2 = await res2.text();
+              if (text2 && text2.startsWith("http")) shortLink = text2.trim();
+            }
+          } catch {}
+        }
+
+        if (shortLink) {
+          agent.cloaked_url = shortLink;
+          await db.updateAgent(agent.id, { cloaked_url: shortLink });
         }
       } catch {}
     }

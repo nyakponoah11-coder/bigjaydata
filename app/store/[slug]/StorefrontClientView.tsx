@@ -62,8 +62,40 @@ export default function StorefrontClientView({
   paystackPublicKey,
 }: Props) {
   const router = useRouter();
+  const [productList, setProductList] = useState<ProductItem[]>(products);
   const [selectedNetwork, setSelectedNetwork] = useState<string>("mtn");
   const [checkoutProduct, setCheckoutProduct] = useState<ProductItem | null>(null);
+
+  // Auto-refresh product prices from agent API so changes in agent dashboard reflect instantly
+  useEffect(() => {
+    let isMounted = true;
+    const fetchFreshProducts = async () => {
+      try {
+        const res = await fetch(`/api/agent/products?agent_id=${agent.id}`, { cache: "no-store" });
+        const data = await res.json();
+        if (data.success && Array.isArray(data.products) && isMounted) {
+          const mapped: ProductItem[] = data.products
+            .filter((p: any) => p.is_active !== false)
+            .map((p: any) => ({
+              id: p.id,
+              network: p.network,
+              size: p.size,
+              price: Number(p.selling_price),
+            }));
+          if (mapped.length > 0) {
+            setProductList(mapped);
+          }
+        }
+      } catch (err) {}
+    };
+
+    fetchFreshProducts();
+    const interval = setInterval(fetchFreshProducts, 15000);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, [agent.id]);
 
   // Checkout modal states
   const [recipientPhone, setRecipientPhone] = useState("");
@@ -274,7 +306,7 @@ export default function StorefrontClientView({
     NETWORK_CONFIGS.find((n) => n.id === selectedNetwork.toLowerCase()) || NETWORK_CONFIGS[0];
 
   // Filter products by selected network
-  const networkProducts = products.filter(
+  const networkProducts = productList.filter(
     (p) => p.network.toLowerCase() === selectedNetwork.toLowerCase()
   );
 
@@ -318,22 +350,50 @@ export default function StorefrontClientView({
 
     if (!checkoutProduct) return;
 
-    if (!paystackPublicKey || paystackPublicKey.includes("sample") || paystackPublicKey.includes("placeholder")) {
-      setCheckoutError("Online payment gateway is undergoing configuration. Please contact store support.");
-      return;
-    }
-
-    if (typeof window === "undefined" || !window.PaystackPop) {
-      setCheckoutError("Payment gateway failed to load. Please disable ad-blockers and refresh the page.");
-      return;
-    }
-
     setCheckoutLoading(true);
 
     const storePrefix = agent.store_slug.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 4) || "DATA";
     const random8 = Math.floor(10000000 + Math.random() * 90000000).toString();
     const reference = `${storePrefix}-${random8}`;
     const amountInPesewas = Math.round(checkoutProduct.price * 100);
+
+    const isMockGateway =
+      !paystackPublicKey ||
+      paystackPublicKey.includes("sample") ||
+      paystackPublicKey.includes("placeholder") ||
+      typeof window === "undefined" ||
+      !window.PaystackPop;
+
+    // Automatic fallback checkout when Paystack is in testing/unconfigured mode
+    if (isMockGateway) {
+      try {
+        const simRef = `sim_${Date.now()}`;
+        const createRes = await fetch(`/api/store/${agent.store_slug}/checkout`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            reference,
+            network: checkoutProduct.network,
+            package_size: checkoutProduct.size,
+            phone: clean,
+            amount: checkoutProduct.price,
+            paystack_ref: simRef,
+          }),
+        });
+
+        const data = await createRes.json();
+        if (!createRes.ok || !data.success) {
+          throw new Error(data.message || "Failed to finalize order");
+        }
+
+        router.push(`/receipt/${reference}`);
+        return;
+      } catch (simErr: any) {
+        setCheckoutError(simErr.message || "Checkout failed");
+        setCheckoutLoading(false);
+        return;
+      }
+    }
 
     try {
       const handler = window.PaystackPop.setup({

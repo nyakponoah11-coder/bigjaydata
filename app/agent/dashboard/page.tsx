@@ -221,21 +221,39 @@ export default function AgentDashboardPage() {
     try {
       setShortening(true);
       setError("");
-      const res = await fetch(`https://tinyurl.com/api-create.php?url=${encodeURIComponent(targetToShorten)}`);
-      if (res.ok) {
-        const text = await res.text();
-        if (text && text.startsWith("http")) {
-          const short = text.trim();
-          setTinyUrl(short);
-          if (agent && agent.id) {
-            fetch("/api/agent/profile", {
-              method: "PUT",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ agent_id: agent.id, cloaked_url: short }),
-            }).catch(() => {});
-          }
-          return short;
+
+      let short = "";
+
+      // 1. TinyURL
+      try {
+        const res = await fetch(`https://tinyurl.com/api-create.php?url=${encodeURIComponent(targetToShorten)}`);
+        if (res.ok) {
+          const text = await res.text();
+          if (text && text.startsWith("http")) short = text.trim();
         }
+      } catch {}
+
+      // 2. Fallback to is.gd
+      if (!short) {
+        try {
+          const res2 = await fetch(`https://is.gd/create.php?format=simple&url=${encodeURIComponent(targetToShorten)}`);
+          if (res2.ok) {
+            const text2 = await res2.text();
+            if (text2 && text2.startsWith("http")) short = text2.trim();
+          }
+        } catch {}
+      }
+
+      if (short) {
+        setTinyUrl(short);
+        if (agent && agent.id) {
+          fetch("/api/agent/profile", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ agent_id: agent.id, cloaked_url: short }),
+          }).catch(() => {});
+        }
+        return short;
       }
     } catch {
       // Fallback
@@ -535,57 +553,17 @@ export default function AgentDashboardPage() {
               </div>
               <h2 className="text-lg font-black text-white">Share Your Store with Customers</h2>
 
-              {/* Link Mode Selector */}
+              {/* 100% White-Labeled Link Badge */}
               <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setLinkMode("cloaked")}
-                  className={`px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
-                    linkMode === "cloaked"
-                      ? "bg-cyan-400 text-slate-950 font-black shadow-sm"
-                      : "bg-slate-800 text-slate-400 hover:text-white"
-                  }`}
-                >
-                  <ShieldCheck className="w-3.5 h-3.5" />
-                  <span>Cloaked Link (bundlemartgh.com Hidden)</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setLinkMode("short")}
-                  className={`px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
-                    linkMode === "short"
-                      ? "bg-emerald-500 text-slate-950 shadow-sm"
-                      : "bg-slate-800 text-slate-400 hover:text-white"
-                  }`}
-                >
-                  <Sparkles className="w-3 h-3" />
-                  <span>Direct Short (/s/)</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setLinkMode("masked")}
-                  className={`px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
-                    linkMode === "masked"
-                      ? "bg-emerald-500 text-slate-950 shadow-sm"
-                      : "bg-slate-800 text-slate-400 hover:text-white"
-                  }`}
-                >
-                  <Lock className="w-3 h-3" />
-                  <span>Encrypted (/d/)</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setLinkMode("standard")}
-                  className={`px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
-                    linkMode === "standard"
-                      ? "bg-emerald-500 text-slate-950 shadow-sm"
-                      : "bg-slate-800 text-slate-400 hover:text-white"
-                  }`}
-                >
-                  <Globe className="w-3 h-3" />
-                  <span>Full Store (/store/)</span>
-                </button>
+                <span className="px-3 py-1.5 rounded-lg text-xs font-black bg-emerald-400 text-slate-950 flex items-center gap-1.5 shadow-sm">
+                  <ShieldCheck className="w-4 h-4 text-slate-950" />
+                  <span>100% White-Labeled (bundlemartgh.com Hidden)</span>
+                </span>
+                <span className="text-[11px] text-emerald-300 font-medium">
+                  Zero setup needed • Ready to share with customers
+                </span>
               </div>
+
 
               {/* Active URL display */}
               <div className="space-y-1.5">
