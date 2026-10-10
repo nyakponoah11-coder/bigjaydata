@@ -66,6 +66,13 @@ export default function StorefrontClientView({
   const [selectedNetwork, setSelectedNetwork] = useState<string>("mtn");
   const [checkoutProduct, setCheckoutProduct] = useState<ProductItem | null>(null);
 
+  // Keep productList synced when SSR products update
+  useEffect(() => {
+    if (products && products.length > 0) {
+      setProductList(products);
+    }
+  }, [products]);
+
   // Auto-refresh product prices from agent API so changes in agent dashboard reflect instantly
   useEffect(() => {
     let isMounted = true;
@@ -337,6 +344,40 @@ export default function StorefrontClientView({
     }
   };
 
+  // Finalize order after successful payment or simulated mock checkout
+  const handleFinalizeOrder = async (
+    orderRef: string,
+    paystackRef: string,
+    phone: string,
+    product: ProductItem
+  ) => {
+    try {
+      setCheckoutLoading(true);
+      const createRes = await fetch(`/api/store/${agent.store_slug}/checkout`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          reference: orderRef,
+          network: product.network,
+          package_size: product.size,
+          phone: phone,
+          amount: product.price,
+          paystack_ref: paystackRef,
+        }),
+      });
+
+      const data = await createRes.json();
+      if (!createRes.ok || !data.success) {
+        throw new Error(data.message || "Failed to finalize order");
+      }
+
+      router.push(`/receipt/${orderRef}`);
+    } catch (err: any) {
+      setCheckoutError(err.message || "Order finalized. Please check your receipt.");
+      setCheckoutLoading(false);
+    }
+  };
+
   // Launch Paystack Checkout
   const handleProceedPayment = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -355,7 +396,7 @@ export default function StorefrontClientView({
     const storePrefix = agent.store_slug.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 4) || "DATA";
     const random8 = Math.floor(10000000 + Math.random() * 90000000).toString();
     const reference = `${storePrefix}-${random8}`;
-    const amountInPesewas = Math.round(checkoutProduct.price * 100);
+    const amountInPesewas = Math.max(1, Math.round(checkoutProduct.price * 100));
 
     const isMockGateway =
       !paystackPublicKey ||
@@ -366,36 +407,14 @@ export default function StorefrontClientView({
 
     // Automatic fallback checkout when Paystack is in testing/unconfigured mode
     if (isMockGateway) {
-      try {
-        const simRef = `sim_${Date.now()}`;
-        const createRes = await fetch(`/api/store/${agent.store_slug}/checkout`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            reference,
-            network: checkoutProduct.network,
-            package_size: checkoutProduct.size,
-            phone: clean,
-            amount: checkoutProduct.price,
-            paystack_ref: simRef,
-          }),
-        });
-
-        const data = await createRes.json();
-        if (!createRes.ok || !data.success) {
-          throw new Error(data.message || "Failed to finalize order");
-        }
-
-        router.push(`/receipt/${reference}`);
-        return;
-      } catch (simErr: any) {
-        setCheckoutError(simErr.message || "Checkout failed");
-        setCheckoutLoading(false);
-        return;
-      }
+      const simRef = `sim_${Date.now()}`;
+      await handleFinalizeOrder(reference, simRef, clean, checkoutProduct);
+      return;
     }
 
     try {
+      const activeProduct = checkoutProduct;
+      // Plain synchronous functions required by Paystack Inline v1/v2 validator
       const handler = window.PaystackPop.setup({
         key: paystackPublicKey,
         email: `${clean}@customer.${agent.store_slug}.com`,
@@ -405,46 +424,23 @@ export default function StorefrontClientView({
         metadata: {
           custom_fields: [
             { display_name: "Phone Number", variable_name: "phone_number", value: clean },
-            { display_name: "Network", variable_name: "network", value: checkoutProduct.network.toUpperCase() },
-            { display_name: "Package", variable_name: "package", value: checkoutProduct.size },
+            { display_name: "Network", variable_name: "network", value: activeProduct.network.toUpperCase() },
+            { display_name: "Package", variable_name: "package", value: activeProduct.size },
             { display_name: "Store Slug", variable_name: "store_slug", value: agent.store_slug },
           ],
         },
-        callback: async (response: any) => {
+        callback: function (response: any) {
           const finalPaystackRef = response?.reference || response?.trxref || reference;
-          try {
-            const createRes = await fetch(`/api/store/${agent.store_slug}/checkout`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                reference,
-                network: checkoutProduct.network,
-                package_size: checkoutProduct.size,
-                phone: clean,
-                amount: checkoutProduct.price,
-                paystack_ref: finalPaystackRef,
-              }),
-            });
-
-            const data = await createRes.json();
-            if (!createRes.ok || !data.success) {
-              throw new Error(data.message || "Failed to finalize order");
-            }
-
-            router.push(`/receipt/${reference}`);
-          } catch (err: any) {
-            setCheckoutError(err.message || "Order finalized. Please check your receipt.");
-          } finally {
-            setCheckoutLoading(false);
-          }
+          handleFinalizeOrder(reference, finalPaystackRef, clean, activeProduct);
         },
-        onClose: () => {
+        onClose: function () {
           setCheckoutLoading(false);
         },
       });
 
       handler.openIframe();
     } catch (err: any) {
+      console.error("Paystack launch error:", err);
       setCheckoutError(err.message || "Failed to initialize payment gateway");
       setCheckoutLoading(false);
     }

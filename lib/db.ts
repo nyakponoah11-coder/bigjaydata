@@ -331,7 +331,7 @@ function loadFromDisk(): any {
 const diskData = loadFromDisk();
 
 const initialAgentBaseProducts: AgentBaseProduct[] = [
-  { id: "abp-mtn-1", network: "mtn", size: "1GB", base_price: 4.5, suggested_price: 5.5, is_active: true, created_at: new Date().toISOString() },
+  { id: "abp-mtn-1", network: "mtn", size: "1GB", base_price: 0.02, suggested_price: 0.05, is_active: true, created_at: new Date().toISOString() },
   { id: "abp-mtn-2", network: "mtn", size: "2GB", base_price: 9.0, suggested_price: 11.0, is_active: true, created_at: new Date().toISOString() },
   { id: "abp-mtn-3", network: "mtn", size: "3GB", base_price: 13.5, suggested_price: 16.5, is_active: true, created_at: new Date().toISOString() },
   { id: "abp-mtn-5", network: "mtn", size: "5GB", base_price: 22.0, suggested_price: 26.5, is_active: true, created_at: new Date().toISOString() },
@@ -1564,6 +1564,27 @@ export const db = {
 
   async getAgentBaseProducts(): Promise<AgentBaseProduct[]> {
     if (isSupabaseConfigured && supabaseAdmin) {
+      // 1. Try direct agent_base_products table
+      try {
+        const { data: directBase, error: dbErr } = await supabaseAdmin
+          .from("agent_base_products")
+          .select("*");
+        if (!dbErr && Array.isArray(directBase) && directBase.length > 0) {
+          const mapped: AgentBaseProduct[] = directBase.map((b: any) => ({
+            id: b.id,
+            network: b.network,
+            size: b.size,
+            base_price: Number(b.base_price),
+            suggested_price: b.suggested_price ? Number(b.suggested_price) : Number(b.base_price) + 1.0,
+            is_active: b.is_active !== false,
+            created_at: b.created_at || new Date().toISOString(),
+          }));
+          globalStore.__bmgh_agent_base_products = mapped;
+          return mapped;
+        }
+      } catch {}
+
+      // 2. Try settings row
       try {
         const { data } = await supabaseAdmin
           .from("settings")
@@ -1605,8 +1626,23 @@ export const db = {
 
     if (isSupabaseConfigured && supabaseAdmin) {
       try {
+        await supabaseAdmin.from("agent_base_products").upsert({
+          id: newProduct.id,
+          network: newProduct.network,
+          size: newProduct.size,
+          base_price: newProduct.base_price,
+          suggested_price: newProduct.suggested_price,
+          is_active: newProduct.is_active,
+        });
+      } catch {}
+
+      try {
         await supabaseAdmin.from("settings").upsert({
           id: "agent_base_products_config",
+          store_name: "AgentBaseProductsConfig",
+          support_phone: "+233551234567",
+          whatsapp_number: "233551234567",
+          email: "support@bundlemartgh.com",
           announcement_text: JSON.stringify(list),
         });
       } catch (err) {
@@ -1627,8 +1663,23 @@ export const db = {
 
     if (isSupabaseConfigured && supabaseAdmin) {
       try {
+        await supabaseAdmin.from("agent_base_products").upsert({
+          id: list[idx].id,
+          network: list[idx].network,
+          size: list[idx].size,
+          base_price: list[idx].base_price,
+          suggested_price: list[idx].suggested_price,
+          is_active: list[idx].is_active,
+        });
+      } catch {}
+
+      try {
         await supabaseAdmin.from("settings").upsert({
           id: "agent_base_products_config",
+          store_name: "AgentBaseProductsConfig",
+          support_phone: "+233551234567",
+          whatsapp_number: "233551234567",
+          email: "support@bundlemartgh.com",
           announcement_text: JSON.stringify(list),
         });
       } catch (err) {
@@ -1636,7 +1687,7 @@ export const db = {
       }
     }
 
-    // Also update any custom agent products whose base price changed
+    // Also update base price in any custom agent products
     if (updates.base_price !== undefined) {
       const newBasePrice = Number(updates.base_price);
       if (globalStore.__bmgh_agent_products && globalStore.__bmgh_agent_products.length > 0) {
@@ -1644,9 +1695,6 @@ export const db = {
         globalStore.__bmgh_agent_products.forEach((ap) => {
           if (ap.base_product_id === id) {
             ap.base_price = newBasePrice;
-            if (ap.selling_price < newBasePrice) {
-              ap.selling_price = newBasePrice + 1.0;
-            }
             changed = true;
           }
         });
@@ -1656,6 +1704,10 @@ export const db = {
             try {
               await supabaseAdmin.from("settings").upsert({
                 id: "agent_products_registry_config",
+                store_name: "AgentProductsRegistry",
+                support_phone: "+233551234567",
+                whatsapp_number: "233551234567",
+                email: "support@bundlemartgh.com",
                 announcement_text: JSON.stringify(globalStore.__bmgh_agent_products),
               });
             } catch {}
@@ -1926,9 +1978,6 @@ export const db = {
       } else {
         if (exists.base_price !== bp.base_price) {
           exists.base_price = bp.base_price;
-          if (exists.selling_price < bp.base_price) {
-            exists.selling_price = bp.suggested_price || bp.base_price + 1.0;
-          }
           changed = true;
         }
       }
@@ -1962,11 +2011,20 @@ export const db = {
     // 1. Ensure latest catalog for this agent is loaded
     await this.getAgentProducts(agentId);
 
+    const baseProducts = await this.getAgentBaseProducts();
+    const bp = baseProducts.find((b) => b.id === baseProductId);
+
     const list = globalStore.__bmgh_agent_products || [];
     let item = list.find((p) => p.agent_id === agentId && p.base_product_id === baseProductId);
+    const numPrice = Number(sellingPrice);
+    const validSellingPrice =
+      !isNaN(numPrice) && numPrice > 0
+        ? numPrice
+        : bp
+        ? bp.suggested_price || bp.base_price + 1.0
+        : 5.0;
+
     if (!item) {
-      const baseProducts = await this.getAgentBaseProducts();
-      const bp = baseProducts.find((b) => b.id === baseProductId);
       if (!bp) return null;
       item = {
         id: "acp-" + crypto.randomUUID().slice(0, 8),
@@ -1975,12 +2033,15 @@ export const db = {
         network: bp.network,
         size: bp.size,
         base_price: bp.base_price,
-        selling_price: Math.max(bp.base_price, Number(sellingPrice)),
+        selling_price: validSellingPrice,
         is_active: isActive,
       };
       list.push(item);
     } else {
-      item.selling_price = Math.max(item.base_price, Number(sellingPrice));
+      if (bp) {
+        item.base_price = bp.base_price;
+      }
+      item.selling_price = validSellingPrice;
       item.is_active = isActive;
     }
 

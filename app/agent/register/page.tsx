@@ -144,10 +144,10 @@ export default function AgentRegisterPage() {
             { display_name: "Store Name", variable_name: "store_name", value: storeName },
           ],
         },
-        callback: (response: any) => {
+        callback: function (response: any) {
           submitRegistration(response.reference || response.trxref);
         },
-        onClose: () => {
+        onClose: function () {
           setLoading(false);
         },
       });

@@ -225,11 +225,11 @@ export default function CheckoutModal({ product, isOpen, onClose, settings }: Pr
             { display_name: "Package", variable_name: "package", value: product.size },
           ],
         },
-        callback: (response: any) => {
+        callback: function (response: any) {
           const finalPaystackRef = response?.reference || response?.trxref || reference;
           triggerDataMartAndFinalize(finalPaystackRef);
         },
-        onClose: () => {
+        onClose: function () {
           setLoading(false);
         },
       });
