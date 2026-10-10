@@ -143,6 +143,8 @@ export interface VoucherClaim {
 // ================= AGENT STORE INTERFACES =================
 export interface AgentStoreConfig {
   is_enabled: boolean;
+  developer_master_enabled?: boolean;
+  admin_enabled?: boolean;
   registration_fee: number;
 }
 
@@ -1432,23 +1434,81 @@ export const db = {
           .eq("id", "agent_store_config")
           .maybeSingle();
         if (data && data.store_name) {
-          const is_enabled = data.store_name === "true" || data.store_name === "1";
+          let developer_master_enabled = false;
+          let admin_enabled = true;
+          try {
+            if (data.store_name.startsWith("{")) {
+              const parsed = JSON.parse(data.store_name);
+              developer_master_enabled = parsed.developer_master_enabled ?? false;
+              admin_enabled = parsed.admin_enabled ?? true;
+            } else {
+              developer_master_enabled = data.store_name === "true" || data.store_name === "1";
+              admin_enabled = developer_master_enabled;
+            }
+          } catch {
+            developer_master_enabled = data.store_name === "true";
+            admin_enabled = developer_master_enabled;
+          }
+
+          const is_enabled = Boolean(developer_master_enabled && admin_enabled);
           const registration_fee = Number(data.announcement_text) || 0;
-          globalStore.__bmgh_agent_config = { is_enabled, registration_fee };
+          globalStore.__bmgh_agent_config = {
+            is_enabled,
+            developer_master_enabled,
+            admin_enabled,
+            registration_fee,
+          };
           return globalStore.__bmgh_agent_config;
         }
       } catch (err) {
         // Fallback to local
       }
     }
-    return globalStore.__bmgh_agent_config || { is_enabled: false, registration_fee: 0 };
+    const current = globalStore.__bmgh_agent_config;
+    if (current) {
+      const devMaster = current.developer_master_enabled ?? false;
+      const adminEn = current.admin_enabled ?? true;
+      current.is_enabled = Boolean(devMaster && adminEn);
+      return current;
+    }
+    return {
+      is_enabled: false,
+      developer_master_enabled: false,
+      admin_enabled: true,
+      registration_fee: 0,
+    };
   },
 
   async updateAgentStoreConfig(config: Partial<AgentStoreConfig>): Promise<AgentStoreConfig> {
-    const current = globalStore.__bmgh_agent_config || { is_enabled: false, registration_fee: 0 };
+    const current = await this.getAgentStoreConfig();
+
+    let developer_master_enabled =
+      config.developer_master_enabled !== undefined
+        ? Boolean(config.developer_master_enabled)
+        : current.developer_master_enabled ?? false;
+
+    let admin_enabled =
+      config.admin_enabled !== undefined
+        ? Boolean(config.admin_enabled)
+        : current.admin_enabled ?? true;
+
+    // If caller specifically set is_enabled directly without specifying master:
+    if (config.developer_master_enabled === undefined && config.admin_enabled === undefined && config.is_enabled !== undefined) {
+      // Default direct caller to admin_enabled, respecting master lock
+      admin_enabled = Boolean(config.is_enabled);
+    }
+
+    const is_enabled = Boolean(developer_master_enabled && admin_enabled);
+    const registration_fee =
+      config.registration_fee !== undefined
+        ? Number(config.registration_fee)
+        : current.registration_fee || 0;
+
     globalStore.__bmgh_agent_config = {
-      ...current,
-      ...config,
+      is_enabled,
+      developer_master_enabled,
+      admin_enabled,
+      registration_fee,
     };
     saveToDisk();
 
@@ -1456,8 +1516,8 @@ export const db = {
       try {
         await supabaseAdmin.from("settings").upsert({
           id: "agent_store_config",
-          store_name: globalStore.__bmgh_agent_config.is_enabled ? "true" : "false",
-          announcement_text: String(globalStore.__bmgh_agent_config.registration_fee || 0),
+          store_name: JSON.stringify({ developer_master_enabled, admin_enabled }),
+          announcement_text: String(registration_fee),
         });
       } catch (err) {
         console.warn("Agent store config Supabase save error:", err);

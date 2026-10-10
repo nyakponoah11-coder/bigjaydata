@@ -37,13 +37,15 @@ export async function POST(req: Request) {
       );
     }
 
-    const updated = await db.updateAgentStoreConfig({ is_enabled: Boolean(is_enabled) });
+    const targetMaster = Boolean(is_enabled);
+    const updated = await db.updateAgentStoreConfig({ developer_master_enabled: targetMaster });
     return NextResponse.json({
       success: true,
       is_enabled: updated.is_enabled,
-      message: updated.is_enabled
-        ? "Agent Store is now ONLINE and fully operational."
-        : "Agent Store is now OFFLINE and showing 'Coming Soon' across the website.",
+      developer_master_enabled: updated.developer_master_enabled,
+      message: targetMaster
+        ? "Developer Master Key: Agent Store is now UNLOCKED and active."
+        : "Developer Master Key: Agent Store is now LOCKED. Admin cannot activate until unlocked here.",
     });
   } catch (error: any) {
     return NextResponse.json({ success: false, message: error?.message }, { status: 500 });

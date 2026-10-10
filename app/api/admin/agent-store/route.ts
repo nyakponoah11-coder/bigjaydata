@@ -35,8 +35,20 @@ export async function POST(req: Request) {
 
     if (action === "update_config") {
       const { is_enabled, registration_fee } = body;
+      const currentConfig = await db.getAgentStoreConfig();
+
+      if (is_enabled === true && currentConfig.developer_master_enabled === false) {
+        return NextResponse.json(
+          {
+            success: false,
+            message: "Master Key Locked: The Agent Store is locked by the Developer Master Key. The admin cannot enable it until unlocked by the developer.",
+          },
+          { status: 403 }
+        );
+      }
+
       const updatedConfig = await db.updateAgentStoreConfig({
-        ...(is_enabled !== undefined ? { is_enabled: Boolean(is_enabled) } : {}),
+        ...(is_enabled !== undefined ? { admin_enabled: Boolean(is_enabled) } : {}),
         ...(registration_fee !== undefined ? { registration_fee: Number(registration_fee) } : {}),
       });
       return NextResponse.json({ success: true, config: updatedConfig });

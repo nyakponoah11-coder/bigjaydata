@@ -20,11 +20,17 @@ import {
   ShieldCheck,
   TrendingUp,
   Clock,
+  Lock,
 } from "lucide-react";
 
 export default function AdminAgentStorePage() {
   const [loading, setLoading] = useState(true);
-  const [config, setConfig] = useState({ is_enabled: true, registration_fee: 0 });
+  const [config, setConfig] = useState<{
+    is_enabled: boolean;
+    registration_fee: number;
+    developer_master_enabled?: boolean;
+    admin_enabled?: boolean;
+  }>({ is_enabled: true, registration_fee: 0 });
   const [baseProducts, setBaseProducts] = useState<any[]>([]);
   const [agents, setAgents] = useState<any[]>([]);
   const [withdrawals, setWithdrawals] = useState<any[]>([]);
@@ -76,6 +82,7 @@ export default function AdminAgentStorePage() {
   const handleToggleSystem = async () => {
     try {
       setUpdatingConfig(true);
+      setError("");
       const nextState = !config.is_enabled;
       const res = await fetch("/api/admin/agent-store", {
         method: "POST",
@@ -83,13 +90,14 @@ export default function AdminAgentStorePage() {
         body: JSON.stringify({ action: "update_config", is_enabled: nextState }),
       });
       const data = await res.json();
-      if (data.success) {
-        setConfig(data.config);
-        setNotice(`Agent Store system turned ${nextState ? "ON" : "OFF"}`);
-        setTimeout(() => setNotice(""), 3000);
+      if (!res.ok || !data.success) {
+        throw new Error(data.message || "Failed to update status");
       }
-    } catch (err) {
-      setError("Failed to update status");
+      setConfig(data.config);
+      setNotice(`Agent Store system turned ${nextState ? "ON" : "OFF"}`);
+      setTimeout(() => setNotice(""), 3000);
+    } catch (err: any) {
+      setError(err.message || "Failed to update status");
     } finally {
       setUpdatingConfig(false);
     }
@@ -253,7 +261,16 @@ export default function AdminAgentStorePage() {
         {/* Master Controls: System ON/OFF & Registration Fee */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
           {/* System ON/OFF Card */}
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl relative overflow-hidden">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl relative overflow-hidden space-y-4">
+            {config.developer_master_enabled === false && (
+              <div className="p-3.5 rounded-2xl bg-amber-950/70 border border-amber-600/40 text-amber-300 text-xs flex items-center gap-2.5">
+                <Lock className="w-4 h-4 shrink-0 text-amber-400" />
+                <span>
+                  <strong>Master Key Locked:</strong> The Agent Store network is locked by the Developer Master License. The admin cannot enable this feature until it is unlocked by the developer.
+                </span>
+              </div>
+            )}
+
             <div className="flex items-start justify-between">
               <div>
                 <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
@@ -263,7 +280,9 @@ export default function AdminAgentStorePage() {
                   Agent Store System Status
                 </h3>
                 <p className="text-xs text-slate-400 mt-1 max-w-sm">
-                  {config.is_enabled
+                  {config.developer_master_enabled === false
+                    ? "Locked by Developer Master License key. Switch is disabled."
+                    : config.is_enabled
                     ? "Agent stores and registration are LIVE. Agents and customers can place orders."
                     : "Agent stores are PAUSED. Frontends show temporary maintenance."}
                 </p>
@@ -271,9 +290,14 @@ export default function AdminAgentStorePage() {
 
               <button
                 onClick={handleToggleSystem}
-                disabled={updatingConfig}
-                className={`relative inline-flex h-9 w-16 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                  config.is_enabled ? "bg-emerald-600" : "bg-slate-700"
+                disabled={updatingConfig || config.developer_master_enabled === false}
+                title={config.developer_master_enabled === false ? "Locked by developer" : "Toggle switch"}
+                className={`relative inline-flex h-9 w-16 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                  config.developer_master_enabled === false
+                    ? "bg-slate-800 opacity-60 cursor-not-allowed"
+                    : config.is_enabled
+                    ? "bg-emerald-600 cursor-pointer"
+                    : "bg-slate-700 cursor-pointer"
                 }`}
               >
                 <span
@@ -284,16 +308,22 @@ export default function AdminAgentStorePage() {
               </button>
             </div>
 
-            <div className="mt-4 pt-4 border-t border-slate-800 flex items-center justify-between text-xs">
+            <div className="pt-4 border-t border-slate-800 flex items-center justify-between text-xs">
               <span className="text-slate-400">Current Status:</span>
               <span
                 className={`font-black uppercase tracking-wider px-2.5 py-0.5 rounded-full ${
-                  config.is_enabled
+                  config.developer_master_enabled === false
+                    ? "bg-amber-500/20 text-amber-400 border border-amber-500/30"
+                    : config.is_enabled
                     ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
                     : "bg-rose-500/20 text-rose-400 border border-rose-500/30"
                 }`}
               >
-                {config.is_enabled ? "Online & Active" : "Offline / Disabled"}
+                {config.developer_master_enabled === false
+                  ? "Master License Locked"
+                  : config.is_enabled
+                  ? "Online & Active"
+                  : "Offline / Disabled"}
               </span>
             </div>
           </div>
