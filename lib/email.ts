@@ -19,12 +19,20 @@ export interface EmailResult {
  * Checks whether a real outbound email service (Resend or SMTP) is active
  */
 export async function isRealEmailConfigured(): Promise<boolean> {
-  if (process.env.RESEND_API_KEY?.trim() || (process.env.SMTP_USER?.trim() && process.env.SMTP_PASS?.trim())) {
+  const envKey = process.env.RESEND_API_KEY?.trim();
+  if (envKey && envKey.startsWith("re_") && envKey !== "re_your_api_key_here" && !envKey.includes("your_api_key")) {
+    return true;
+  }
+  if (process.env.SMTP_USER?.trim() && process.env.SMTP_PASS?.trim()) {
     return true;
   }
   try {
     const settings = await db.getSettings();
-    if (settings?.resend_api_key?.trim() || (settings?.smtp_user?.trim() && settings?.smtp_pass?.trim())) {
+    const setKey = settings?.resend_api_key?.trim();
+    if (setKey && setKey.startsWith("re_") && setKey !== "re_your_api_key_here" && !setKey.includes("your_api_key")) {
+      return true;
+    }
+    if (settings?.smtp_user?.trim() && settings?.smtp_pass?.trim()) {
       return true;
     }
   } catch {}
@@ -46,7 +54,8 @@ export async function sendAgentEmail({ to, subject, html, text }: EmailPayload):
   } catch {}
 
   // 1. Try Resend API if configured
-  const resendApiKey = process.env.RESEND_API_KEY?.trim() || settings?.resend_api_key?.trim();
+  const rawKey = process.env.RESEND_API_KEY?.trim() || settings?.resend_api_key?.trim();
+  const resendApiKey = rawKey && rawKey.startsWith("re_") && rawKey !== "re_your_api_key_here" && !rawKey.includes("your_api_key") ? rawKey : null;
   if (resendApiKey) {
     try {
       const fromEmail = process.env.EMAIL_FROM || "FastData Partner Portal <onboarding@resend.dev>";
