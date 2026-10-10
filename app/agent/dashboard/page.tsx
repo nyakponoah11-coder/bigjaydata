@@ -419,8 +419,7 @@ export default function AgentDashboardPage() {
       const data = await res.json();
       if (data.success) {
         setOtpSent(true);
-        setOtpFeedback(data.message + (data.demo_code ? ` (Code: ${data.demo_code})` : ""));
-        if (data.demo_code) setOtpCode(data.demo_code);
+        setOtpFeedback(data.message || `A 6-digit verification code was sent to ${agent.email}.`);
       } else {
         throw new Error(data.message || "Failed to request code");
       }
@@ -528,6 +527,31 @@ export default function AgentDashboardPage() {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center text-white">
         <Loader2 className="w-8 h-8 animate-spin text-emerald-500" />
+      </div>
+    );
+  }
+
+  if (agent && agent.is_active === false) {
+    return (
+      <div className="min-h-screen bg-slate-950 text-white flex items-center justify-center p-6 text-center">
+        <div className="max-w-md w-full bg-slate-900 border border-rose-900/60 rounded-3xl p-8 space-y-4 shadow-2xl">
+          <div className="w-16 h-16 rounded-2xl bg-rose-500/20 text-rose-400 flex items-center justify-center mx-auto border border-rose-500/30">
+            <Lock className="w-8 h-8" />
+          </div>
+          <h2 className="text-2xl font-black text-rose-400">Account Suspended</h2>
+          <p className="text-xs text-slate-300 leading-relaxed">
+            Your partner account (<strong className="text-white">{agent.store_name}</strong>) has been placed on suspension by platform administration.
+          </p>
+          <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800 text-[11px] text-slate-400">
+            While suspended, your storefront is temporarily offline and dashboard access is paused. Please contact administration for assistance.
+          </div>
+          <button
+            onClick={handleSignOut}
+            className="w-full py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold text-white transition-colors cursor-pointer"
+          >
+            Sign Out
+          </button>
+        </div>
       </div>
     );
   }

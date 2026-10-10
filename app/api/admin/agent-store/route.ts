@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { sendSuspensionEmail, sendPasswordResetEmail } from "@/lib/email";
 
 export async function GET() {
   try {
@@ -59,8 +60,68 @@ export async function POST(req: Request) {
       if (!agent_id) {
         return NextResponse.json({ success: false, message: "Agent ID is required" }, { status: 400 });
       }
+
       const updatedAgent = await db.updateAgent(agent_id, { is_active: Boolean(is_active) });
-      return NextResponse.json({ success: true, agent: updatedAgent });
+      if (updatedAgent) {
+        // Send email notification to the agent about account status change
+        try {
+          await sendSuspensionEmail(updatedAgent.email, updatedAgent.name, !Boolean(is_active));
+        } catch (mailErr) {
+          console.warn("[Admin] Suspension email warning:", mailErr);
+        }
+      }
+
+      return NextResponse.json({
+        success: true,
+        agent: updatedAgent,
+        message: Boolean(is_active) ? "Agent account activated" : "Agent account suspended",
+      });
+    }
+
+    if (action === "delete_agent") {
+      const { agent_id } = body;
+      if (!agent_id) {
+        return NextResponse.json({ success: false, message: "Agent ID is required" }, { status: 400 });
+      }
+
+      const agent = await db.getAgentById(agent_id);
+      if (!agent) {
+        return NextResponse.json({ success: false, message: "Agent not found" }, { status: 404 });
+      }
+
+      await db.deleteAgent(agent_id);
+      return NextResponse.json({
+        success: true,
+        message: `Agent "${agent.name}" (${agent.store_name}) deleted permanently.`,
+      });
+    }
+
+    if (action === "reset_password") {
+      const { agent_id, new_password } = body;
+      if (!agent_id) {
+        return NextResponse.json({ success: false, message: "Agent ID is required" }, { status: 400 });
+      }
+
+      const agent = await db.getAgentById(agent_id);
+      if (!agent) {
+        return NextResponse.json({ success: false, message: "Agent not found" }, { status: 404 });
+      }
+
+      // Generate clean 6-digit PIN if none specified
+      const finalPassword = new_password && String(new_password).trim().length >= 4
+        ? String(new_password).trim()
+        : Math.floor(100000 + Math.random() * 900000).toString();
+
+      await db.updateAgent(agent_id, { password_hash: finalPassword });
+
+      // Dispatch email to agent's registered email
+      await sendPasswordResetEmail(agent.email, agent.name, finalPassword, true);
+
+      return NextResponse.json({
+        success: true,
+        new_password: finalPassword,
+        message: `Password reset successfully and dispatched to ${agent.email}.`,
+      });
     }
 
     return NextResponse.json({ success: false, message: "Invalid action" }, { status: 400 });

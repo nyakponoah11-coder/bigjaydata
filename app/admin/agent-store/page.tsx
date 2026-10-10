@@ -21,6 +21,9 @@ import {
   TrendingUp,
   Clock,
   Lock,
+  KeyRound,
+  Trash2,
+  Ban,
 } from "lucide-react";
 
 export default function AdminAgentStorePage() {
@@ -54,6 +57,35 @@ export default function AdminAgentStorePage() {
   // Edit product
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editBasePrice, setEditBasePrice] = useState("");
+
+  // Agent Management Modals
+  const [resetModal, setResetModal] = useState<{
+    open: boolean;
+    agentId: string;
+    agentName: string;
+    agentEmail: string;
+    newPass: string;
+    loading: boolean;
+  }>({
+    open: false,
+    agentId: "",
+    agentName: "",
+    agentEmail: "",
+    newPass: "",
+    loading: false,
+  });
+
+  const [deleteModal, setDeleteModal] = useState<{
+    open: boolean;
+    agentId: string;
+    agentName: string;
+    loading: boolean;
+  }>({
+    open: false,
+    agentId: "",
+    agentName: "",
+    loading: false,
+  });
 
   const fetchData = async () => {
     try {
@@ -136,9 +168,68 @@ export default function AdminAgentStorePage() {
       const data = await res.json();
       if (data.success) {
         setAgents((prev) => prev.map((a) => (a.id === agentId ? { ...a, is_active: !currentStatus } : a)));
+        setNotice(data.message || (!currentStatus ? "Agent activated" : "Agent placed on suspension"));
+        setTimeout(() => setNotice(""), 3500);
       }
     } catch (err) {
       setError("Failed to update agent");
+    }
+  };
+
+  const handleResetAgentPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!resetModal.agentId) return;
+    try {
+      setResetModal((prev) => ({ ...prev, loading: true }));
+      setError("");
+      const res = await fetch("/api/admin/agent-store", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "reset_password",
+          agent_id: resetModal.agentId,
+          new_password: resetModal.newPass,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.message || "Failed to reset password");
+      }
+      setNotice(data.message || `Password reset successfully for ${resetModal.agentName}`);
+      setResetModal({ open: false, agentId: "", agentName: "", agentEmail: "", newPass: "", loading: false });
+      setTimeout(() => setNotice(""), 4500);
+    } catch (err: any) {
+      setError(err.message || "Failed to reset password");
+    } finally {
+      setResetModal((prev) => ({ ...prev, loading: false }));
+    }
+  };
+
+  const handleDeleteAgentConfirm = async () => {
+    if (!deleteModal.agentId) return;
+    try {
+      setDeleteModal((prev) => ({ ...prev, loading: true }));
+      setError("");
+      const res = await fetch("/api/admin/agent-store", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "delete_agent",
+          agent_id: deleteModal.agentId,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.message || "Failed to delete agent");
+      }
+      setAgents((prev) => prev.filter((a) => a.id !== deleteModal.agentId));
+      setNotice(data.message || "Agent deleted permanently.");
+      setDeleteModal({ open: false, agentId: "", agentName: "", loading: false });
+      setTimeout(() => setNotice(""), 4500);
+    } catch (err: any) {
+      setError(err.message || "Failed to delete agent");
+    } finally {
+      setDeleteModal((prev) => ({ ...prev, loading: false }));
     }
   };
 
@@ -503,7 +594,12 @@ export default function AdminAgentStorePage() {
         {/* TAB 2: Registered Agents */}
         {activeTab === "agents" && (
           <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-4">
-            <h3 className="text-base font-bold text-white">Registered Agents</h3>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div>
+                <h3 className="text-base font-bold text-white">Registered Agents</h3>
+                <p className="text-xs text-slate-400">Manage agent accounts, credentials, suspension, and permissions.</p>
+              </div>
+            </div>
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs">
                 <thead>
@@ -514,12 +610,13 @@ export default function AdminAgentStorePage() {
                     <th className="py-3 px-4">Wallet Balance</th>
                     <th className="py-3 px-4">Total Earned</th>
                     <th className="py-3 px-4">Status</th>
+                    <th className="py-3 px-4 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/60 font-medium">
                   {agents.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="py-8 text-center text-slate-500">
+                      <td colSpan={7} className="py-8 text-center text-slate-500">
                         No registered agents yet. Agents can register at{" "}
                         <a href="/agent/register" target="_blank" className="text-emerald-400 underline">
                           /agent/register
@@ -533,11 +630,11 @@ export default function AdminAgentStorePage() {
                         <td className="py-3 px-4">
                           <div className="font-bold text-slate-200">{a.store_name}</div>
                           <a
-                            href={`/store/${a.store_slug}`}
+                            href={`/${a.store_slug}`}
                             target="_blank"
                             className="inline-flex items-center gap-1 text-[11px] text-emerald-400 hover:underline font-mono"
                           >
-                            <span>/store/{a.store_slug}</span>
+                            <span>/{a.store_slug}</span>
                             <ExternalLink className="w-2.5 h-2.5" />
                           </a>
                         </td>
@@ -552,8 +649,7 @@ export default function AdminAgentStorePage() {
                           GHS {Number(a.total_earned || 0).toFixed(2)}
                         </td>
                         <td className="py-3 px-4">
-                          <button
-                            onClick={() => handleToggleAgent(a.id, a.is_active)}
+                          <span
                             className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
                               a.is_active
                                 ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
@@ -561,7 +657,58 @@ export default function AdminAgentStorePage() {
                             }`}
                           >
                             {a.is_active ? "Active" : "Suspended"}
-                          </button>
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 text-right">
+                          <div className="flex items-center justify-end gap-1.5">
+                            {/* Reset Password */}
+                            <button
+                              onClick={() =>
+                                setResetModal({
+                                  open: true,
+                                  agentId: a.id,
+                                  agentName: a.name,
+                                  agentEmail: a.email,
+                                  newPass: "",
+                                  loading: false,
+                                Sha: "",
+                                } as any)
+                              }
+                              title="Reset Password & Email Agent"
+                              className="p-1.5 rounded-lg bg-slate-800 hover:bg-amber-500/20 hover:text-amber-300 text-slate-400 border border-slate-700 transition-colors"
+                            >
+                              <KeyRound className="w-3.5 h-3.5" />
+                            </button>
+
+                            {/* Suspend / Reactivate */}
+                            <button
+                              onClick={() => handleToggleAgent(a.id, a.is_active)}
+                              title={a.is_active ? "Put Agent on Suspension" : "Reactivate Agent Account"}
+                              className={`p-1.5 rounded-lg border transition-colors ${
+                                a.is_active
+                                  ? "bg-slate-800 hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 border-slate-700"
+                                  : "bg-slate-800 hover:bg-emerald-500/20 text-rose-400 hover:text-emerald-400 border-rose-800/40"
+                              }`}
+                            >
+                              {a.is_active ? <Ban className="w-3.5 h-3.5" /> : <ShieldCheck className="w-3.5 h-3.5" />}
+                            </button>
+
+                            {/* Delete Agent */}
+                            <button
+                              onClick={() =>
+                                setDeleteModal({
+                                  open: true,
+                                  agentId: a.id,
+                                  agentName: a.name,
+                                  loading: false,
+                                })
+                              }
+                              title="Delete Agent Permanently"
+                              className="p-1.5 rounded-lg bg-slate-800 hover:bg-rose-600/30 text-slate-400 hover:text-rose-400 border border-slate-700 transition-colors"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))
@@ -795,6 +942,128 @@ export default function AdminAgentStorePage() {
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        )}
+        {/* Reset Password Modal */}
+        {resetModal.open && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl relative">
+              <div className="flex items-center justify-between pb-4 border-b border-slate-800">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400">
+                    <KeyRound className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-black text-white">Reset Agent Password</h3>
+                    <p className="text-[11px] text-slate-400">{resetModal.agentName} ({resetModal.agentEmail})</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setResetModal((prev) => ({ ...prev, open: false }))}
+                  className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 text-xs font-bold"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <form onSubmit={handleResetAgentPassword} className="mt-4 space-y-4">
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  Enter a new password or PIN below, or leave blank to auto-generate a secure 6-digit PIN. The new credentials will be <strong>automatically emailed</strong> to <span className="text-amber-400">{resetModal.agentEmail}</span>.
+                </p>
+
+                <div>
+                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+                    New Password / PIN (Optional)
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      placeholder="e.g. 849201 (or leave blank to auto-generate)"
+                      value={resetModal.newPass}
+                      onChange={(e) => setResetModal((prev) => ({ ...prev, newPass: e.target.value }))}
+                      className="flex-1 px-3.5 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white text-sm font-mono focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setResetModal((prev) => ({
+                          ...prev,
+                          newPass: Math.floor(100000 + Math.random() * 900000).toString(),
+                        }))
+                      }
+                      className="px-3 py-2.5 bg-slate-800 hover:bg-slate-700 text-amber-400 text-xs font-bold rounded-xl border border-slate-700"
+                    >
+                      Generate
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setResetModal((prev) => ({ ...prev, open: false }))}
+                    className="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={resetModal.loading}
+                    className="flex-1 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold shadow-lg shadow-amber-600/30 flex items-center justify-center gap-1.5 transition-all disabled:opacity-50"
+                  >
+                    {resetModal.loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Reset & Email"}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* Delete Agent Modal */}
+        {deleteModal.open && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="bg-slate-900 border border-rose-900/60 rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl relative">
+              <div className="flex items-center gap-2.5 pb-4 border-b border-slate-800">
+                <div className="w-10 h-10 rounded-xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-400">
+                  <Trash2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-white">Delete Agent Account</h3>
+                  <p className="text-[11px] text-rose-400 font-bold">Permanent Deletion Warning</p>
+                </div>
+              </div>
+
+              <div className="mt-4 space-y-4">
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  Are you sure you want to permanently delete <strong className="text-white">{deleteModal.agentName}</strong>?
+                </p>
+
+                <div className="p-3 bg-rose-950/40 border border-rose-800/60 rounded-xl text-[11px] text-rose-300 space-y-1">
+                  <div>• Their partner storefront will be immediately removed.</div>
+                  <div>• All custom bundle markups will be deleted.</div>
+                  <div>• Their account database record will be permanently wiped.</div>
+                  <div className="font-bold pt-1">This action cannot be undone.</div>
+                </div>
+
+                <div className="flex gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setDeleteModal((prev) => ({ ...prev, open: false }))}
+                    className="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={deleteModal.loading}
+                    onClick={handleDeleteAgentConfirm}
+                    className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold shadow-lg shadow-rose-600/30 flex items-center justify-center gap-1.5 transition-all disabled:opacity-50"
+                  >
+                    {deleteModal.loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Permanently Delete"}
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         )}

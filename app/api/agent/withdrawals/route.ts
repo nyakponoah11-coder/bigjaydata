@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { sendWithdrawalOtpEmail } from "@/lib/email";
 
 // In-memory OTP storage for withdrawal security
 const withdrawalOtps = new Map<string, { code: string; expires: number }>();
@@ -34,7 +35,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, message: "Agent account not found" }, { status: 404 });
     }
 
-    // Step 1: Request OTP code sent to agent's email
+    // Step 1: Request OTP code sent to agent's registered email
     if (action === "request_otp") {
       const code = Math.floor(100000 + Math.random() * 900000).toString();
       withdrawalOtps.set(agent_id, {
@@ -42,13 +43,12 @@ export async function POST(req: Request) {
         expires: Date.now() + 10 * 60 * 1000, // 10 minutes
       });
 
-      console.log(`[Withdrawal OTP] Security verification code for ${agent.email}: ${code}`);
+      const reqAmount = Number(body.amount) || 5.0;
+      await sendWithdrawalOtpEmail(agent.email, agent.name, code, reqAmount);
 
       return NextResponse.json({
         success: true,
-        message: `A 6-digit verification code has been dispatched to ${agent.email}.`,
-        // Simulation code provided so user can verify immediately in demo/test
-        demo_code: code,
+        message: `A 6-digit verification code has been dispatched to ${agent.email}. Please check your inbox and spam folder.`,
       });
     }
 

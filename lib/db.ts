@@ -1924,6 +1924,39 @@ export const db = {
     return agents[idx];
   },
 
+  async deleteAgent(id: string): Promise<boolean> {
+    const agents = await this.getAgents();
+    const filtered = agents.filter((a) => a.id !== id && a.store_slug !== id);
+    globalStore.__bmgh_agents = filtered;
+    saveToDisk();
+
+    if (isSupabaseConfigured && supabaseAdmin) {
+      try {
+        await supabaseAdmin.from("settings").upsert({
+          id: "agents_registry_config",
+          store_name: "AgentsRegistry",
+          announcement_text: JSON.stringify(filtered),
+        });
+      } catch (err) {
+        console.warn("Agents registry delete error:", err);
+      }
+
+      try {
+        await supabaseAdmin.from("agents").delete().eq("id", id);
+      } catch {}
+
+      try {
+        await supabaseAdmin.from("agent_products").delete().eq("agent_id", id);
+      } catch {}
+    }
+
+    if (globalStore.__bmgh_agent_products) {
+      globalStore.__bmgh_agent_products = globalStore.__bmgh_agent_products.filter((p) => p.agent_id !== id);
+    }
+
+    return true;
+  },
+
   // AGENT CUSTOM PRODUCTS
   async getAgentProducts(agentId: string): Promise<AgentCustomProduct[]> {
     const baseProducts = await this.getAgentBaseProducts();
