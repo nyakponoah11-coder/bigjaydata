@@ -1921,34 +1921,11 @@ export const db = {
 
   // AGENT CUSTOM PRODUCTS
   async getAgentProducts(agentId: string): Promise<AgentCustomProduct[]> {
-    if (isSupabaseConfigured && supabaseAdmin) {
-      // 1. Try direct agent_products table if it exists
-      try {
-        const { data: directProds, error: dpErr } = await supabaseAdmin
-          .from("agent_products")
-          .select("*")
-          .eq("agent_id", agentId);
-        if (!dpErr && Array.isArray(directProds) && directProds.length > 0) {
-          const mapped: AgentCustomProduct[] = directProds.map((dp: any) => ({
-            id: dp.id,
-            agent_id: dp.agent_id,
-            base_product_id: dp.base_product_id,
-            network: dp.network,
-            size: dp.size,
-            base_price: Number(dp.base_price),
-            selling_price: Number(dp.selling_price),
-            is_active: dp.is_active !== false,
-          }));
-          if (!globalStore.__bmgh_agent_products) globalStore.__bmgh_agent_products = [];
-          globalStore.__bmgh_agent_products = [
-            ...globalStore.__bmgh_agent_products.filter((p) => p.agent_id !== agentId),
-            ...mapped,
-          ];
-          return mapped;
-        }
-      } catch {}
+    const baseProducts = await this.getAgentBaseProducts();
+    const productMap = new Map<string, AgentCustomProduct>();
 
-      // 2. Fallback to settings config row
+    // 1. Load from settings config row (contains all configured agent custom products)
+    if (isSupabaseConfigured && supabaseAdmin) {
       try {
         const { data } = await supabaseAdmin
           .from("settings")
@@ -1960,24 +1937,64 @@ export const db = {
             const list = JSON.parse(data.announcement_text);
             if (Array.isArray(list)) {
               globalStore.__bmgh_agent_products = list;
+              list
+                .filter((p: any) => p.agent_id === agentId)
+                .forEach((p: any) => {
+                  productMap.set(p.base_product_id, {
+                    id: p.id,
+                    agent_id: p.agent_id,
+                    base_product_id: p.base_product_id,
+                    network: p.network,
+                    size: p.size,
+                    base_price: Number(p.base_price),
+                    selling_price: Number(p.selling_price),
+                    is_active: p.is_active !== false,
+                  });
+                });
             }
           } catch {}
         }
       } catch (err) {}
+
+      // 2. Also overlay with direct agent_products table for any individually updated rows
+      try {
+        const { data: directProds, error: dpErr } = await supabaseAdmin
+          .from("agent_products")
+          .select("*")
+          .eq("agent_id", agentId);
+        if (!dpErr && Array.isArray(directProds) && directProds.length > 0) {
+          directProds.forEach((dp: any) => {
+            productMap.set(dp.base_product_id, {
+              id: dp.id,
+              agent_id: dp.agent_id,
+              base_product_id: dp.base_product_id,
+              network: dp.network,
+              size: dp.size,
+              base_price: Number(dp.base_price),
+              selling_price: Number(dp.selling_price),
+              is_active: dp.is_active !== false,
+            });
+          });
+        }
+      } catch {}
     }
 
-    if (!globalStore.__bmgh_agent_products) {
-      globalStore.__bmgh_agent_products = [];
+    // 3. Fallback to memory store if productMap is missing entries
+    if (globalStore.__bmgh_agent_products) {
+      globalStore.__bmgh_agent_products
+        .filter((p) => p.agent_id === agentId)
+        .forEach((p) => {
+          if (!productMap.has(p.base_product_id)) {
+            productMap.set(p.base_product_id, p);
+          }
+        });
     }
 
-    const baseProducts = await this.getAgentBaseProducts();
-    let custom = globalStore.__bmgh_agent_products.filter((p) => p.agent_id === agentId);
-    let changed = false;
-
-    // Ensure all base products exist in the agent's product catalog
+    // 4. Ensure ALL base products exist in the catalog
+    let hasChanges = false;
     baseProducts.forEach((bp) => {
-      const exists = custom.find((c) => c.base_product_id === bp.id);
-      if (!exists) {
+      const existing = productMap.get(bp.id);
+      if (!existing) {
         const added: AgentCustomProduct = {
           id: "acp-" + crypto.randomUUID().slice(0, 8),
           agent_id: agentId,
@@ -1988,18 +2005,26 @@ export const db = {
           selling_price: bp.suggested_price || bp.base_price + 1.0,
           is_active: bp.is_active,
         };
-        custom.push(added);
-        globalStore.__bmgh_agent_products!.push(added);
-        changed = true;
+        productMap.set(bp.id, added);
+        hasChanges = true;
       } else {
-        if (exists.base_price !== bp.base_price) {
-          exists.base_price = bp.base_price;
-          changed = true;
+        if (existing.base_price !== bp.base_price) {
+          existing.base_price = bp.base_price;
+          hasChanges = true;
         }
       }
     });
 
-    if (changed) {
+    const result = Array.from(productMap.values());
+
+    // Update globalStore cache
+    if (!globalStore.__bmgh_agent_products) globalStore.__bmgh_agent_products = [];
+    globalStore.__bmgh_agent_products = [
+      ...globalStore.__bmgh_agent_products.filter((p) => p.agent_id !== agentId),
+      ...result,
+    ];
+
+    if (hasChanges) {
       saveToDisk();
       if (isSupabaseConfigured && supabaseAdmin) {
         try {
@@ -2011,11 +2036,11 @@ export const db = {
             email: "support@bundlemartgh.com",
             announcement_text: JSON.stringify(globalStore.__bmgh_agent_products),
           });
-        } catch (err) {}
+        } catch {}
       }
     }
 
-    return globalStore.__bmgh_agent_products.filter((p) => p.agent_id === agentId);
+    return result;
   },
 
   async updateAgentProduct(
@@ -2065,10 +2090,21 @@ export const db = {
     saveToDisk();
 
     if (isSupabaseConfigured && supabaseAdmin) {
-      // 1. Try direct agent_products table
+      // 1. Synchronize direct agent_products table
       try {
+        // Query to find ANY existing row for this agent and base_product_id
+        const { data: existingRows } = await supabaseAdmin
+          .from("agent_products")
+          .select("id")
+          .eq("agent_id", agentId)
+          .eq("base_product_id", baseProductId);
+
+        const targetId = existingRows && existingRows.length > 0 ? existingRows[0].id : item.id;
+        item.id = targetId;
+
+        // Upsert by targetId
         await supabaseAdmin.from("agent_products").upsert({
-          id: item.id,
+          id: targetId,
           agent_id: agentId,
           base_product_id: baseProductId,
           network: item.network,
@@ -2077,7 +2113,20 @@ export const db = {
           selling_price: item.selling_price,
           is_active: item.is_active,
         });
-      } catch {}
+
+        // Also update all matching rows by (agent_id, base_product_id) to eliminate any duplicates
+        await supabaseAdmin
+          .from("agent_products")
+          .update({
+            selling_price: item.selling_price,
+            base_price: item.base_price,
+            is_active: item.is_active,
+          })
+          .eq("agent_id", agentId)
+          .eq("base_product_id", baseProductId);
+      } catch (directErr) {
+        console.warn("Direct agent_products upsert warning:", directErr);
+      }
 
       // 2. Also save to settings config row with required columns
       try {
