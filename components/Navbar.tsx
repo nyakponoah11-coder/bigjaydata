@@ -15,6 +15,7 @@ import {
   Sparkles,
   Smartphone,
   Store,
+  Code,
 } from "lucide-react";
 import FreeDataBanner from "./FreeDataBanner";
 
@@ -138,6 +139,12 @@ export default function Navbar({
       href: "/agent-store",
       icon: Store,
       badge: agentStoreLive ? "Reseller" : "Coming Soon",
+    },
+    {
+      label: "Developer API",
+      href: "/developer",
+      icon: Code,
+      badge: "API",
     },
   ];
 

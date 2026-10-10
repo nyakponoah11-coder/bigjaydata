@@ -21,6 +21,7 @@ import {
   Zap,
   BrainCircuit,
   Store,
+  Code,
 } from "lucide-react";
 
 interface Props {
@@ -158,6 +159,7 @@ export default function AdminLayout({ children }: Props) {
     { label: "Direct Purchase", href: "/admin/direct-purchase", icon: Zap, badge: "DataMart" },
     { label: "Free Data Vouchers", href: "/admin/vouchers", icon: Gift, badge: "Promo" },
     { label: "Agent Stores", href: "/admin/agent-store", icon: Store, badge: "New" },
+    { label: "Developer API", href: "/admin/developer", icon: Code, badge: "API" },
     { label: "Products", href: "/admin/products", icon: Package },
     { label: "AI Instructions", href: "/admin/ai-instructions", icon: BrainCircuit, badge: "Training" },
     { label: "AI Customer Support", href: "/admin/ai-agent", icon: Bot, badge: "Live Desk" },

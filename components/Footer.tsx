@@ -103,6 +103,11 @@ export default function Footer({
                 </Link>
               </li>
               <li>
+                <Link href="/developer" className="hover:text-indigo-400 transition-colors flex items-center gap-1.5">
+                  <span>Developer API (Docs & Keys)</span>
+                </Link>
+              </li>
+              <li>
                 <a
                   href={`https://wa.me/${whatsappNumber}?text=Hello%20${encodeURIComponent(storeName)},%20I%20have%20an%20inquiry`}
                   target="_blank"

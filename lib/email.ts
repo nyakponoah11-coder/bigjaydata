@@ -310,3 +310,50 @@ export async function sendLoginOtpEmail(
 
   return sendAgentEmail({ to: agentEmail, subject, html });
 }
+
+/**
+ * Send Developer API Key Verification Code
+ */
+export async function sendDeveloperVerificationOtpEmail(
+  developerEmail: string,
+  developerName: string,
+  code: string
+): Promise<EmailResult> {
+  const subject = `[FastData Developer API] Your 6-Digit Key Verification Code: ${code}`;
+
+  const html = `
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; padding: 28px; border: 1px solid #1e293b; border-radius: 20px; background-color: #0b1120; color: #f8fafc;">
+      <div style="text-align: center; margin-bottom: 24px;">
+        <div style="display: inline-block; padding: 8px 16px; background: rgba(99, 102, 241, 0.15); border: 1px solid rgba(99, 102, 241, 0.4); border-radius: 999px; margin-bottom: 12px;">
+          <span style="font-size: 11px; font-weight: 700; color: #818cf8; text-transform: uppercase; letter-spacing: 1px;">FastData API Gateway</span>
+        </div>
+        <h2 style="color: #ffffff; margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -0.5px;">API Key Verification</h2>
+        <p style="color: #94a3b8; font-size: 13px; margin-top: 6px;">Secure programmatic access credentials</p>
+      </div>
+
+      <p style="color: #cbd5e1; font-size: 14px; line-height: 1.6;">Hello <strong>${developerName}</strong>,</p>
+      <p style="color: #cbd5e1; font-size: 14px; line-height: 1.6;">
+        You requested to generate a production API Key for FastData automated mobile data fulfillment. Use the 6-digit verification code below to authorize and generate your secret key:
+      </p>
+
+      <div style="background-color: #0f172a; border: 2px dashed #6366f1; border-radius: 14px; padding: 20px; text-align: center; margin: 26px 0;">
+        <span style="font-family: 'SF Mono', Monaco, Consolas, monospace; font-size: 34px; font-weight: 800; letter-spacing: 8px; color: #a5b4fc;">
+          ${code}
+        </span>
+        <p style="font-size: 11px; color: #64748b; margin: 8px 0 0;">Expires in 10 minutes • One-time authorization</p>
+      </div>
+
+      <div style="background-color: rgba(239, 68, 68, 0.1); border-left: 3px solid #ef4444; border-radius: 8px; padding: 12px; margin-bottom: 20px;">
+        <p style="color: #fca5a5; font-size: 12px; margin: 0; line-height: 1.5;">
+          <strong>Security Warning:</strong> Never share your verification code or API keys. FastData engineers will never ask for your API secret.
+        </p>
+      </div>
+
+      <div style="border-top: 1px solid #1e293b; margin-top: 26px; padding-top: 18px; font-size: 11px; color: #64748b; text-align: center;">
+        FastData Developer Platform • High-Speed Telco APIs for Ghana
+      </div>
+    </div>
+  `;
+
+  return sendAgentEmail({ to: developerEmail, subject, html });
+}

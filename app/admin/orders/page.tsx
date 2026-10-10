@@ -467,7 +467,18 @@ export default function AdminOrdersPage() {
                     return (
                       <tr key={o.id} className="hover:bg-slate-800/40 transition-colors">
                         <td className="py-3 pl-4 font-mono font-bold text-white">
-                          {o.reference}
+                          <div className="flex flex-col gap-1 items-start">
+                            <span>{o.reference}</span>
+                            {o.source === "api" ? (
+                              <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-indigo-950 text-indigo-300 border border-indigo-700/80 flex items-center gap-1 shadow-sm">
+                                ⚡ API Key{o.developer_name ? `: ${o.developer_name}` : ""}
+                              </span>
+                            ) : o.source === "agent" ? (
+                              <span className="px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider bg-amber-950 text-amber-300 border border-amber-800 flex items-center gap-1">
+                                🏬 Agent Store
+                              </span>
+                            ) : null}
+                          </div>
                         </td>
                         <td className="py-3 font-bold uppercase text-slate-300">
                           {o.network}
@@ -636,6 +647,36 @@ export default function AdminOrdersPage() {
                   <span className="font-mono text-slate-200 truncate block">
                     {selectedOrder.paystack_ref || "None / Manual"}
                   </span>
+                </div>
+
+                {/* Order Origin / Channel */}
+                <div className="bg-slate-800/70 p-3 rounded-xl col-span-2 border border-slate-700/60">
+                  <span className="text-slate-400 block mb-1 font-semibold">Order Origin / Channel</span>
+                  {selectedOrder.source === "api" ? (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="px-2.5 py-1 rounded-lg text-xs font-black uppercase tracking-wider bg-indigo-950 text-indigo-300 border border-indigo-700 flex items-center gap-1.5 shadow-sm">
+                        ⚡ Developer API Key
+                      </span>
+                      {selectedOrder.developer_name && (
+                        <span className="text-xs text-indigo-200 font-bold">
+                          Developer: {selectedOrder.developer_name}
+                        </span>
+                      )}
+                      {selectedOrder.api_key_id && (
+                        <span className="text-[11px] text-slate-400 font-mono">
+                          ID: {selectedOrder.api_key_id}
+                        </span>
+                      )}
+                    </div>
+                  ) : selectedOrder.source === "agent" ? (
+                    <span className="px-2.5 py-1 rounded-lg text-xs font-bold uppercase tracking-wider bg-amber-950 text-amber-300 border border-amber-800 inline-flex items-center gap-1.5">
+                      🏬 Reseller Agent Store
+                    </span>
+                  ) : (
+                    <span className="px-2.5 py-1 rounded-lg text-xs font-bold uppercase tracking-wider bg-slate-800 text-slate-300 border border-slate-700 inline-flex items-center gap-1.5">
+                      🌐 Web Direct Store
+                    </span>
+                  )}
                 </div>
 
                 {/* 1. SEPARATE PAYMENT STATUS IN MODAL */}

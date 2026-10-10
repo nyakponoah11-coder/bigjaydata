@@ -34,6 +34,9 @@ export interface Order {
   delivery_status: DeliveryStatus | string;
   status: "pending" | "waiting" | "processing" | "completed" | "delivered" | "failed" | "refunded" | "cancelled" | string;
   datamart_response: any;
+  source?: "web" | "agent" | "api" | string;
+  api_key_id?: string;
+  developer_name?: string;
   created_at: string;
 }
 
@@ -66,14 +69,30 @@ export function normalizeOrder(order: any): Order {
     status = delivery_status;
   }
 
+  const rawSource =
+    order.source ||
+    order.datamart_response?.source ||
+    (order.api_key_id || order.datamart_response?.api_key_id
+      ? "api"
+      : order.datamart_response?.agent_id
+      ? "agent"
+      : "web");
+
+  const apiKeyId = order.api_key_id || order.datamart_response?.api_key_id || undefined;
+  const developerName = order.developer_name || order.datamart_response?.developer_name || undefined;
+
   return {
     ...order,
     amount: Number(order.amount || 0),
     payment_status,
     delivery_status,
     status: status as any,
+    source: rawSource,
+    api_key_id: apiKeyId,
+    developer_name: developerName,
   };
 }
+
 
 export interface Settings {
   id: string;
@@ -238,8 +257,42 @@ export interface AgentWithdrawal {
   created_at: string;
 }
 
+export interface DeveloperApiConfig {
+  is_enabled: boolean;
+  api_key_price: number;
+  min_wallet_funding: number;
+  notice_message?: string;
+}
+
+export interface DeveloperApiProduct {
+  id: string;
+  network: "mtn" | "telecel" | "at" | string;
+  size: string;
+  cost_price: number;
+  api_price: number;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface DeveloperAccount {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  api_key: string;
+  balance: number;
+  total_spent: number;
+  total_orders: number;
+  is_active: boolean;
+  otp_code?: string;
+  otp_expires?: number;
+  created_at: string;
+  last_used_at?: string;
+}
+
 // Products start empty - added and managed purely via /admin/products
 let initialProducts: Product[] = [];
+
 
 
 let initialSettings: Settings = {
@@ -358,6 +411,22 @@ const initialAgentBaseProducts: AgentBaseProduct[] = [
   { id: "abp-at-10", network: "at", size: "10GB", base_price: 37.0, suggested_price: 45.0, is_active: true, created_at: new Date().toISOString() },
 ];
 
+const initialDeveloperApiProducts: DeveloperApiProduct[] = [
+  { id: "dap-mtn-1", network: "mtn", size: "1GB", cost_price: 4.2, api_price: 4.6, is_active: true, created_at: new Date().toISOString() },
+  { id: "dap-mtn-2", network: "mtn", size: "2GB", cost_price: 8.4, api_price: 9.2, is_active: true, created_at: new Date().toISOString() },
+  { id: "dap-mtn-3", network: "mtn", size: "3GB", cost_price: 12.6, api_price: 13.8, is_active: true, created_at: new Date().toISOString() },
+  { id: "dap-mtn-5", network: "mtn", size: "5GB", cost_price: 21.0, api_price: 23.0, is_active: true, created_at: new Date().toISOString() },
+  { id: "dap-mtn-10", network: "mtn", size: "10GB", cost_price: 42.0, api_price: 46.0, is_active: true, created_at: new Date().toISOString() },
+  { id: "dap-tc-1", network: "telecel", size: "1GB", cost_price: 3.8, api_price: 4.2, is_active: true, created_at: new Date().toISOString() },
+  { id: "dap-tc-2", network: "telecel", size: "2GB", cost_price: 7.6, api_price: 8.4, is_active: true, created_at: new Date().toISOString() },
+  { id: "dap-tc-5", network: "telecel", size: "5GB", cost_price: 19.0, api_price: 21.0, is_active: true, created_at: new Date().toISOString() },
+  { id: "dap-tc-10", network: "telecel", size: "10GB", cost_price: 38.0, api_price: 42.0, is_active: true, created_at: new Date().toISOString() },
+  { id: "dap-at-1", network: "at", size: "1GB", cost_price: 3.8, api_price: 4.2, is_active: true, created_at: new Date().toISOString() },
+  { id: "dap-at-2", network: "at", size: "2GB", cost_price: 7.6, api_price: 8.4, is_active: true, created_at: new Date().toISOString() },
+  { id: "dap-at-5", network: "at", size: "5GB", cost_price: 18.5, api_price: 20.5, is_active: true, created_at: new Date().toISOString() },
+  { id: "dap-at-10", network: "at", size: "10GB", cost_price: 37.0, api_price: 41.0, is_active: true, created_at: new Date().toISOString() },
+];
+
 const initialAgents: Agent[] = [
   {
     id: "agent-82d9c8eb",
@@ -398,6 +467,9 @@ const globalStore = globalThis as unknown as {
   __bmgh_agent_products?: AgentCustomProduct[];
   __bmgh_agent_orders?: AgentOrder[];
   __bmgh_agent_withdrawals?: AgentWithdrawal[];
+  __bmgh_developer_api_config?: DeveloperApiConfig;
+  __bmgh_developer_api_products?: DeveloperApiProduct[];
+  __bmgh_developer_accounts?: DeveloperAccount[];
 };
 
 function saveToDisk() {
@@ -419,6 +491,9 @@ function saveToDisk() {
         agent_products: globalStore.__bmgh_agent_products,
         agent_orders: globalStore.__bmgh_agent_orders,
         agent_withdrawals: globalStore.__bmgh_agent_withdrawals,
+        developer_api_config: globalStore.__bmgh_developer_api_config,
+        developer_api_products: globalStore.__bmgh_developer_api_products,
+        developer_accounts: globalStore.__bmgh_developer_accounts,
       };
       fs.writeFileSync(STORE_FILE, JSON.stringify(dataToSave, null, 2), "utf-8");
     }
@@ -447,6 +522,21 @@ if (!globalStore.__bmgh_agents) globalStore.__bmgh_agents = diskData?.agents || 
 if (!globalStore.__bmgh_agent_products) globalStore.__bmgh_agent_products = diskData?.agent_products || [];
 if (!globalStore.__bmgh_agent_orders) globalStore.__bmgh_agent_orders = diskData?.agent_orders || [];
 if (!globalStore.__bmgh_agent_withdrawals) globalStore.__bmgh_agent_withdrawals = diskData?.agent_withdrawals || [];
+if (!globalStore.__bmgh_developer_api_config) {
+  globalStore.__bmgh_developer_api_config = diskData?.developer_api_config || {
+    is_enabled: true,
+    api_key_price: 0,
+    min_wallet_funding: 10,
+    notice_message: "Welcome to FastData Developer API. Automated high-speed data fulfillment.",
+  };
+}
+if (!globalStore.__bmgh_developer_api_products) {
+  globalStore.__bmgh_developer_api_products = diskData?.developer_api_products || initialDeveloperApiProducts;
+}
+if (!globalStore.__bmgh_developer_accounts) {
+  globalStore.__bmgh_developer_accounts = diskData?.developer_accounts || [];
+}
+
 
 export const db = {
   // SETTINGS
@@ -924,6 +1014,13 @@ export const db = {
     const status = orderData.status || (delivery_status === "delivered" ? "delivered" : "pending");
 
     if (isSupabaseConfigured && supabaseAdmin) {
+      const mergedDatamart = {
+        ...(orderData.datamart_response || {}),
+        source: orderData.source || (orderData.api_key_id ? "api" : "web"),
+        api_key_id: orderData.api_key_id,
+        developer_name: orderData.developer_name,
+      };
+
       const insertPayload: any = {
         reference: orderData.reference,
         network: orderData.network.toLowerCase().trim(),
@@ -934,7 +1031,7 @@ export const db = {
         payment_status,
         delivery_status,
         status,
-        datamart_response: orderData.datamart_response || {},
+        datamart_response: mergedDatamart,
       };
 
       try {
@@ -2527,4 +2624,263 @@ export const db = {
 
     return w;
   },
+
+  // ================= DEVELOPER API METHODS =================
+  async getDeveloperApiConfig(): Promise<DeveloperApiConfig> {
+    if (isSupabaseConfigured && supabaseAdmin) {
+      try {
+        const { data } = await supabaseAdmin
+          .from("settings")
+          .select("store_name, announcement_text")
+          .eq("id", "developer_api_config")
+          .maybeSingle();
+        if (data && data.store_name) {
+          try {
+            const parsed = JSON.parse(data.store_name);
+            const is_enabled = parsed.is_enabled !== false;
+            const api_key_price = Number(parsed.api_key_price) || 0;
+            const min_wallet_funding = Number(parsed.min_wallet_funding) || 10;
+            const notice_message = data.announcement_text || parsed.notice_message || "";
+            globalStore.__bmgh_developer_api_config = {
+              is_enabled,
+              api_key_price,
+              min_wallet_funding,
+              notice_message,
+            };
+            return globalStore.__bmgh_developer_api_config;
+          } catch {}
+        }
+      } catch (err) {}
+    }
+    return (
+      globalStore.__bmgh_developer_api_config || {
+        is_enabled: true,
+        api_key_price: 0,
+        min_wallet_funding: 10,
+        notice_message: "FastData Developer API Gateway",
+      }
+    );
+  },
+
+  async updateDeveloperApiConfig(config: Partial<DeveloperApiConfig>): Promise<DeveloperApiConfig> {
+    const current = await this.getDeveloperApiConfig();
+    const updated: DeveloperApiConfig = {
+      is_enabled: config.is_enabled !== undefined ? Boolean(config.is_enabled) : current.is_enabled,
+      api_key_price: config.api_key_price !== undefined ? Number(config.api_key_price) : current.api_key_price,
+      min_wallet_funding:
+        config.min_wallet_funding !== undefined ? Number(config.min_wallet_funding) : current.min_wallet_funding,
+      notice_message: config.notice_message !== undefined ? config.notice_message : current.notice_message,
+    };
+    globalStore.__bmgh_developer_api_config = updated;
+    saveToDisk();
+
+    if (isSupabaseConfigured && supabaseAdmin) {
+      try {
+        await supabaseAdmin.from("settings").upsert({
+          id: "developer_api_config",
+          store_name: JSON.stringify(updated),
+          announcement_text: updated.notice_message || "",
+        });
+      } catch (err) {}
+    }
+    return updated;
+  },
+
+  async getDeveloperApiProducts(): Promise<DeveloperApiProduct[]> {
+    if (
+      isSupabaseConfigured &&
+      supabaseAdmin &&
+      (!globalStore.__bmgh_developer_api_products || globalStore.__bmgh_developer_api_products.length === 0)
+    ) {
+      try {
+        const { data } = await supabaseAdmin
+          .from("settings")
+          .select("announcement_text")
+          .eq("id", "developer_api_products_config")
+          .maybeSingle();
+        if (data?.announcement_text) {
+          try {
+            const list = JSON.parse(data.announcement_text);
+            if (Array.isArray(list) && list.length > 0) {
+              globalStore.__bmgh_developer_api_products = list;
+              return list;
+            }
+          } catch {}
+        }
+      } catch (err) {}
+    }
+    const current =
+      globalStore.__bmgh_developer_api_products && globalStore.__bmgh_developer_api_products.length > 0
+        ? globalStore.__bmgh_developer_api_products
+        : initialDeveloperApiProducts;
+    globalStore.__bmgh_developer_api_products = current;
+    return current;
+  },
+
+  async saveDeveloperApiProducts(products: DeveloperApiProduct[]): Promise<DeveloperApiProduct[]> {
+    globalStore.__bmgh_developer_api_products = products;
+    saveToDisk();
+    if (isSupabaseConfigured && supabaseAdmin) {
+      try {
+        await supabaseAdmin.from("settings").upsert({
+          id: "developer_api_products_config",
+          announcement_text: JSON.stringify(products),
+        });
+      } catch (err) {}
+    }
+    return products;
+  },
+
+  async updateDeveloperApiProductPrice(id: string, api_price: number, cost_price?: number): Promise<DeveloperApiProduct | null> {
+    const list = await this.getDeveloperApiProducts();
+    const item = list.find((p) => p.id === id);
+    if (!item) return null;
+    item.api_price = Number(api_price);
+    if (cost_price !== undefined) item.cost_price = Number(cost_price);
+    await this.saveDeveloperApiProducts(list);
+    return item;
+  },
+
+  async createDeveloperApiProduct(p: Omit<DeveloperApiProduct, "id" | "created_at">): Promise<DeveloperApiProduct> {
+    const list = await this.getDeveloperApiProducts();
+    const newProd: DeveloperApiProduct = {
+      ...p,
+      id: "dap-" + crypto.randomUUID().slice(0, 8),
+      created_at: new Date().toISOString(),
+    };
+    list.push(newProd);
+    await this.saveDeveloperApiProducts(list);
+    return newProd;
+  },
+
+  async toggleDeveloperApiProduct(id: string): Promise<DeveloperApiProduct | null> {
+    const list = await this.getDeveloperApiProducts();
+    const item = list.find((p) => p.id === id);
+    if (!item) return null;
+    item.is_active = !item.is_active;
+    await this.saveDeveloperApiProducts(list);
+    return item;
+  },
+
+  async deleteDeveloperApiProduct(id: string): Promise<boolean> {
+    const list = await this.getDeveloperApiProducts();
+    const filtered = list.filter((p) => p.id !== id);
+    await this.saveDeveloperApiProducts(filtered);
+    return true;
+  },
+
+  async getDeveloperAccounts(): Promise<DeveloperAccount[]> {
+    if (
+      isSupabaseConfigured &&
+      supabaseAdmin &&
+      (!globalStore.__bmgh_developer_accounts || globalStore.__bmgh_developer_accounts.length === 0)
+    ) {
+      try {
+        const { data } = await supabaseAdmin
+          .from("settings")
+          .select("announcement_text")
+          .eq("id", "developer_accounts_config")
+          .maybeSingle();
+        if (data?.announcement_text) {
+          try {
+            const list = JSON.parse(data.announcement_text);
+            if (Array.isArray(list)) {
+              globalStore.__bmgh_developer_accounts = list;
+              return list;
+            }
+          } catch {}
+        }
+      } catch (err) {}
+    }
+    return globalStore.__bmgh_developer_accounts || [];
+  },
+
+  async saveDeveloperAccounts(accounts: DeveloperAccount[]): Promise<DeveloperAccount[]> {
+    globalStore.__bmgh_developer_accounts = accounts;
+    saveToDisk();
+    if (isSupabaseConfigured && supabaseAdmin) {
+      try {
+        await supabaseAdmin.from("settings").upsert({
+          id: "developer_accounts_config",
+          announcement_text: JSON.stringify(accounts),
+        });
+      } catch (err) {}
+    }
+    return accounts;
+  },
+
+  async getDeveloperAccountByApiKey(apiKey: string): Promise<DeveloperAccount | null> {
+    if (!apiKey) return null;
+    const cleanKey = apiKey.trim();
+    const all = await this.getDeveloperAccounts();
+    return all.find((a) => a.api_key === cleanKey) || null;
+  },
+
+  async getDeveloperAccountByEmail(email: string): Promise<DeveloperAccount | null> {
+    if (!email) return null;
+    const cleanEmail = email.trim().toLowerCase();
+    const all = await this.getDeveloperAccounts();
+    return all.find((a) => a.email.toLowerCase() === cleanEmail) || null;
+  },
+
+  async getDeveloperAccountById(id: string): Promise<DeveloperAccount | null> {
+    const all = await this.getDeveloperAccounts();
+    return all.find((a) => a.id === id) || null;
+  },
+
+  async createDeveloperAccount(data: { name: string; email: string; phone: string }): Promise<DeveloperAccount> {
+    const all = await this.getDeveloperAccounts();
+    const existing = all.find((a) => a.email.toLowerCase() === data.email.trim().toLowerCase());
+    if (existing) {
+      return existing;
+    }
+    const rawRandom = crypto.randomUUID().replace(/-/g, "") + crypto.randomUUID().replace(/-/g, "").slice(0, 8);
+    const newAccount: DeveloperAccount = {
+      id: "dev-" + crypto.randomUUID().slice(0, 8),
+      name: data.name.trim(),
+      email: data.email.trim().toLowerCase(),
+      phone: data.phone.trim(),
+      api_key: `fd_live_${rawRandom}`,
+      balance: 0,
+      total_spent: 0,
+      total_orders: 0,
+      is_active: true,
+      created_at: new Date().toISOString(),
+    };
+    all.push(newAccount);
+    await this.saveDeveloperAccounts(all);
+    return newAccount;
+  },
+
+  async updateDeveloperAccount(id: string, updates: Partial<DeveloperAccount>): Promise<DeveloperAccount | null> {
+    const all = await this.getDeveloperAccounts();
+    const acc = all.find((a) => a.id === id);
+    if (!acc) return null;
+    Object.assign(acc, updates);
+    await this.saveDeveloperAccounts(all);
+    return acc;
+  },
+
+  async deleteDeveloperAccount(id: string): Promise<boolean> {
+    const all = await this.getDeveloperAccounts();
+    const filtered = all.filter((a) => a.id !== id);
+    await this.saveDeveloperAccounts(filtered);
+    return true;
+  },
+
+  async creditDeveloperWallet(id: string, amount: number, note?: string): Promise<{ success: boolean; new_balance: number; message: string }> {
+    const all = await this.getDeveloperAccounts();
+    const acc = all.find((a) => a.id === id);
+    if (!acc) return { success: false, new_balance: 0, message: "Developer account not found." };
+    const num = Number(amount);
+    acc.balance = Number((acc.balance + num).toFixed(2));
+    if (acc.balance < 0) acc.balance = 0;
+    await this.saveDeveloperAccounts(all);
+    return {
+      success: true,
+      new_balance: acc.balance,
+      message: `Developer wallet successfully ${num >= 0 ? "credited" : "debited"} by GHS ${Math.abs(num).toFixed(2)}.`,
+    };
+  },
 };
+
