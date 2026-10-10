@@ -28,6 +28,7 @@ import {
   DollarSign,
   TrendingUp,
   Package,
+  Store,
 } from "lucide-react";
 
 interface DeveloperConfig {
@@ -35,6 +36,14 @@ interface DeveloperConfig {
   api_key_price: number;
   min_wallet_funding: number;
   notice_message?: string;
+}
+
+interface AgentStoreConfig {
+  is_enabled: boolean;
+  developer_master_enabled?: boolean;
+  admin_enabled?: boolean;
+  registration_fee: number;
+  custom_domain?: string;
 }
 
 interface DeveloperProduct {
@@ -73,6 +82,10 @@ export default function AdminDeveloperPage() {
 
   // Master switch toggling state
   const [togglingMaster, setTogglingMaster] = useState(false);
+  const [togglingAgentStore, setTogglingAgentStore] = useState(false);
+
+  // Agent Store config
+  const [agentStoreConfig, setAgentStoreConfig] = useState<AgentStoreConfig | null>(null);
 
   // Pricing editing state
   const [networkFilter, setNetworkFilter] = useState("all");
@@ -105,13 +118,20 @@ export default function AdminDeveloperPage() {
   const loadData = async () => {
     try {
       setLoading(true);
-      const res = await fetch("/api/admin/developer", { cache: "no-store" });
-      const data = await res.json();
-      if (data.success) {
-        setConfig(data.config);
-        setProducts(data.products || []);
-        setAccounts(data.accounts || []);
-        setOrders(data.recent_orders || []);
+      const [adminRes, agentStoreRes] = await Promise.all([
+        fetch("/api/admin/developer", { cache: "no-store" }),
+        fetch("/api/admin/agent-store-config", { cache: "no-store" }),
+      ]);
+      const adminData = await adminRes.json();
+      if (adminData.success) {
+        setConfig(adminData.config);
+        setProducts(adminData.products || []);
+        setAccounts(adminData.accounts || []);
+        setOrders(adminData.recent_orders || []);
+      }
+      const agentStoreData = await agentStoreRes.json();
+      if (agentStoreData.success) {
+        setAgentStoreConfig(agentStoreData.config);
       }
     } catch (err: any) {
       setNotice({ type: "error", message: "Failed to connect to developer management backend." });
@@ -165,6 +185,45 @@ export default function AdminDeveloperPage() {
       showNotification("error", "Error connecting to server.");
     } finally {
       setTogglingMaster(false);
+    }
+  };
+
+  // 2. Toggle Agent Store Switch
+  const handleToggleAgentStore = async () => {
+    if (!agentStoreConfig) return;
+    const newState = !agentStoreConfig.is_enabled;
+    const confirmMsg = newState
+      ? "Turn ON Agent Store? All agent storefronts will become accessible to customers."
+      : "Turn OFF Agent Store? All agent storefronts will display 'Coming Soon' and customers cannot purchase.";
+
+    if (!window.confirm(confirmMsg)) return;
+
+    setTogglingAgentStore(true);
+    try {
+      const res = await fetch("/api/admin/agent-store-config", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "update_config",
+          is_enabled: newState,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setAgentStoreConfig(data.config);
+        showNotification(
+          "success",
+          newState
+            ? "Agent Store is now LIVE - all storefronts are active!"
+            : "Agent Store paused. All storefronts now display 'Coming Soon'."
+        );
+      } else {
+        showNotification("error", data.message || "Failed to toggle agent store.");
+      }
+    } catch {
+      showNotification("error", "Error connecting to server.");
+    } finally {
+      setTogglingAgentStore(false);
     }
   };
 
@@ -521,6 +580,88 @@ export default function AdminDeveloperPage() {
             </div>
           </div>
         )}
+
+        {/* Agent Store Switch Card */}
+        {agentStoreConfig && (
+          <div
+            className={`p-5 sm:p-6 rounded-3xl border transition-all shadow-xl relative overflow-hidden ${
+              agentStoreConfig.is_enabled
+                ? "bg-gradient-to-br from-emerald-950/40 via-slate-900 to-slate-900 border-emerald-800/80 shadow-emerald-950/30"
+                : "bg-gradient-to-br from-rose-950/30 via-slate-900 to-slate-900 border-rose-900/60 shadow-rose-950/20"
+            }`}
+          >
+            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-5 relative z-10">
+              <div className="space-y-1.5 max-w-2xl">
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`w-2.5 h-2.5 rounded-full animate-pulse ${
+                      agentStoreConfig.is_enabled ? "bg-emerald-400" : "bg-rose-400"
+                    }`}
+                  />
+                  <span
+                    className={`text-xs font-black uppercase tracking-wider ${
+                      agentStoreConfig.is_enabled ? "text-emerald-400" : "text-rose-400"
+                    }`}
+                  >
+                    {agentStoreConfig.is_enabled ? "Agent Storefronts: Active" : "Agent Storefronts: Paused (Coming Soon)"}
+                  </span>
+                </div>
+                <h2 className="text-lg sm:text-xl font-black text-white">
+                  {agentStoreConfig.is_enabled
+                    ? "Agent Stores are Live for Customers"
+                    : "Agent Store Access is Paused by Admin"}
+                </h2>
+                <p className="text-xs text-slate-400 leading-relaxed">
+                  {agentStoreConfig.is_enabled
+                    ? "All agent storefronts are accessible. Customers can browse and purchase data bundles instantly."
+                    : "All agent storefronts at /s/[slug] and /d/[token] display 'Coming Soon'. Customers cannot make purchases until enabled."}
+                </p>
+              </div>
+
+              {/* Agent Store Power Toggle */}
+              <button
+                onClick={handleToggleAgentStore}
+                disabled={togglingAgentStore}
+                className={`px-5 py-3 rounded-2xl font-black text-xs uppercase tracking-wider flex items-center gap-2.5 shadow-xl transition-all transform active:scale-95 shrink-0 ${
+                  agentStoreConfig.is_enabled
+                    ? "bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-600/30 ring-2 ring-emerald-400/40"
+                    : "bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700"
+                }`}
+              >
+                {togglingAgentStore ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Store className={`w-4 h-4 ${agentStoreConfig.is_enabled ? "text-white" : "text-rose-400"}`} />
+                )}
+                <span>{agentStoreConfig.is_enabled ? "Agent Store: ON" : "Agent Store: OFF"}</span>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Master Key Link Card */}
+        <div className="p-5 sm:p-6 rounded-3xl border bg-gradient-to-br from-slate-900 via-slate-900 to-indigo-950/30 border-indigo-800/50 shadow-xl">
+          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-5">
+            <div className="space-y-1.5 max-w-2xl">
+              <div className="flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full animate-pulse bg-indigo-400" />
+                <span className="text-xs font-black uppercase tracking-wider text-indigo-300">
+                  Master Key Portal
+                </span>
+              </div>
+              <h2 className="text-lg sm:text-xl font-black text-white">
+                Developer Master Key Access
+              </h2>
+              <p className="text-xs text-slate-400 leading-relaxed">
+                Direct link for developers to access their API keys: <span className="font-mono text-indigo-300 cursor-default select-all">bundlemartgh.com/key</span>
+              </p>
+            </div>
+            <div className="px-5 py-3 rounded-2xl font-black text-xs uppercase tracking-wider flex items-center gap-2.5 bg-slate-800 border border-slate-700 text-slate-300 shrink-0">
+              <ExternalLink className="w-4 h-4 text-slate-500" />
+              <span className="cursor-default select-all">bundlemartgh.com/key</span>
+            </div>
+          </div>
+        </div>
 
         {/* Quick Stats Grid */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
