@@ -46,6 +46,7 @@ export async function POST(request: Request) {
       let phone = "";
       let network = "";
       let package_size = "";
+      let storeSlug = "";
 
       let metadata = data.metadata;
       if (typeof metadata === "string") {
@@ -58,6 +59,7 @@ export async function POST(request: Request) {
         phone = metadata.phone || metadata.phoneNumber || metadata.recipient_phone || "";
         network = metadata.network || "";
         package_size = metadata.package_size || metadata.package || metadata.size || "";
+        storeSlug = metadata.store_slug || "";
 
         const customFields = metadata.custom_fields;
         if (Array.isArray(customFields)) {
@@ -66,6 +68,7 @@ export async function POST(request: Request) {
             if (varName === "phone" || varName === "phonenumber") phone = field.value || phone;
             if (varName === "network") network = field.value || network;
             if (varName === "package_size" || varName === "package" || varName === "size") package_size = field.value || package_size;
+            if (varName === "store_slug" || varName === "slug") storeSlug = field.value || storeSlug;
           }
         }
       }
@@ -91,18 +94,22 @@ export async function POST(request: Request) {
         });
 
         const finalDelivery = deliveryResult.success ? (deliveryResult.status || "processing") : "failed";
-        await db.updateOrderStatus(
-          existingOrder.id,
-          finalDelivery,
-          deliveryResult.raw_response || deliveryResult,
-          {
-            payment_status: "paid",
-            delivery_status: finalDelivery,
-          }
-        );
+        await Promise.all([
+          db.updateOrderStatus(
+            existingOrder.id,
+            finalDelivery,
+            deliveryResult.raw_response || deliveryResult,
+            {
+              payment_status: "paid",
+              delivery_status: finalDelivery,
+            }
+          ),
+          db.updateAgentOrderStatus(reference, finalDelivery, deliveryResult.raw_response || deliveryResult),
+        ]);
       } else if (phone && network && package_size) {
         // Background creation if checkout closed before client trigger
         console.log(`[Paystack Webhook] Creating and dispatching new order ${reference}...`);
+
         const newOrder = await db.createOrder({
           reference,
           network: network.toLowerCase(),
@@ -113,7 +120,7 @@ export async function POST(request: Request) {
           payment_status: "paid",
           delivery_status: "processing",
           status: "pending",
-          datamart_response: { status: "pending", source: "paystack_webhook" },
+          datamart_response: { status: "pending", source: "paystack_webhook", store_slug: storeSlug },
         });
 
         const deliveryResult = await sendDataMartDelivery({
@@ -134,6 +141,38 @@ export async function POST(request: Request) {
             delivery_status: finalDelivery,
           }
         );
+
+        if (storeSlug) {
+          try {
+            const agent = await db.getAgentBySlug(storeSlug);
+            if (agent) {
+              const agentProducts = await db.getAgentProducts(agent.id);
+              const matched = agentProducts.find(
+                (p) =>
+                  p.network.toLowerCase() === network.toLowerCase() &&
+                  p.size.toLowerCase() === package_size.toLowerCase()
+              );
+              const baseCost = matched ? matched.base_price : amount;
+              const agentProfit = Math.max(0, Number((amount - baseCost).toFixed(2)));
+              await db.createAgentOrder({
+                agent_id: agent.id,
+                reference,
+                network: network.toLowerCase(),
+                package_size,
+                phone,
+                amount,
+                base_price: baseCost,
+                agent_profit: agentProfit,
+                paystack_ref: paystackRef,
+                payment_status: "paid",
+                delivery_status: finalDelivery,
+                status: finalDelivery,
+              });
+            }
+          } catch (agentErr) {
+            console.error("[Paystack Webhook] Agent order creation error:", agentErr);
+          }
+        }
       }
     }
 

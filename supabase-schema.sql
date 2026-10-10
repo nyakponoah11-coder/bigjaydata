@@ -188,3 +188,88 @@ ALTER TABLE public.voucher_claims ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Allow all on vouchers" ON public.vouchers FOR ALL USING (true);
 CREATE POLICY "Allow all on voucher_claims" ON public.voucher_claims FOR ALL USING (true);
 
+-- ========================================================================
+-- 7. AGENT STORE TABLES (Optional: For cloud persistence of agent data)
+-- ========================================================================
+
+CREATE TABLE IF NOT EXISTS public.agents (
+    id TEXT PRIMARY KEY,
+    store_slug TEXT UNIQUE NOT NULL,
+    store_name TEXT NOT NULL,
+    name TEXT NOT NULL,
+    email TEXT UNIQUE NOT NULL,
+    phone TEXT NOT NULL,
+    password_hash TEXT NOT NULL,
+    description TEXT,
+    wallet_balance NUMERIC(10, 2) NOT NULL DEFAULT 0.00,
+    total_earned NUMERIC(10, 2) NOT NULL DEFAULT 0.00,
+    total_withdrawn NUMERIC(10, 2) NOT NULL DEFAULT 0.00,
+    is_active BOOLEAN NOT NULL DEFAULT true,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
+);
+
+CREATE TABLE IF NOT EXISTS public.agent_base_products (
+    id TEXT PRIMARY KEY,
+    network TEXT NOT NULL,
+    size TEXT NOT NULL,
+    base_price NUMERIC(10, 2) NOT NULL,
+    suggested_price NUMERIC(10, 2),
+    is_active BOOLEAN NOT NULL DEFAULT true,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
+);
+
+CREATE TABLE IF NOT EXISTS public.agent_products (
+    id TEXT PRIMARY KEY,
+    agent_id TEXT NOT NULL,
+    base_product_id TEXT NOT NULL,
+    network TEXT NOT NULL,
+    size TEXT NOT NULL,
+    base_price NUMERIC(10, 2) NOT NULL,
+    selling_price NUMERIC(10, 2) NOT NULL,
+    is_active BOOLEAN NOT NULL DEFAULT true
+);
+
+CREATE TABLE IF NOT EXISTS public.agent_orders (
+    id TEXT PRIMARY KEY,
+    agent_id TEXT NOT NULL,
+    reference TEXT UNIQUE NOT NULL,
+    network TEXT NOT NULL,
+    package_size TEXT NOT NULL,
+    phone TEXT NOT NULL,
+    amount NUMERIC(10, 2) NOT NULL,
+    base_price NUMERIC(10, 2) NOT NULL,
+    agent_profit NUMERIC(10, 2) NOT NULL,
+    paystack_ref TEXT,
+    payment_status TEXT NOT NULL DEFAULT 'paid',
+    delivery_status TEXT NOT NULL DEFAULT 'pending',
+    status TEXT NOT NULL DEFAULT 'pending',
+    datamart_response JSONB DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
+);
+
+CREATE TABLE IF NOT EXISTS public.agent_withdrawals (
+    id TEXT PRIMARY KEY,
+    agent_id TEXT NOT NULL,
+    amount NUMERIC(10, 2) NOT NULL,
+    momo_number TEXT NOT NULL,
+    momo_network TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    verification_code TEXT,
+    verified BOOLEAN NOT NULL DEFAULT true,
+    note TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
+);
+
+ALTER TABLE public.agents ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.agent_base_products ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.agent_products ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.agent_orders ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.agent_withdrawals ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Allow all on agents" ON public.agents FOR ALL USING (true);
+CREATE POLICY "Allow all on agent_base_products" ON public.agent_base_products FOR ALL USING (true);
+CREATE POLICY "Allow all on agent_products" ON public.agent_products FOR ALL USING (true);
+CREATE POLICY "Allow all on agent_orders" ON public.agent_orders FOR ALL USING (true);
+CREATE POLICY "Allow all on agent_withdrawals" ON public.agent_withdrawals FOR ALL USING (true);
+
+
