@@ -11,6 +11,9 @@ import {
   Lock,
   User,
   Sparkles,
+  ShieldCheck,
+  Mail,
+  CheckCircle2,
 } from "lucide-react";
 
 export default function AgentLoginPage() {
@@ -20,6 +23,15 @@ export default function AgentLoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [isEnabled, setIsEnabled] = useState(true);
+
+  // 2FA Login Verification State
+  const [verificationRequired, setVerificationRequired] = useState(false);
+  const [pendingAgentId, setPendingAgentId] = useState("");
+  const [maskedEmail, setMaskedEmail] = useState("");
+  const [verificationCode, setVerificationCode] = useState("");
+  const [verifying, setVerifying] = useState(false);
+  const [resending, setResending] = useState(false);
+  const [verificationNotice, setVerificationNotice] = useState("");
 
   useEffect(() => {
     fetch("/api/settings")
@@ -49,6 +61,16 @@ export default function AgentLoginPage() {
         throw new Error(data.message || "Invalid credentials");
       }
 
+      if (data.requires_verification) {
+        setVerificationRequired(true);
+        setPendingAgentId(data.agent_id);
+        setMaskedEmail(data.masked_email);
+        setVerificationNotice(data.message);
+        setVerificationCode("");
+        setLoading(false);
+        return;
+      }
+
       if (typeof window !== "undefined") {
         localStorage.setItem("bmgh_agent_session", JSON.stringify(data.agent));
         localStorage.setItem("bmgh_agent_token", data.token);
@@ -58,6 +80,63 @@ export default function AgentLoginPage() {
     } catch (err: any) {
       setError(err.message || "Failed to log in");
       setLoading(false);
+    }
+  };
+
+  const handleVerifyLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setVerifying(true);
+
+    try {
+      const res = await fetch("/api/agent/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "verify_code",
+          agent_id: pendingAgentId,
+          verification_code: verificationCode,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.message || "Invalid verification code");
+      }
+
+      if (typeof window !== "undefined") {
+        localStorage.setItem("bmgh_agent_session", JSON.stringify(data.agent));
+        localStorage.setItem("bmgh_agent_token", data.token);
+      }
+
+      router.push("/agent/dashboard");
+    } catch (err: any) {
+      setError(err.message || "Verification failed");
+      setVerifying(false);
+    }
+  };
+
+  const handleResendCode = async () => {
+    setError("");
+    setResending(true);
+    try {
+      const res = await fetch("/api/agent/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "resend_code",
+          agent_id: pendingAgentId,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.message || "Failed to resend code");
+      }
+      setVerificationNotice(data.message);
+    } catch (err: any) {
+      setError(err.message || "Failed to resend code");
+    } finally {
+      setResending(false);
     }
   };
 
@@ -189,67 +268,146 @@ export default function AgentLoginPage() {
             </div>
           )}
 
-          <form onSubmit={handleLogin} className="space-y-4">
-            <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-slate-300 mb-1">
-                Email, Phone or Store Slug
-              </label>
-              <div className="relative">
-                <User className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  required
-                  placeholder="0551234567 or email@domain.com"
-                  value={identifier}
-                  onChange={(e) => setIdentifier(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                />
+          {verificationRequired ? (
+            <div className="space-y-5">
+              <div className="text-center space-y-1.5">
+                <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center mx-auto mb-2">
+                  <ShieldCheck className="w-6 h-6" />
+                </div>
+                <h3 className="text-lg font-black text-white">Login Verification</h3>
+                <p className="text-xs text-slate-300">
+                  A 6-digit verification code has been dispatched to your email:
+                </p>
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-800 border border-slate-700 text-xs font-mono text-emerald-400 font-bold">
+                  <Mail className="w-3.5 h-3.5" />
+                  <span>{maskedEmail}</span>
+                </div>
               </div>
-            </div>
 
-            <div>
-              <div className="flex justify-between items-center mb-1">
-                <label className="text-xs font-bold uppercase tracking-wider text-slate-300">
-                  Password / Access PIN
-                </label>
+              {verificationNotice && (
+                <div className="p-3 bg-emerald-950/60 border border-emerald-800 text-emerald-300 text-xs rounded-xl flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <span>{verificationNotice}</span>
+                </div>
+              )}
+
+              <form onSubmit={handleVerifyLogin} className="space-y-4">
+                <div>
+                  <label className="block text-center text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">
+                    Enter 6-Digit Code
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    maxLength={6}
+                    placeholder="------"
+                    autoFocus
+                    value={verificationCode}
+                    onChange={(e) => setVerificationCode(e.target.value.replace(/[^0-9]/g, ""))}
+                    className="w-full py-3.5 px-4 bg-slate-800 border border-slate-700 rounded-2xl text-white text-center font-mono text-2xl font-black tracking-[0.5em] focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                  <p className="text-[11px] text-slate-500 text-center mt-1.5">
+                    Valid for 10 minutes. Check your inbox and spam folder.
+                  </p>
+                </div>
+
+                <div className="pt-2">
+                  <button
+                    type="submit"
+                    disabled={verifying || verificationCode.length < 6}
+                    className="w-full py-3.5 px-4 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-extrabold rounded-2xl text-sm shadow-xl shadow-emerald-600/30 flex items-center justify-center gap-2 transition-all disabled:opacity-50 cursor-pointer"
+                  >
+                    {verifying ? <Loader2 className="w-5 h-5 animate-spin" /> : "Verify & Access Dashboard"}
+                    <ArrowRight className="w-4 h-4" />
+                  </button>
+                </div>
+              </form>
+
+              <div className="flex items-center justify-between text-xs pt-2 border-t border-slate-800/80">
                 <button
                   type="button"
                   onClick={() => {
-                    setForgotModalOpen(true);
-                    setForgotIdentifier(identifier);
-                    setForgotError("");
-                    setForgotMsg("");
-                    setForgotStep("request");
+                    setVerificationRequired(false);
+                    setVerificationCode("");
+                    setError("");
                   }}
-                  className="text-[11px] text-emerald-400 hover:text-emerald-300 font-bold hover:underline"
+                  className="text-slate-400 hover:text-white font-medium transition-colors cursor-pointer"
                 >
-                  Forgot Password?
+                  ← Back to Login
+                </button>
+                <button
+                  type="button"
+                  disabled={resending}
+                  onClick={handleResendCode}
+                  className="text-emerald-400 hover:text-emerald-300 font-bold hover:underline disabled:opacity-50 cursor-pointer"
+                >
+                  {resending ? "Sending..." : "Resend Code"}
                 </button>
               </div>
-              <div className="relative">
-                <Lock className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                <input
-                  type="password"
-                  required
-                  placeholder="••••••••"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                />
+            </div>
+          ) : (
+            <form onSubmit={handleLogin} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-300 mb-1">
+                  Email, Phone or Store Slug
+                </label>
+                <div className="relative">
+                  <User className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    required
+                    placeholder="0551234567 or email@domain.com"
+                    value={identifier}
+                    onChange={(e) => setIdentifier(e.target.value)}
+                    className="w-full pl-10 pr-4 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
               </div>
-            </div>
 
-            <div className="pt-2">
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full py-3.5 px-4 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-extrabold rounded-2xl text-sm shadow-xl shadow-emerald-600/30 flex items-center justify-center gap-2 transition-all disabled:opacity-50"
-              >
-                {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : "Access Dashboard"}
-                <ArrowRight className="w-4 h-4" />
-              </button>
-            </div>
-          </form>
+              <div>
+                <div className="flex justify-between items-center mb-1">
+                  <label className="text-xs font-bold uppercase tracking-wider text-slate-300">
+                    Password / Access PIN
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setForgotModalOpen(true);
+                      setForgotIdentifier(identifier);
+                      setForgotError("");
+                      setForgotMsg("");
+                      setForgotStep("request");
+                    }}
+                    className="text-[11px] text-emerald-400 hover:text-emerald-300 font-bold hover:underline"
+                  >
+                    Forgot Password?
+                  </button>
+                </div>
+                <div className="relative">
+                  <Lock className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="password"
+                    required
+                    placeholder="••••••••"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="w-full pl-10 pr-4 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+              </div>
+
+              <div className="pt-2">
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full py-3.5 px-4 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-extrabold rounded-2xl text-sm shadow-xl shadow-emerald-600/30 flex items-center justify-center gap-2 transition-all disabled:opacity-50"
+                >
+                  {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : "Access Dashboard"}
+                  <ArrowRight className="w-4 h-4" />
+                </button>
+              </div>
+            </form>
+          )}
 
           <div className="mt-6 text-center text-xs text-slate-400">
             Don&apos;t have an agent store yet?{" "}

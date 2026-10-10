@@ -235,3 +235,45 @@ export async function sendSuspensionEmail(
 
   return sendAgentEmail({ to: agentEmail, subject, html });
 }
+
+/**
+ * Send Login 2FA Verification Code to Agent Registered Email
+ */
+export async function sendLoginOtpEmail(
+  agentEmail: string,
+  agentName: string,
+  code: string
+): Promise<EmailResult> {
+  const subject = `[FastData] Your Login Verification Code: ${code}`;
+
+  const html = `
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 540px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 16px; background-color: #ffffff;">
+      <div style="text-align: center; margin-bottom: 20px;">
+        <h2 style="color: #0f172a; margin: 0; font-size: 22px;">Partner Login Verification</h2>
+        <p style="color: #64748b; font-size: 13px; margin-top: 4px;">FastData Partner Portal</p>
+      </div>
+
+      <p style="color: #334155; font-size: 14px; line-height: 1.5;">Hello <strong>${agentName}</strong>,</p>
+      <p style="color: #334155; font-size: 14px; line-height: 1.5;">
+        A sign-in attempt was initiated for your partner account. Enter the 6-digit verification code below to authorize your login session:
+      </p>
+
+      <div style="background-color: #f0fdf4; border: 2px dashed #16a34a; border-radius: 12px; padding: 18px; text-align: center; margin: 24px 0;">
+        <span style="font-family: monospace; font-size: 32px; font-weight: 800; letter-spacing: 6px; color: #15803d;">
+          ${code}
+        </span>
+        <p style="font-size: 11px; color: #64748b; margin: 6px 0 0;">Valid for 10 minutes</p>
+      </div>
+
+      <p style="color: #ef4444; font-size: 12px; line-height: 1.4;">
+        <strong>Security Notice:</strong> If you did not initiate this login request, change your password immediately or contact our support team.
+      </p>
+
+      <div style="border-top: 1px solid #e2e8f0; margin-top: 24px; padding-top: 16px; font-size: 11px; color: #94a3b8; text-align: center;">
+        FastData Automated Partner Network • Powered by FastData Desk
+      </div>
+    </div>
+  `;
+
+  return sendAgentEmail({ to: agentEmail, subject, html });
+}
