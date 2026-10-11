@@ -1,9 +1,10 @@
 "use client";
 
-import React from "react";
+import React, { useEffect } from "react";
 import Link from "next/link";
 import { Product, Settings } from "@/lib/db";
 import { ArrowRight, Sparkles, Zap, ShieldCheck } from "lucide-react";
+import { saveProductsSession } from "@/lib/device-session";
 
 interface Props {
   products: Product[];
@@ -63,6 +64,12 @@ const NETWORKS: NetworkConfig[] = [
 ];
 
 export default function NetworkSelectionSection({ products }: Props) {
+  useEffect(() => {
+    if (products && products.length > 0) {
+      saveProductsSession("all", products);
+    }
+  }, [products]);
+
   return (
     <section id="networks" className="py-8 sm:py-12 max-w-4xl lg:max-w-5xl xl:max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 w-full">
       {/* Section Header on Laptop/Desktop */}

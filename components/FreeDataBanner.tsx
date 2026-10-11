@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { Gift, Clock, Sparkles } from "lucide-react";
 import FreeDataClaimModal from "./FreeDataClaimModal";
+import { getCachedActiveVoucher, saveActiveVoucherSession } from "@/lib/device-session";
 
 interface VoucherInfo {
   id: string;
@@ -14,21 +15,30 @@ interface VoucherInfo {
 }
 
 export default function FreeDataBanner() {
-  const [voucher, setVoucher] = useState<VoucherInfo | null>(null);
+  const [voucher, setVoucher] = useState<VoucherInfo | null>(() => {
+    return getCachedActiveVoucher();
+  });
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => !getCachedActiveVoucher());
   const [timeLeft, setTimeLeft] = useState<string | null>(null);
 
   useEffect(() => {
     let isMounted = true;
     const fetchActive = async () => {
+      // Skip background poll when tab hidden to conserve database egress
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") {
+        return;
+      }
+
       try {
         const res = await fetch("/api/vouchers/active");
         const data = await res.json();
         if (isMounted && data.active && data.voucher) {
           setVoucher(data.voucher);
+          saveActiveVoucherSession(data.voucher);
         } else if (isMounted) {
           setVoucher(null);
+          saveActiveVoucherSession(null);
         }
       } catch (err) {
         console.error("Failed to load active voucher:", err);
@@ -37,8 +47,16 @@ export default function FreeDataBanner() {
       }
     };
 
-    fetchActive();
-    const interval = setInterval(fetchActive, 20000);
+    const cached = getCachedActiveVoucher();
+    if (cached) {
+      setVoucher(cached);
+      setLoading(false);
+    } else {
+      fetchActive();
+    }
+
+    // High efficiency: poll active giveaway every 3 minutes instead of 20 seconds
+    const interval = setInterval(fetchActive, 180000);
     return () => {
       isMounted = false;
       clearInterval(interval);

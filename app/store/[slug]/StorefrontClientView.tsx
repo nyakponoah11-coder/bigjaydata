@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import DeliveryTrackerCard from "@/components/DeliveryTrackerCard";
+import { getCachedAgentStore, saveAgentStoreSession } from "@/lib/device-session";
 import {
   Store,
   Sparkles,
@@ -62,16 +63,23 @@ export default function StorefrontClientView({
   paystackPublicKey,
 }: Props) {
   const router = useRouter();
-  const [productList, setProductList] = useState<ProductItem[]>(products);
+  const [productList, setProductList] = useState<ProductItem[]>(() => {
+    const cached = getCachedAgentStore(agent.store_slug || agent.id);
+    if (Array.isArray(cached) && cached.length > 0) {
+      return cached;
+    }
+    return products;
+  });
   const [selectedNetwork, setSelectedNetwork] = useState<string>("mtn");
   const [checkoutProduct, setCheckoutProduct] = useState<ProductItem | null>(null);
 
-  // Keep productList synced when SSR products update
+  // Keep productList synced and cache to device session when SSR products update
   useEffect(() => {
     if (products && products.length > 0) {
       setProductList(products);
+      saveAgentStoreSession(agent.store_slug || agent.id, products);
     }
-  }, [products]);
+  }, [products, agent.store_slug, agent.id]);
 
   // Save active agent store slug to cookie & localStorage for bounce-back protection
   useEffect(() => {
@@ -83,18 +91,17 @@ export default function StorefrontClientView({
     }
   }, [agent?.store_slug]);
 
-  // Auto-refresh product prices from agent API so changes in agent dashboard reflect instantly
+  // One-time lazy background fetch only if device session has no products
   useEffect(() => {
+    const cached = getCachedAgentStore(agent.store_slug || agent.id);
+    if (cached && Array.isArray(cached) && cached.length > 0) {
+      return;
+    }
+
     let isMounted = true;
     const fetchFreshProducts = async () => {
       try {
-        const res = await fetch(`/api/agent/products?agent_id=${agent.id}&t=${Date.now()}`, {
-          cache: "no-store",
-          headers: {
-            "Cache-Control": "no-cache, no-store, must-revalidate",
-            Pragma: "no-cache",
-          },
-        });
+        const res = await fetch(`/api/agent/products?agent_id=${agent.id}`);
         const data = await res.json();
         if (data.success && Array.isArray(data.products) && isMounted) {
           const mapped: ProductItem[] = data.products
@@ -107,18 +114,17 @@ export default function StorefrontClientView({
             }));
           if (mapped.length > 0) {
             setProductList(mapped);
+            saveAgentStoreSession(agent.store_slug || agent.id, mapped);
           }
         }
       } catch (err) {}
     };
 
     fetchFreshProducts();
-    const interval = setInterval(fetchFreshProducts, 6000);
     return () => {
       isMounted = false;
-      clearInterval(interval);
     };
-  }, [agent.id]);
+  }, [agent.id, agent.store_slug]);
 
   // Checkout modal states
   const [recipientPhone, setRecipientPhone] = useState("");

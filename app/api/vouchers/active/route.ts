@@ -21,6 +21,10 @@ export async function GET() {
         remaining_claims: Math.max(0, voucher.max_claims - voucher.claimed_count),
         expires_at: voucher.expires_at || null,
       },
+    }, {
+      headers: {
+        "Cache-Control": "public, max-age=60, s-maxage=120, stale-while-revalidate=180",
+      },
     });
   } catch (error: any) {
     console.error("Voucher Active GET error:", error);

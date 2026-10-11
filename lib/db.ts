@@ -542,10 +542,53 @@ if (!globalStore.__bmgh_developer_accounts) {
   globalStore.__bmgh_developer_accounts = diskData?.developer_accounts || [];
 }
 
+// ================= HIGH-PERFORMANCE EGRESS PROTECTION & SERVER TTL CACHE =================
+const CACHE_TTLS = {
+  settings: 10 * 60 * 1000,              // 10 minutes (changes rarely via admin)
+  products: 10 * 60 * 1000,              // 10 minutes
+  agent_config: 10 * 60 * 1000,          // 10 minutes
+  agent_base_products: 10 * 60 * 1000,   // 10 minutes
+  agents: 10 * 60 * 1000,                // 10 minutes
+  agent_products: 10 * 60 * 1000,        // 10 minutes
+  active_voucher: 3 * 60 * 1000,         // 3 minutes
+  developer_api_config: 10 * 60 * 1000,  // 10 minutes
+  developer_api_products: 10 * 60 * 1000,// 10 minutes
+  orders: 30 * 1000,                     // 30 seconds
+  messages: 30 * 1000,                   // 30 seconds
+};
+
+const memCacheTimestamps: Record<string, number> = ((globalThis as any).__bmgh_cache_ts =
+  (globalThis as any).__bmgh_cache_ts || {});
+
+function isCacheFresh(key: string, ttl: number): boolean {
+  const ts = memCacheTimestamps[key];
+  if (!ts) return false;
+  return Date.now() - ts < ttl;
+}
+
+function markCacheFresh(key: string): void {
+  memCacheTimestamps[key] = Date.now();
+}
+
+export function invalidateDbCache(keyPrefix?: string): void {
+  if (!keyPrefix) {
+    Object.keys(memCacheTimestamps).forEach((k) => delete memCacheTimestamps[k]);
+    return;
+  }
+  Object.keys(memCacheTimestamps).forEach((k) => {
+    if (k === keyPrefix || k.startsWith(keyPrefix + ":") || k.startsWith(keyPrefix + "_")) {
+      delete memCacheTimestamps[k];
+    }
+  });
+}
 
 export const db = {
   // SETTINGS
   async getSettings(): Promise<Settings> {
+    if (isCacheFresh("settings", CACHE_TTLS.settings) && globalStore.__bmgh_settings) {
+      return globalStore.__bmgh_settings;
+    }
+
     if (isSupabaseConfigured && supabaseAdmin) {
       try {
         const { data, error } = await supabaseAdmin.from("settings").select("*").eq("id", "default").single();
@@ -627,6 +670,7 @@ export const db = {
           }
 
           globalStore.__bmgh_settings = merged;
+          markCacheFresh("settings");
           saveToDisk();
           return merged;
         }
@@ -634,10 +678,12 @@ export const db = {
         console.error("Supabase getSettings error:", err);
       }
     }
+    markCacheFresh("settings");
     return globalStore.__bmgh_settings!;
   },
 
   async updateSettings(updates: Partial<Settings>): Promise<Settings> {
+    invalidateDbCache("settings");
     // Sanitize: do not overwrite real API keys if masked bullets are passed
     const safeUpdates: Partial<Settings> = { ...updates };
     if (safeUpdates.gemini_api_key && safeUpdates.gemini_api_key.includes("••••")) {
@@ -737,6 +783,7 @@ export const db = {
           if (!globalStore.__bmgh_settings.ai_system_instructions && prevAI && safeUpdates.ai_system_instructions === undefined) {
             globalStore.__bmgh_settings.ai_system_instructions = prevAI;
           }
+          invalidateDbCache("settings");
           saveToDisk();
           return globalStore.__bmgh_settings;
         }
@@ -749,12 +796,21 @@ export const db = {
       ...safeUpdates,
       updated_at: new Date().toISOString(),
     };
+    invalidateDbCache("settings");
     saveToDisk();
     return globalStore.__bmgh_settings;
   },
 
   // PRODUCTS
   async getProducts(network?: string): Promise<Product[]> {
+    if (isCacheFresh("products", CACHE_TTLS.products) && globalStore.__bmgh_products && globalStore.__bmgh_products.length > 0) {
+      let list = globalStore.__bmgh_products!;
+      if (network) {
+        list = list.filter((p) => p.network.toLowerCase() === network.toLowerCase());
+      }
+      return [...list].sort((a, b) => a.price - b.price);
+    }
+
     if (isSupabaseConfigured && supabaseAdmin) {
       try {
         let query = supabaseAdmin.from("products").select("*").order("price", { ascending: true });
@@ -762,11 +818,19 @@ export const db = {
           query = query.eq("network", network.toLowerCase());
         }
         const { data, error } = await query;
-        if (!error && data) return data as Product[];
+        if (!error && data) {
+          if (!network) {
+            globalStore.__bmgh_products = data as Product[];
+            markCacheFresh("products");
+            saveToDisk();
+          }
+          return data as Product[];
+        }
       } catch (err) {
         console.error("Supabase getProducts error:", err);
       }
     }
+    markCacheFresh("products");
     let list = globalStore.__bmgh_products!;
     if (network) {
       list = list.filter((p) => p.network.toLowerCase() === network.toLowerCase());
@@ -775,6 +839,7 @@ export const db = {
   },
 
   async addProduct(product: Omit<Product, "id" | "created_at">): Promise<Product> {
+    invalidateDbCache("products");
     if (isSupabaseConfigured && supabaseAdmin) {
       try {
         const { data, error } = await supabaseAdmin
@@ -797,6 +862,7 @@ export const db = {
         if (data) {
           const created = data as Product;
           globalStore.__bmgh_products = [created, ...(globalStore.__bmgh_products || [])];
+          invalidateDbCache("products");
           saveToDisk();
           return created;
         }
@@ -812,11 +878,13 @@ export const db = {
       created_at: new Date().toISOString(),
     };
     globalStore.__bmgh_products = [newProduct, ...(globalStore.__bmgh_products || [])];
+    invalidateDbCache("products");
     saveToDisk();
     return newProduct;
   },
 
   async updateProduct(id: string, updates: Partial<Product>): Promise<Product | null> {
+    invalidateDbCache("products");
     if (isSupabaseConfigured && supabaseAdmin) {
       try {
         const payload: any = {};
@@ -840,6 +908,7 @@ export const db = {
           const updated = data as Product;
           const idx = (globalStore.__bmgh_products || []).findIndex((p) => p.id === id);
           if (idx !== -1) globalStore.__bmgh_products![idx] = updated;
+          invalidateDbCache("products");
           saveToDisk();
           return updated;
         }
@@ -852,11 +921,13 @@ export const db = {
     const index = (globalStore.__bmgh_products || []).findIndex((p) => p.id === id);
     if (index === -1) return null;
     globalStore.__bmgh_products![index] = { ...globalStore.__bmgh_products![index], ...updates };
+    invalidateDbCache("products");
     saveToDisk();
     return globalStore.__bmgh_products![index];
   },
 
   async deleteProduct(id: string): Promise<boolean> {
+    invalidateDbCache("products");
     if (isSupabaseConfigured && supabaseAdmin) {
       try {
         const { error } = await supabaseAdmin.from("products").delete().eq("id", id);
@@ -865,6 +936,7 @@ export const db = {
           throw new Error(error.message);
         }
         globalStore.__bmgh_products = (globalStore.__bmgh_products || []).filter((p) => p.id !== id);
+        invalidateDbCache("products");
         saveToDisk();
         return true;
       } catch (err: any) {
@@ -892,6 +964,9 @@ export const db = {
     if (isSupabaseConfigured && supabaseAdmin) {
       try {
         let query = supabaseAdmin.from("orders").select("*").order("created_at", { ascending: false });
+        if (!filter?.search) {
+          query = query.limit(100);
+        }
         if (filter?.network && filter.network !== "all") {
           query = query.eq("network", filter.network.toLowerCase());
         }
@@ -1225,7 +1300,7 @@ export const db = {
     let supabaseMsgs: Message[] = [];
     if (isSupabaseConfigured && supabaseAdmin) {
       try {
-        let query = supabaseAdmin.from("messages").select("*").order("created_at", { ascending: false });
+        let query = supabaseAdmin.from("messages").select("*").order("created_at", { ascending: false }).limit(100);
         if (sessionId) {
           query = query.eq("session_id", sessionId);
         }
@@ -1400,6 +1475,16 @@ export const db = {
 
   async getActiveVoucher(): Promise<Voucher | null> {
     const now = new Date();
+    if (isCacheFresh("active_voucher", CACHE_TTLS.active_voucher)) {
+      return (
+        (globalStore.__bmgh_vouchers || []).find((v) => {
+          if (!v.is_active || v.claimed_count >= v.max_claims) return false;
+          if (v.expires_at && new Date(v.expires_at) < now) return false;
+          return true;
+        }) || null
+      );
+    }
+
     if (isSupabaseConfigured && supabaseAdmin) {
       try {
         const { data, error } = await supabaseAdmin
@@ -1408,6 +1493,8 @@ export const db = {
           .eq("is_active", true)
           .order("created_at", { ascending: false });
         if (!error && data) {
+          globalStore.__bmgh_vouchers = data as Voucher[];
+          markCacheFresh("active_voucher");
           const valid = (data as Voucher[]).find((v) => {
             if (!v.is_active || v.claimed_count >= v.max_claims) return false;
             if (v.expires_at && new Date(v.expires_at) < now) return false;
@@ -1419,6 +1506,7 @@ export const db = {
         console.error("Supabase getActiveVoucher error:", err);
       }
     }
+    markCacheFresh("active_voucher");
     return (
       (globalStore.__bmgh_vouchers || []).find((v) => {
         if (!v.is_active || v.claimed_count >= v.max_claims) return false;
@@ -1429,6 +1517,7 @@ export const db = {
   },
 
   async createVoucher(voucher: Omit<Voucher, "id" | "claimed_count" | "created_at">): Promise<Voucher> {
+    invalidateDbCache("active_voucher");
     const newVoucher: Voucher = {
       ...voucher,
       id: crypto.randomUUID(),
@@ -1444,6 +1533,7 @@ export const db = {
         if (!error && data) {
           if (!globalStore.__bmgh_vouchers) globalStore.__bmgh_vouchers = [];
           globalStore.__bmgh_vouchers.unshift(data as Voucher);
+          invalidateDbCache("active_voucher");
           saveToDisk();
           return data as Voucher;
         }
@@ -1454,11 +1544,13 @@ export const db = {
 
     if (!globalStore.__bmgh_vouchers) globalStore.__bmgh_vouchers = [];
     globalStore.__bmgh_vouchers.unshift(newVoucher);
+    invalidateDbCache("active_voucher");
     saveToDisk();
     return newVoucher;
   },
 
   async toggleVoucher(id: string, is_active: boolean): Promise<boolean> {
+    invalidateDbCache("active_voucher");
     if (isSupabaseConfigured && supabaseAdmin) {
       try {
         await supabaseAdmin.from("vouchers").update({ is_active }).eq("id", id);
@@ -1468,11 +1560,13 @@ export const db = {
     }
     const v = (globalStore.__bmgh_vouchers || []).find((x) => x.id === id);
     if (v) v.is_active = is_active;
+    invalidateDbCache("active_voucher");
     saveToDisk();
     return true;
   },
 
   async toggleAllVouchers(is_active: boolean): Promise<boolean> {
+    invalidateDbCache("active_voucher");
     if (isSupabaseConfigured && supabaseAdmin) {
       try {
         await supabaseAdmin.from("vouchers").update({ is_active });
@@ -1483,11 +1577,13 @@ export const db = {
     (globalStore.__bmgh_vouchers || []).forEach((v) => {
       v.is_active = is_active;
     });
+    invalidateDbCache("active_voucher");
     saveToDisk();
     return true;
   },
 
   async deleteVoucher(id: string): Promise<boolean> {
+    invalidateDbCache("active_voucher");
     if (isSupabaseConfigured && supabaseAdmin) {
       try {
         await supabaseAdmin.from("vouchers").delete().eq("id", id);
@@ -1498,6 +1594,7 @@ export const db = {
     if (globalStore.__bmgh_vouchers) {
       globalStore.__bmgh_vouchers = globalStore.__bmgh_vouchers.filter((x) => x.id !== id);
     }
+    invalidateDbCache("active_voucher");
     saveToDisk();
     return true;
   },
@@ -1551,6 +1648,8 @@ export const db = {
       v.claimed_count += 1;
       if (v.claimed_count >= v.max_claims) v.is_active = false;
     }
+    invalidateDbCache("active_voucher");
+    saveToDisk();
 
     return newClaim;
   },
@@ -1569,6 +1668,14 @@ export const db = {
 
   // ================= AGENT STORE METHODS =================
   async getAgentStoreConfig(): Promise<AgentStoreConfig> {
+    if (isCacheFresh("agent_config", CACHE_TTLS.agent_config) && globalStore.__bmgh_agent_config) {
+      const current = globalStore.__bmgh_agent_config;
+      const devMaster = current.developer_master_enabled !== false;
+      const adminEn = current.admin_enabled !== false;
+      current.is_enabled = Boolean(devMaster && adminEn);
+      return current;
+    }
+
     if (isSupabaseConfigured && supabaseAdmin) {
       try {
         const { data } = await supabaseAdmin
@@ -1604,12 +1711,14 @@ export const db = {
             registration_fee,
             custom_domain,
           };
+          markCacheFresh("agent_config");
           return globalStore.__bmgh_agent_config;
         }
       } catch (err) {
         // Fallback to local
       }
     }
+    markCacheFresh("agent_config");
     const current = globalStore.__bmgh_agent_config;
     if (current) {
       const devMaster = current.developer_master_enabled !== false;
@@ -1627,6 +1736,7 @@ export const db = {
   },
 
   async updateAgentStoreConfig(config: Partial<AgentStoreConfig>): Promise<AgentStoreConfig> {
+    invalidateDbCache("agent_config");
     const current = await this.getAgentStoreConfig();
 
     let developer_master_enabled =
@@ -1664,6 +1774,7 @@ export const db = {
       registration_fee,
       custom_domain,
     };
+    invalidateDbCache("agent_config");
     saveToDisk();
 
     if (isSupabaseConfigured && supabaseAdmin) {
@@ -1682,6 +1793,10 @@ export const db = {
   },
 
   async getAgentBaseProducts(): Promise<AgentBaseProduct[]> {
+    if (isCacheFresh("agent_base_products", CACHE_TTLS.agent_base_products) && globalStore.__bmgh_agent_base_products && globalStore.__bmgh_agent_base_products.length > 0) {
+      return globalStore.__bmgh_agent_base_products;
+    }
+
     if (isSupabaseConfigured && supabaseAdmin) {
       // 1. Try direct agent_base_products table
       try {
@@ -1699,6 +1814,7 @@ export const db = {
             created_at: b.created_at || new Date().toISOString(),
           }));
           globalStore.__bmgh_agent_base_products = mapped;
+          markCacheFresh("agent_base_products");
           return mapped;
         }
       } catch {}
@@ -1715,6 +1831,7 @@ export const db = {
             const list = JSON.parse(data.announcement_text);
             if (Array.isArray(list) && list.length > 0) {
               globalStore.__bmgh_agent_base_products = list;
+              markCacheFresh("agent_base_products");
               return list;
             }
           } catch {}
@@ -1724,6 +1841,7 @@ export const db = {
       }
     }
 
+    markCacheFresh("agent_base_products");
     const current =
       globalStore.__bmgh_agent_base_products && globalStore.__bmgh_agent_base_products.length > 0
         ? globalStore.__bmgh_agent_base_products
@@ -1733,6 +1851,7 @@ export const db = {
   },
 
   async createAgentBaseProduct(p: Omit<AgentBaseProduct, "id" | "created_at">): Promise<AgentBaseProduct> {
+    invalidateDbCache("agent_base_products");
     const list = await this.getAgentBaseProducts();
     const newProduct: AgentBaseProduct = {
       ...p,
@@ -1741,6 +1860,7 @@ export const db = {
     };
     list.push(newProduct);
     globalStore.__bmgh_agent_base_products = list;
+    invalidateDbCache("agent_base_products");
     saveToDisk();
 
     if (isSupabaseConfigured && supabaseAdmin) {
@@ -1860,6 +1980,10 @@ export const db = {
 
   // AGENTS
   async getAgents(): Promise<Agent[]> {
+    if (isCacheFresh("agents", CACHE_TTLS.agents) && globalStore.__bmgh_agents && globalStore.__bmgh_agents.length > 0) {
+      return globalStore.__bmgh_agents;
+    }
+
     if (isSupabaseConfigured && supabaseAdmin) {
       try {
         const { data } = await supabaseAdmin
@@ -1877,6 +2001,7 @@ export const db = {
                 }
               });
               globalStore.__bmgh_agents = list;
+              markCacheFresh("agents");
               return list;
             }
           } catch {}
@@ -1885,6 +2010,7 @@ export const db = {
         // fallback
       }
     }
+    markCacheFresh("agents");
     const current = globalStore.__bmgh_agents || [];
     initialAgents.forEach((ia) => {
       if (!current.some((a) => a.id === ia.id || a.store_slug === ia.store_slug)) {
@@ -2074,6 +2200,14 @@ export const db = {
 
   // AGENT CUSTOM PRODUCTS
   async getAgentProducts(agentId: string): Promise<AgentCustomProduct[]> {
+    const cacheKey = `agent_products:${agentId}`;
+    if (isCacheFresh(cacheKey, CACHE_TTLS.agent_products) && globalStore.__bmgh_agent_products) {
+      const filtered = globalStore.__bmgh_agent_products.filter((p) => p.agent_id === agentId);
+      if (filtered.length > 0) {
+        return filtered;
+      }
+    }
+
     const baseProducts = await this.getAgentBaseProducts();
     const productMap = new Map<string, AgentCustomProduct>();
 
@@ -2215,6 +2349,7 @@ export const db = {
       }
     }
 
+    markCacheFresh(cacheKey);
     return result;
   },
 
@@ -2224,6 +2359,7 @@ export const db = {
     sellingPrice: number,
     isActive: boolean
   ): Promise<AgentCustomProduct | null> {
+    invalidateDbCache(`agent_products:${agentId}`);
     // 1. Ensure latest catalog for this agent is loaded
     await this.getAgentProducts(agentId);
 
@@ -2327,7 +2463,8 @@ export const db = {
         let query = supabaseAdmin
           .from("agent_orders")
           .select("*")
-          .order("created_at", { ascending: false });
+          .order("created_at", { ascending: false })
+          .limit(100);
         if (agentId) query = query.eq("agent_id", agentId);
         const { data: dbOrders, error: dbErr } = await query;
         if (!dbErr && Array.isArray(dbOrders) && dbOrders.length > 0) {
@@ -2633,6 +2770,10 @@ export const db = {
 
   // ================= DEVELOPER API METHODS =================
   async getDeveloperApiConfig(): Promise<DeveloperApiConfig> {
+    if (isCacheFresh("developer_api_config", CACHE_TTLS.developer_api_config) && globalStore.__bmgh_developer_api_config) {
+      return globalStore.__bmgh_developer_api_config;
+    }
+
     if (isSupabaseConfigured && supabaseAdmin) {
       try {
         const { data } = await supabaseAdmin
@@ -2653,11 +2794,13 @@ export const db = {
               min_wallet_funding,
               notice_message,
             };
+            markCacheFresh("developer_api_config");
             return globalStore.__bmgh_developer_api_config;
           } catch {}
         }
       } catch (err) {}
     }
+    markCacheFresh("developer_api_config");
     return (
       globalStore.__bmgh_developer_api_config || {
         is_enabled: true,
@@ -2669,6 +2812,7 @@ export const db = {
   },
 
   async updateDeveloperApiConfig(config: Partial<DeveloperApiConfig>): Promise<DeveloperApiConfig> {
+    invalidateDbCache("developer_api_config");
     const current = await this.getDeveloperApiConfig();
     const updated: DeveloperApiConfig = {
       is_enabled: config.is_enabled !== undefined ? Boolean(config.is_enabled) : current.is_enabled,
@@ -2678,6 +2822,7 @@ export const db = {
       notice_message: config.notice_message !== undefined ? config.notice_message : current.notice_message,
     };
     globalStore.__bmgh_developer_api_config = updated;
+    invalidateDbCache("developer_api_config");
     saveToDisk();
 
     if (isSupabaseConfigured && supabaseAdmin) {
@@ -2693,6 +2838,10 @@ export const db = {
   },
 
   async getDeveloperApiProducts(): Promise<DeveloperApiProduct[]> {
+    if (isCacheFresh("developer_api_products", CACHE_TTLS.developer_api_products) && globalStore.__bmgh_developer_api_products && globalStore.__bmgh_developer_api_products.length > 0) {
+      return globalStore.__bmgh_developer_api_products;
+    }
+
     if (
       isSupabaseConfigured &&
       supabaseAdmin &&
@@ -2709,12 +2858,14 @@ export const db = {
             const list = JSON.parse(data.announcement_text);
             if (Array.isArray(list) && list.length > 0) {
               globalStore.__bmgh_developer_api_products = list;
+              markCacheFresh("developer_api_products");
               return list;
             }
           } catch {}
         }
       } catch (err) {}
     }
+    markCacheFresh("developer_api_products");
     const current =
       globalStore.__bmgh_developer_api_products && globalStore.__bmgh_developer_api_products.length > 0
         ? globalStore.__bmgh_developer_api_products
@@ -2724,6 +2875,7 @@ export const db = {
   },
 
   async saveDeveloperApiProducts(products: DeveloperApiProduct[]): Promise<DeveloperApiProduct[]> {
+    invalidateDbCache("developer_api_products");
     globalStore.__bmgh_developer_api_products = products;
     saveToDisk();
     if (isSupabaseConfigured && supabaseAdmin) {
@@ -2738,6 +2890,7 @@ export const db = {
   },
 
   async updateDeveloperApiProductPrice(id: string, api_price: number, cost_price?: number): Promise<DeveloperApiProduct | null> {
+    invalidateDbCache("developer_api_products");
     const list = await this.getDeveloperApiProducts();
     const item = list.find((p) => p.id === id);
     if (!item) return null;

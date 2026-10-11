@@ -19,6 +19,8 @@ import {
 } from "lucide-react";
 import FreeDataBanner from "./FreeDataBanner";
 
+import { getCachedSettings, saveSettingsSession } from "@/lib/device-session";
+
 interface Props {
   storeName?: string;
   whatsappNumber?: string;
@@ -37,7 +39,7 @@ export default function Navbar({
   const [agentStoreLive, setAgentStoreLive] = useState<boolean>(isAgentStoreEnabled ?? true);
   const pathname = usePathname();
 
-  // Load WhatsApp channel URL and agent store status from prop, localStorage cache, and fetch latest
+  // Load WhatsApp channel URL and agent store status from prop, localStorage cache, and avoid redundant fetches
   useEffect(() => {
     if (whatsappChannelUrl) {
       setChannelUrl(whatsappChannelUrl);
@@ -45,7 +47,8 @@ export default function Navbar({
     if (isAgentStoreEnabled !== undefined) {
       setAgentStoreLive(isAgentStoreEnabled);
     }
-    // Check localStorage cache so link NEVER disappears even if server is cold starting
+
+    // Check device session / localStorage cache
     try {
       const cached = localStorage.getItem("bigjay_whatsapp_channel_url");
       if (cached && !whatsappChannelUrl) {
@@ -53,7 +56,20 @@ export default function Navbar({
       }
     } catch {}
 
-    fetch("/api/settings", { cache: "no-store" })
+    // Only fetch if channelUrl or agentStoreLive is missing or uninitialized
+    if (whatsappChannelUrl && isAgentStoreEnabled !== undefined) {
+      return;
+    }
+
+    const cachedSettings = getCachedSettings();
+    if (cachedSettings) {
+      if (cachedSettings.whatsapp_channel_url && !whatsappChannelUrl) {
+        setChannelUrl(cachedSettings.whatsapp_channel_url);
+      }
+      return;
+    }
+
+    fetch("/api/settings")
       .then((r) => r.json())
       .then((d) => {
         if (d?.settings?.whatsapp_channel_url && String(d.settings.whatsapp_channel_url).trim()) {
@@ -62,6 +78,9 @@ export default function Navbar({
           try {
             localStorage.setItem("bigjay_whatsapp_channel_url", fresh);
           } catch {}
+        }
+        if (d?.settings) {
+          saveSettingsSession(d.settings);
         }
         if (d?.agent_store_enabled !== undefined) {
           setAgentStoreLive(Boolean(d.agent_store_enabled));

@@ -4,6 +4,7 @@ import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { Order, Settings } from "@/lib/db";
 import confetti from "canvas-confetti";
+import { saveDeviceSession } from "@/lib/device-session";
 import {
   CheckCircle2,
   Clock,
@@ -32,6 +33,9 @@ export default function ReceiptClientView({ initialOrder, reference, settings, b
 
   // Trigger celebration confetti on delivered status
   useEffect(() => {
+    if (order) {
+      saveDeviceSession("last_tracked", { query: order.reference, orders: [order] }, 30 * 60 * 1000);
+    }
     if (order?.status === "delivered") {
       try {
         confetti({
@@ -44,7 +48,7 @@ export default function ReceiptClientView({ initialOrder, reference, settings, b
         // Safe fallback
       }
     }
-  }, [order?.status]);
+  }, [order?.status, order]);
 
   // Polling helper if status is pending
   const refreshStatus = async () => {

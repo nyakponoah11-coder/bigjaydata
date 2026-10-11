@@ -9,7 +9,7 @@ export async function GET() {
     const trackerData = await fetchDeliveryTracker();
     return NextResponse.json(trackerData, {
       headers: {
-        "Cache-Control": "no-store, max-age=0",
+        "Cache-Control": "public, max-age=30, s-maxage=60, stale-while-revalidate=120",
       },
     });
   } catch (error: any) {

@@ -9,7 +9,11 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const network = searchParams.get("network");
     const products = await db.getProducts(network || undefined);
-    return NextResponse.json({ success: true, products });
+    return NextResponse.json({ success: true, products }, {
+      headers: {
+        "Cache-Control": "public, max-age=120, s-maxage=300, stale-while-revalidate=600",
+      },
+    });
   } catch (error: any) {
     return NextResponse.json(
       { success: false, message: error?.message || "Failed to fetch products" },

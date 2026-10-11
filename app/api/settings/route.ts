@@ -14,6 +14,10 @@ export async function GET() {
       success: true,
       settings: safeSettings,
       agent_store_enabled: config.is_enabled,
+    }, {
+      headers: {
+        "Cache-Control": "public, max-age=60, s-maxage=120, stale-while-revalidate=300",
+      },
     });
   } catch (error: any) {
     return NextResponse.json(

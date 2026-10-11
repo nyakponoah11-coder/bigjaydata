@@ -1033,12 +1033,20 @@ function generateLiveTrackerFallback(settings?: any): DeliveryTrackerData {
   };
 }
 
+// Global in-memory server cache for delivery tracker (60s TTL)
+let trackerServerCache: { data: DeliveryTrackerData; ts: number } | null = null;
+const TRACKER_SERVER_TTL = 60 * 1000;
+
 /**
  * Polls DataMart delivery tracker endpoint: GET /delivery-tracker
  * Merges the public delivery-status feed which carries the FAST LANE (unibundle) frontier
  * and todayStats with the live developer scanner stats, exactly matching DataMart.
  */
 export async function fetchDeliveryTracker(): Promise<DeliveryTrackerData> {
+  if (trackerServerCache && Date.now() - trackerServerCache.ts < TRACKER_SERVER_TTL) {
+    return trackerServerCache.data;
+  }
+
   const settings = await db.getSettings();
   const keys = await resolveDatamartKeys();
   const apiKey = keys[0] || ACTIVE_DATAMART_KEY;
@@ -1130,6 +1138,7 @@ export async function fetchDeliveryTracker(): Promise<DeliveryTrackerData> {
     }
 
     if (payload?.data && (payload.data.stats || payload.data.fastLane || payload.data.lastDelivered)) {
+      trackerServerCache = { data: payload as DeliveryTrackerData, ts: Date.now() };
       return payload as DeliveryTrackerData;
     }
   } catch (err) {
@@ -1137,5 +1146,7 @@ export async function fetchDeliveryTracker(): Promise<DeliveryTrackerData> {
   }
 
   // If DataMart is momentarily unreachable or returned non-200, use dynamic real-time calculations
-  return generateLiveTrackerFallback(settings);
+  const fallback = generateLiveTrackerFallback(settings);
+  trackerServerCache = { data: fallback, ts: Date.now() };
+  return fallback;
 }

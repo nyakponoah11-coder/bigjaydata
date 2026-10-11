@@ -8,6 +8,7 @@ import {
   CheckCircle2,
 } from "lucide-react";
 import { DeliveryTrackerData } from "@/lib/datamart";
+import { getCachedDeliveryTracker, saveDeliveryTrackerSession } from "@/lib/device-session";
 
 interface Props {
   variant?: "store" | "admin";
@@ -18,14 +19,22 @@ interface Props {
 export default function DeliveryTrackerCard({
   className = "",
 }: Props) {
-  const [tracker, setTracker] = useState<DeliveryTrackerData | null>(null);
+  const [tracker, setTracker] = useState<DeliveryTrackerData | null>(() => {
+    return getCachedDeliveryTracker();
+  });
 
   const fetchTrackerData = async () => {
+    // Skip polling if document is hidden to conserve bandwidth
+    if (typeof document !== "undefined" && document.visibilityState === "hidden") {
+      return;
+    }
+
     try {
-      const res = await fetch("/api/delivery-tracker", { cache: "no-store" });
+      const res = await fetch("/api/delivery-tracker");
       const data = await res.json();
       if (data && (data.status === "success" || data.data)) {
         setTracker(data);
+        saveDeliveryTrackerSession(data);
       }
     } catch (err) {
       console.warn("Delivery tracker poll error:", err);
@@ -33,8 +42,15 @@ export default function DeliveryTrackerCard({
   };
 
   useEffect(() => {
-    fetchTrackerData();
-    const interval = setInterval(fetchTrackerData, 15000);
+    const cached = getCachedDeliveryTracker();
+    if (cached) {
+      setTracker(cached);
+    } else {
+      fetchTrackerData();
+    }
+
+    // High efficiency: poll every 90 seconds instead of hammering every 15s
+    const interval = setInterval(fetchTrackerData, 90000);
     return () => clearInterval(interval);
   }, []);
 

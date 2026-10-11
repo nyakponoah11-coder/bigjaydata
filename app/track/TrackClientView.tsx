@@ -4,6 +4,7 @@ import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { Order } from "@/lib/db";
 import { Search, Loader2, ArrowRight, Clock, CheckCircle2, AlertTriangle, ShieldCheck, Copy, Check, Zap, RefreshCw } from "lucide-react";
+import { loadDeviceSession, saveDeviceSession } from "@/lib/device-session";
 
 export default function TrackClientView({ storeName }: { storeName: string }) {
   const [query, setQuery] = useState("");
@@ -13,6 +14,16 @@ export default function TrackClientView({ storeName }: { storeName: string }) {
   const [error, setError] = useState("");
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [syncingRef, setSyncingRef] = useState<string | null>(null);
+
+  // Restore previous tracked order from device session if available
+  useEffect(() => {
+    const cached = loadDeviceSession<{ query: string; orders: Order[] }>("last_tracked");
+    if (cached && cached.orders && cached.orders.length > 0) {
+      setQuery(cached.query || "");
+      setOrders(cached.orders);
+      setSearched(true);
+    }
+  }, []);
 
   const handleCopyAllDetails = (o: Order) => {
     const paymentStatus = o.payment_status || (o.paystack_ref ? "paid" : "paid");
@@ -41,6 +52,7 @@ export default function TrackClientView({ storeName }: { storeName: string }) {
       const data = await res.json();
       if (res.ok && data.orders) {
         setOrders(data.orders);
+        saveDeviceSession("last_tracked", { query: ref, orders: data.orders }, 30 * 60 * 1000);
       }
     } catch (e) {
       console.warn("Live status sync error:", e);
@@ -125,6 +137,9 @@ export default function TrackClientView({ storeName }: { storeName: string }) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || "Failed to search");
       setOrders(data.orders || []);
+      if (data.orders && data.orders.length > 0) {
+        saveDeviceSession("last_tracked", { query: clean, orders: data.orders }, 30 * 60 * 1000);
+      }
     } catch (err: any) {
       setError(err?.message || "Could not retrieve order details");
       setOrders([]);

@@ -1,9 +1,10 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Product, Settings } from "@/lib/db";
 import CheckoutModal from "@/components/CheckoutModal";
 import { Zap, Check, ArrowRight, ShieldCheck, Sparkles, ChevronDown } from "lucide-react";
+import { saveProductsSession, saveSettingsSession } from "@/lib/device-session";
 
 interface Props {
   network: string;
@@ -14,6 +15,16 @@ interface Props {
 export default function BuyClientView({ network, products, settings }: Props) {
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+
+  // Sync to device local storage session
+  useEffect(() => {
+    if (products && products.length > 0) {
+      saveProductsSession(network, products);
+    }
+    if (settings) {
+      saveSettingsSession(settings);
+    }
+  }, [network, products, settings]);
 
   // Network badge/theme configuration
   const getTheme = () => {

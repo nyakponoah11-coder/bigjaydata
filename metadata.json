@@ -1,0 +1,8 @@
+{
+  "name": "BundleMartGh",
+  "description": "Instant mobile data bundles portal in Ghana with automated delivery for MTN, Telecel, and AT.",
+  "permissions": [],
+  "capabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

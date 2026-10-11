@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { Zap } from "lucide-react";
+import { getCachedSettings, saveSettingsSession } from "@/lib/device-session";
 
 interface Props {
   text?: string;
@@ -12,25 +13,35 @@ export default function AnnouncementBanner({
   text = "",
   isActive = true,
 }: Props) {
-  const [currentText, setCurrentText] = useState(text);
-  const [active, setActive] = useState(isActive);
+  const [currentText, setCurrentText] = useState(() => {
+    if (text) return text;
+    const cached = getCachedSettings();
+    return cached?.announcement_text || "";
+  });
+  const [active, setActive] = useState(() => {
+    if (isActive !== undefined) return isActive;
+    const cached = getCachedSettings();
+    return cached?.announcement_active !== false;
+  });
 
   // Sync when props change from server
   useEffect(() => {
-    if (text) setCurrentText(text);
-    if (isActive !== undefined) setActive(isActive);
+    if (text) {
+      setCurrentText(text);
+    }
+    if (isActive !== undefined) {
+      setActive(isActive);
+    }
   }, [text, isActive]);
 
-  // Live client-side fetch from /api/settings to guarantee latest text reflects immediately
+  // Only fetch from /api/settings if no initial text was provided
   useEffect(() => {
-    let isMounted = true;
+    if (text && text.trim()) return;
 
+    let isMounted = true;
     const fetchLiveBanner = async () => {
       try {
-        const res = await fetch("/api/settings", {
-          cache: "no-store",
-          headers: { "Cache-Control": "no-cache" },
-        });
+        const res = await fetch("/api/settings");
         const data = await res.json();
         if (isMounted && data?.success && data?.settings) {
           if (data.settings.announcement_text !== undefined) {
@@ -39,22 +50,16 @@ export default function AnnouncementBanner({
           if (data.settings.announcement_active !== undefined) {
             setActive(data.settings.announcement_active !== false);
           }
+          saveSettingsSession(data.settings);
         }
-      } catch (err) {
-        // Fallback to server prop
-      }
+      } catch (err) {}
     };
 
     fetchLiveBanner();
-
-    // Listen for storage or focus events to auto-refresh when admin saves settings in another tab
-    const handleFocus = () => fetchLiveBanner();
-    window.addEventListener("focus", handleFocus);
     return () => {
       isMounted = false;
-      window.removeEventListener("focus", handleFocus);
     };
-  }, []);
+  }, [text]);
 
   if (!active || !currentText?.trim()) return null;
 

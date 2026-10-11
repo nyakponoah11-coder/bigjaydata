@@ -11,7 +11,11 @@ export async function GET(
   try {
     const { network } = await params;
     const products = await db.getProducts(network);
-    return NextResponse.json({ success: true, products });
+    return NextResponse.json({ success: true, products }, {
+      headers: {
+        "Cache-Control": "public, max-age=120, s-maxage=300, stale-while-revalidate=600",
+      },
+    });
   } catch (error: any) {
     return NextResponse.json(
       { success: false, message: error?.message || "Failed to fetch products" },
