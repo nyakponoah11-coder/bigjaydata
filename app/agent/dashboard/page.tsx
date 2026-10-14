@@ -49,10 +49,6 @@ export default function AgentDashboardPage() {
   const [tinyUrl, setTinyUrl] = useState<string>("");
   const [shortening, setShortening] = useState<boolean>(false);
 
-  // Home / Dashboard States
-  const [selectedDate, setSelectedDate] = useState<string>(
-    new Date().toISOString().split("T")[0]
-  );
   const [copied, setCopied] = useState(false);
 
   // Products States
@@ -191,12 +187,9 @@ export default function AgentDashboardPage() {
           .filter((w: any) => w.status === "completed" || w.status === "pending")
           .reduce((sum: number, w: any) => sum + (Number(w.amount) || 0), 0);
 
-        const currentEarned = Math.max(Number(profData.agent.total_earned || 0), Number(totalProfitFromOrders.toFixed(2)));
-        const currentWithdrawn = Math.max(Number(profData.agent.total_withdrawn || 0), Number(totalWithdrawnFromList.toFixed(2)));
-        const currentBalance = Math.max(
-          Number(profData.agent.wallet_balance || 0),
-          Number(Math.max(0, currentEarned - currentWithdrawn).toFixed(2))
-        );
+        const currentEarned = Number(totalProfitFromOrders.toFixed(2));
+        const currentWithdrawn = Number(totalWithdrawnFromList.toFixed(2));
+        const currentBalance = Number(Math.max(0, currentEarned - currentWithdrawn).toFixed(2));
 
         const mergedAgent = {
           ...profData.agent,
@@ -561,12 +554,6 @@ export default function AgentDashboardPage() {
     }
   };
 
-  // Calculated Stats for Selected Date
-  const dateOrders = orders.filter((o) => {
-    if (!o.created_at) return false;
-    return new Date(o.created_at).toISOString().split("T")[0] === selectedDate;
-  });
-
   const isOrderPaid = (o: any) => {
     const ps = (o.payment_status || "").toLowerCase().trim();
     const s = (o.status || "").toLowerCase().trim();
@@ -593,10 +580,7 @@ export default function AgentDashboardPage() {
     );
   };
 
-  const todaySpent = dateOrders.filter(isOrderPaid).reduce((acc, o) => acc + (Number(o.amount) || 0), 0);
-  const todayProfit = dateOrders.filter(isOrderPaid).reduce((acc, o) => acc + (Number(o.agent_profit) || 0), 0);
-
-  // Overall accumulated order profit and current available wallet balance (strictly for confirmed paid orders)
+  // Overall accumulated store profit and current available wallet balance (strictly for confirmed paid storefront orders)
   const allTimeProfit = orders.filter(isOrderPaid).reduce((acc, o) => {
     return acc + (Number(o.agent_profit) || 0);
   }, 0);
@@ -829,77 +813,13 @@ export default function AgentDashboardPage() {
           })}
         </div>
 
-        {/* TAB 1: HOMEPAGE (Stats, Today's Spend, Profit, Calendar) */}
+        {/* TAB 1: HOMEPAGE (Storefront Performance & Activity) */}
         {activeTab === "home" && (
           <div className="space-y-6">
-            {/* Calendar / Date Filter for Dashboard Time */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-900 border border-slate-800 rounded-2xl p-4">
-              <div className="flex items-center gap-2">
-                <Calendar className="w-4 h-4 text-emerald-400" />
-                <span className="text-xs font-bold text-white">Dashboard Performance Period:</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <input
-                  type="date"
-                  value={selectedDate}
-                  onChange={(e) => setSelectedDate(e.target.value)}
-                  className="bg-slate-800 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-white font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                />
-                <button
-                  onClick={() => setSelectedDate(new Date().toISOString().split("T")[0])}
-                  className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-[11px] font-bold text-slate-300 rounded-xl"
-                >
-                  Today
-                </button>
-              </div>
-            </div>
-
-            {/* Performance Stats Cards */}
+            {/* Storefront Performance Cards */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              {/* Total Orders for Selected Day */}
-              <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 shadow-xl">
-                <div className="flex items-center justify-between text-slate-400 text-xs font-bold uppercase tracking-wider mb-2">
-                  <span>Day&apos;s Orders</span>
-                  <ShoppingCart className="w-4 h-4 text-emerald-400" />
-                </div>
-                <div className="text-2xl font-black text-white font-mono">
-                  {dateOrders.length}
-                </div>
-                <div className="text-[11px] text-slate-500 mt-1">
-                  Orders placed on {selectedDate}
-                </div>
-              </div>
-
-              {/* Amount Spent Today */}
-              <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 shadow-xl">
-                <div className="flex items-center justify-between text-slate-400 text-xs font-bold uppercase tracking-wider mb-2">
-                  <span>Sales Volume</span>
-                  <DollarSign className="w-4 h-4 text-amber-400" />
-                </div>
-                <div className="text-2xl font-black text-amber-300 font-mono">
-                  GHS {todaySpent.toFixed(2)}
-                </div>
-                <div className="text-[11px] text-slate-500 mt-1">
-                  Gross customer purchases
-                </div>
-              </div>
-
-              {/* Profit Accumulated Today */}
-              <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 shadow-xl">
-                <div className="flex items-center justify-between text-slate-400 text-xs font-bold uppercase tracking-wider mb-2">
-                  <span>Profit for Day</span>
-                  <TrendingUp className="w-4 h-4 text-emerald-400" />
-                </div>
-                <div className="text-2xl font-black text-emerald-400 font-mono">
-                  +GHS {todayProfit.toFixed(2)}
-                </div>
-                <div className="text-[11px] text-slate-500 mt-1">
-                  Net earnings accumulated
-                </div>
-              </div>
-
               {/* Available Wallet Balance */}
-              <div className="bg-gradient-to-br from-emerald-950 via-slate-900 to-slate-900 border border-emerald-500/30 rounded-3xl p-5 shadow-xl">
+              <div className="bg-gradient-to-br from-emerald-950 via-slate-900 to-slate-900 border border-emerald-500/40 rounded-3xl p-5 shadow-xl ring-1 ring-emerald-500/20">
                 <div className="flex items-center justify-between text-emerald-400 text-xs font-bold uppercase tracking-wider mb-2">
                   <span>Wallet Balance</span>
                   <Wallet className="w-4 h-4 text-emerald-400" />
@@ -909,10 +829,52 @@ export default function AgentDashboardPage() {
                 </div>
                 <button
                   onClick={() => setActiveTab("withdrawals")}
-                  className="mt-2 text-xs font-bold text-emerald-400 hover:underline inline-flex items-center gap-1"
+                  className="mt-2 text-xs font-bold text-emerald-400 hover:text-emerald-300 hover:underline inline-flex items-center gap-1 cursor-pointer"
                 >
-                  <span>Withdraw Earnings →</span>
+                  <span>Withdraw Profit →</span>
                 </button>
+              </div>
+
+              {/* Total Store Profit */}
+              <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 shadow-xl">
+                <div className="flex items-center justify-between text-slate-400 text-xs font-bold uppercase tracking-wider mb-2">
+                  <span>Total Store Profit</span>
+                  <TrendingUp className="w-4 h-4 text-emerald-400" />
+                </div>
+                <div className="text-2xl font-black text-emerald-400 font-mono">
+                  +GHS {allTimeProfit.toFixed(2)}
+                </div>
+                <div className="text-[11px] text-slate-500 mt-1">
+                  Accumulated from storefront orders
+                </div>
+              </div>
+
+              {/* Total Withdrawn */}
+              <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 shadow-xl">
+                <div className="flex items-center justify-between text-slate-400 text-xs font-bold uppercase tracking-wider mb-2">
+                  <span>Total Withdrawn</span>
+                  <CheckCircle2 className="w-4 h-4 text-blue-400" />
+                </div>
+                <div className="text-2xl font-black text-blue-300 font-mono">
+                  GHS {totalWithdrawnAmount.toFixed(2)}
+                </div>
+                <div className="text-[11px] text-slate-500 mt-1">
+                  Paid out to your Mobile Money
+                </div>
+              </div>
+
+              {/* Total Storefront Orders */}
+              <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 shadow-xl">
+                <div className="flex items-center justify-between text-slate-400 text-xs font-bold uppercase tracking-wider mb-2">
+                  <span>Storefront Orders</span>
+                  <ShoppingCart className="w-4 h-4 text-amber-400" />
+                </div>
+                <div className="text-2xl font-black text-white font-mono">
+                  {orders.length}
+                </div>
+                <div className="text-[11px] text-slate-500 mt-1">
+                  Completed customer purchases
+                </div>
               </div>
             </div>
 

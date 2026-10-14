@@ -2176,8 +2176,8 @@ export const db = {
           .filter((w) => w.status === "completed" || w.status === "pending")
           .reduce((sum, w) => sum + (Number(w.amount) || 0), 0);
 
-        const totalEarned = Math.max(Number(found.total_earned || 0), Number(earnedFromOrders.toFixed(2)));
-        const totalWithdrawn = Math.max(Number(found.total_withdrawn || 0), Number(withdrawn.toFixed(2)));
+        const totalEarned = Number(earnedFromOrders.toFixed(2));
+        const totalWithdrawn = Number(withdrawn.toFixed(2));
         const currentBalance = Number(Math.max(0, totalEarned - totalWithdrawn).toFixed(2));
 
         found.total_earned = totalEarned;
@@ -2645,15 +2645,16 @@ export const db = {
       }
     }
 
-    // 1. Memory / Disk store orders
+    // 1. Memory / Disk store orders (strictly for this agent)
     const memoryOrders = globalStore.__bmgh_agent_orders || [];
     memoryOrders.forEach((o) => {
+      if (targetAgentId && o.agent_id !== targetAgentId && o.agent_id !== targetSlug) return;
       const key = o.reference || o.id;
       if (key) orderMap.set(key, o);
     });
 
     if (isSupabaseConfigured && supabaseAdmin) {
-      // 2. Direct agent_orders table
+      // 2. Direct agent_orders table (strictly for this agent)
       try {
         let query = supabaseAdmin
           .from("agent_orders")
@@ -2688,7 +2689,7 @@ export const db = {
         }
       } catch {}
 
-      // 3. Settings table registry
+      // 3. Settings table registry (strictly for this agent)
       try {
         const { data } = await supabaseAdmin
           .from("settings")
@@ -2700,6 +2701,7 @@ export const db = {
             const list = JSON.parse(data.announcement_text);
             if (Array.isArray(list)) {
               list.forEach((o: any) => {
+                if (targetAgentId && o.agent_id !== targetAgentId && o.agent_id !== targetSlug) return;
                 const key = o.reference || o.id;
                 if (key && !orderMap.has(key)) orderMap.set(key, o);
               });
@@ -2707,117 +2709,15 @@ export const db = {
           } catch {}
         }
       } catch {}
-
-      // 4. Master orders table (crucial fallback when order created directly in master orders)
-      try {
-        const { data: masterOrders } = await supabaseAdmin
-          .from("orders")
-          .select("*")
-          .order("created_at", { ascending: false })
-          .limit(100);
-        if (Array.isArray(masterOrders)) {
-          masterOrders.forEach((mo: any) => {
-            let dm = mo.datamart_response;
-            if (typeof dm === "string") {
-              try { dm = JSON.parse(dm); } catch {}
-            }
-            const orderAgentId = dm?.agent_id || dm?.store_slug;
-            const ref = mo.reference || "";
-            const isMatch =
-              !targetAgentId ||
-              orderAgentId === targetAgentId ||
-              orderAgentId === targetSlug ||
-              (targetSlug && ref.toLowerCase().startsWith(targetSlug.slice(0, 4))) ||
-              (ref.startsWith("STON-") && (targetSlug === "stony" || targetAgentId === "agent-82d9c8eb"));
-
-            if (isMatch) {
-              const key = ref || mo.id;
-              if (!orderMap.has(key)) {
-                orderMap.set(key, {
-                  id: "agord-" + mo.id,
-                  agent_id: targetAgentId || orderAgentId || "agent-82d9c8eb",
-                  reference: ref,
-                  network: mo.network,
-                  package_size: mo.package_size,
-                  phone: mo.phone,
-                  amount: Number(mo.amount),
-                  base_price: Number(dm?.base_price || 0.02),
-                  agent_profit: Number(
-                    dm?.agent_profit !== undefined
-                      ? dm.agent_profit
-                      : Math.max(0, Number(mo.amount) - (dm?.base_price || 0.02))
-                  ),
-                  paystack_ref: mo.paystack_ref,
-                  payment_status: mo.payment_status || "paid",
-                  delivery_status: mo.delivery_status || "delivered",
-                  status: mo.status || "delivered",
-                  datamart_response: dm,
-                  created_at: mo.created_at,
-                });
-              }
-            }
-          });
-        }
-      } catch {}
-    }
-
-    // 5. Also check master orders in globalStore.__bmgh_orders
-    if (globalStore.__bmgh_orders) {
-      globalStore.__bmgh_orders.forEach((mo: any) => {
-        let dm = mo.datamart_response;
-        if (typeof dm === "string") {
-          try { dm = JSON.parse(dm); } catch {}
-        }
-        const orderAgentId = dm?.agent_id || dm?.store_slug;
-        const ref = mo.reference || "";
-        const isMatch =
-          !targetAgentId ||
-          orderAgentId === targetAgentId ||
-          orderAgentId === targetSlug ||
-          (targetSlug && ref.toLowerCase().startsWith(targetSlug.slice(0, 4))) ||
-          (ref.startsWith("STON-") && (targetSlug === "stony" || targetAgentId === "agent-82d9c8eb"));
-
-        if (isMatch) {
-          const key = ref || mo.id;
-          if (!orderMap.has(key)) {
-            orderMap.set(key, {
-              id: "agord-" + mo.id,
-              agent_id: targetAgentId || orderAgentId || "agent-82d9c8eb",
-              reference: ref,
-              network: mo.network,
-              package_size: mo.package_size,
-              phone: mo.phone,
-              amount: Number(mo.amount),
-              base_price: Number(dm?.base_price || 0.02),
-              agent_profit: Number(
-                dm?.agent_profit !== undefined
-                  ? dm.agent_profit
-                  : Math.max(0, Number(mo.amount) - (dm?.base_price || 0.02))
-              ),
-              paystack_ref: mo.paystack_ref,
-              payment_status: mo.payment_status || "paid",
-              delivery_status: mo.delivery_status || "delivered",
-              status: mo.status || "delivered",
-              datamart_response: dm,
-              created_at: mo.created_at,
-            });
-          }
-        }
-      });
     }
 
     const allMerged = Array.from(orderMap.values()).sort(
       (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
     );
 
-    globalStore.__bmgh_agent_orders = allMerged;
-
     if (targetAgentId) {
       return allMerged.filter(
-        (o) =>
-          o.agent_id === targetAgentId ||
-          o.agent_id === targetSlug ||
-          (targetSlug && o.reference?.toLowerCase().startsWith(targetSlug.slice(0, 4)))
+        (o) => o.agent_id === targetAgentId || o.agent_id === targetSlug
       );
     }
 
