@@ -2635,7 +2635,7 @@ export const db = {
     let targetAgentId = agentId ? agentId.trim() : "";
     let targetSlug = "";
     if (targetAgentId) {
-      const allAgents = globalStore.__bmgh_agents || initialAgents;
+      const allAgents = await this.getAgents();
       const matched = allAgents.find(
         (a) => a.id === targetAgentId || a.store_slug.toLowerCase() === targetAgentId.toLowerCase()
       );
@@ -2738,6 +2738,9 @@ export const db = {
         a.id === newOrder.agent_id ||
         a.store_slug.toLowerCase() === newOrder.agent_id.toLowerCase()
     );
+    if (agent) {
+      newOrder.agent_id = agent.id;
+    }
 
     // Strictly credit the agent's wallet ONLY when payment is confirmed successful
     const ps = (newOrder.payment_status || "").toLowerCase().trim();
@@ -2854,7 +2857,59 @@ export const db = {
 
   // AGENT WITHDRAWALS
   async getAgentWithdrawals(agentId?: string): Promise<AgentWithdrawal[]> {
-    if (isSupabaseConfigured && supabaseAdmin && (!globalStore.__bmgh_agent_withdrawals || globalStore.__bmgh_agent_withdrawals.length === 0)) {
+    const listMap = new Map<string, AgentWithdrawal>();
+
+    let targetAgentId = agentId ? agentId.trim() : "";
+    let targetSlug = "";
+    if (targetAgentId) {
+      const allAgents = await this.getAgents();
+      const matched = allAgents.find(
+        (a) => a.id === targetAgentId || a.store_slug.toLowerCase() === targetAgentId.toLowerCase()
+      );
+      if (matched) {
+        targetAgentId = matched.id;
+        targetSlug = matched.store_slug.toLowerCase();
+      }
+    }
+
+    // 1. In-memory / disk withdrawals
+    const memoryList = globalStore.__bmgh_agent_withdrawals || [];
+    memoryList.forEach((w) => {
+      if (targetAgentId && w.agent_id !== targetAgentId && w.agent_id !== targetSlug) return;
+      if (w.id) listMap.set(w.id, w);
+    });
+
+    if (isSupabaseConfigured && supabaseAdmin) {
+      // 2. Direct agent_withdrawals table in Supabase
+      try {
+        let query = supabaseAdmin
+          .from("agent_withdrawals")
+          .select("*")
+          .order("created_at", { ascending: false });
+        if (targetAgentId) {
+          query = query.or(`agent_id.eq.${targetAgentId}${targetSlug ? `,agent_id.eq.${targetSlug}` : ""}`);
+        }
+        const { data: dbWithdrawals } = await query;
+        if (Array.isArray(dbWithdrawals)) {
+          dbWithdrawals.forEach((w: any) => {
+            const mapped: AgentWithdrawal = {
+              id: w.id,
+              agent_id: w.agent_id,
+              amount: Number(w.amount),
+              momo_number: w.momo_number,
+              momo_network: w.momo_network,
+              status: w.status,
+              verification_code: w.verification_code,
+              verified: w.verified !== false,
+              note: w.note,
+              created_at: w.created_at,
+            };
+            listMap.set(mapped.id, mapped);
+          });
+        }
+      } catch {}
+
+      // 3. Settings table registry
       try {
         const { data } = await supabaseAdmin
           .from("settings")
@@ -2864,15 +2919,28 @@ export const db = {
         if (data?.announcement_text) {
           try {
             const list = JSON.parse(data.announcement_text);
-            if (Array.isArray(list)) globalStore.__bmgh_agent_withdrawals = list;
+            if (Array.isArray(list)) {
+              list.forEach((w: any) => {
+                if (targetAgentId && w.agent_id !== targetAgentId && w.agent_id !== targetSlug) return;
+                if (w.id && !listMap.has(w.id)) listMap.set(w.id, w);
+              });
+            }
           } catch {}
         }
-      } catch (err) {}
+      } catch {}
     }
 
-    const list = globalStore.__bmgh_agent_withdrawals || [];
-    if (agentId) return list.filter((w) => w.agent_id === agentId);
-    return list;
+    const allMerged = Array.from(listMap.values()).sort(
+      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    );
+
+    if (targetAgentId) {
+      return allMerged.filter(
+        (w) => w.agent_id === targetAgentId || w.agent_id === targetSlug
+      );
+    }
+
+    return allMerged;
   },
 
   async createAgentWithdrawal(w: Omit<AgentWithdrawal, "id" | "status" | "verified" | "created_at">): Promise<AgentWithdrawal> {
@@ -2883,19 +2951,52 @@ export const db = {
       verified: true,
       created_at: new Date().toISOString(),
     };
+
+    // Resolve target agent by ID or slug
+    const agents = await this.getAgents();
+    const agent = agents.find(
+      (a) => a.id === w.agent_id || a.store_slug.toLowerCase() === w.agent_id.toLowerCase()
+    );
+
+    if (agent) {
+      newWithdrawal.agent_id = agent.id; // Normalize to canonical agent id
+      agent.wallet_balance = Math.max(0, Number(((agent.wallet_balance || 0) - w.amount).toFixed(2)));
+      agent.total_withdrawn = Number(((agent.total_withdrawn || 0) + w.amount).toFixed(2));
+    }
+
     if (!globalStore.__bmgh_agent_withdrawals) globalStore.__bmgh_agent_withdrawals = [];
     globalStore.__bmgh_agent_withdrawals.unshift(newWithdrawal);
-
-    // Deduct from agent wallet
-    const agent = (globalStore.__bmgh_agents || []).find((a) => a.id === w.agent_id);
-    if (agent) {
-      agent.wallet_balance = Math.max(0, Number((agent.wallet_balance - w.amount).toFixed(2)));
-      agent.total_withdrawn = Number((agent.total_withdrawn + w.amount).toFixed(2));
-    }
 
     saveToDisk();
 
     if (isSupabaseConfigured && supabaseAdmin) {
+      // 1. Direct agent_withdrawals table
+      try {
+        await supabaseAdmin.from("agent_withdrawals").upsert({
+          id: newWithdrawal.id,
+          agent_id: newWithdrawal.agent_id,
+          amount: newWithdrawal.amount,
+          momo_number: newWithdrawal.momo_number,
+          momo_network: newWithdrawal.momo_network,
+          status: newWithdrawal.status,
+          verification_code: newWithdrawal.verification_code,
+          verified: newWithdrawal.verified,
+          note: newWithdrawal.note,
+          created_at: newWithdrawal.created_at,
+        });
+      } catch {}
+
+      // 2. Direct agents table update
+      if (agent) {
+        try {
+          await supabaseAdmin.from("agents").update({
+            wallet_balance: agent.wallet_balance,
+            total_withdrawn: agent.total_withdrawn,
+          }).eq("id", agent.id);
+        } catch {}
+      }
+
+      // 3. Fallback registries
       try {
         await Promise.all([
           supabaseAdmin.from("settings").upsert({

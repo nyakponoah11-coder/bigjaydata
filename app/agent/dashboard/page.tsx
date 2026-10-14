@@ -590,8 +590,8 @@ export default function AgentDashboardPage() {
     .reduce((acc, w) => acc + (Number(w.amount) || 0), 0);
 
   const effectiveWalletBalance = Math.max(
-    Number(agent?.wallet_balance || 0),
-    Number(Math.max(0, allTimeProfit - totalWithdrawnAmount).toFixed(2))
+    0,
+    Number((allTimeProfit - totalWithdrawnAmount).toFixed(2))
   );
 
   // Filtered orders for Orders tab

@@ -163,10 +163,12 @@ export async function POST(req: Request) {
         withdrawal.status = "completed";
       }
 
+      const refreshedAgent = await db.getAgentById(agent_id);
+
       return NextResponse.json({
         success: true,
         withdrawal,
-        new_balance: agent.wallet_balance,
+        new_balance: refreshedAgent ? refreshedAgent.wallet_balance : Math.max(0, Number((agent.wallet_balance - numAmount).toFixed(2))),
         paystack_disbursed: finalStatus === "completed",
         message: finalStatus === "completed"
           ? `Payout of GHS ${numAmount.toFixed(2)} sent directly to your ${momo_network.toUpperCase()} (${momo_number}) via Paystack!`
