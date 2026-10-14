@@ -117,20 +117,13 @@ export default function StorefrontClientView({
               size: p.size,
               price: Number(p.selling_price),
             }));
-          if (mapped.length > 0) {
-            setProductList(mapped);
-            saveAgentStoreSession(agent.store_slug || agent.id, mapped);
-          }
+          setProductList(mapped);
+          saveAgentStoreSession(agent.store_slug || agent.id, mapped);
         }
       } catch (err) {}
     };
 
-    const cached = getCachedAgentStore(agent.store_slug || agent.id);
-    if (cached && Array.isArray(cached) && cached.length > 0) {
-      setProductList(cached);
-    } else {
-      fetchFreshProducts();
-    }
+    fetchFreshProducts(true);
 
     const cleanup = createSmartInterval(() => fetchFreshProducts(true), 30000);
     return () => {

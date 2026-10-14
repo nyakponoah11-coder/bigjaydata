@@ -60,6 +60,7 @@ export default function AgentDashboardPage() {
   const [savingProductId, setSavingProductId] = useState<string | null>(null);
   const [recentlySavedId, setRecentlySavedId] = useState<string | null>(null);
   const [editPrices, setEditPrices] = useState<Record<string, string>>({});
+  const [productNetworkFilter, setProductNetworkFilter] = useState<string>("all");
 
   // Orders States
   const [orders, setOrders] = useState<any[]>([]);
@@ -137,10 +138,10 @@ export default function AgentDashboardPage() {
     try {
       setLoading(true);
       const [profRes, prodRes, ordRes, withRes] = await Promise.all([
-        fetch(`/api/agent/profile?agent_id=${agentId}`),
-        fetch(`/api/agent/products?agent_id=${agentId}`),
-        fetch(`/api/agent/orders?agent_id=${agentId}`),
-        fetch(`/api/agent/withdrawals?agent_id=${agentId}`),
+        fetch(`/api/agent/profile?agent_id=${agentId}`, { cache: "no-store" }),
+        fetch(`/api/agent/products?agent_id=${agentId}`, { cache: "no-store" }),
+        fetch(`/api/agent/orders?agent_id=${agentId}`, { cache: "no-store" }),
+        fetch(`/api/agent/withdrawals?agent_id=${agentId}`, { cache: "no-store" }),
       ]);
 
       const [profData, prodData, ordData, withData] = await Promise.all([
@@ -911,6 +912,50 @@ export default function AgentDashboardPage() {
               </button>
             </div>
 
+            {/* Network Filter Bar */}
+            <div className="flex items-center gap-2 overflow-x-auto pb-1 pt-1">
+              {[
+                { id: "all", label: "All Networks", count: products.length },
+                {
+                  id: "mtn",
+                  label: "MTN",
+                  count: products.filter((p) => p.network?.toLowerCase() === "mtn").length,
+                  badge: "bg-amber-400/20 text-amber-300 border-amber-400/30",
+                },
+                {
+                  id: "telecel",
+                  label: "Telecel",
+                  count: products.filter((p) => p.network?.toLowerCase() === "telecel").length,
+                  badge: "bg-rose-500/20 text-rose-300 border-rose-500/30",
+                },
+                {
+                  id: "at",
+                  label: "AT (AirtelTigo)",
+                  count: products.filter((p) => p.network?.toLowerCase() === "at").length,
+                  badge: "bg-blue-500/20 text-blue-300 border-blue-500/30",
+                },
+              ].map((tab) => {
+                const isSelected = productNetworkFilter === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setProductNetworkFilter(tab.id)}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 border cursor-pointer ${
+                      isSelected
+                        ? "bg-slate-800 text-white border-emerald-500/60 shadow-sm ring-1 ring-emerald-500/30 font-black"
+                        : "bg-slate-900/60 text-slate-400 border-slate-800 hover:border-slate-700 hover:text-slate-200"
+                    }`}
+                  >
+                    <span>{tab.label}</span>
+                    <span className="px-1.5 py-0.5 rounded-full text-[10px] font-mono bg-slate-800 text-slate-300">
+                      {tab.count}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs">
                 <thead>
@@ -925,7 +970,18 @@ export default function AgentDashboardPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/60 font-medium">
-                  {products.map((p) => {
+                  {products
+                    .filter((p) => productNetworkFilter === "all" || p.network?.toLowerCase() === productNetworkFilter.toLowerCase())
+                    .length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="py-8 text-center text-slate-500">
+                        No packages found for {productNetworkFilter.toUpperCase()}.
+                      </td>
+                    </tr>
+                  ) : (
+                    products
+                      .filter((p) => productNetworkFilter === "all" || p.network?.toLowerCase() === productNetworkFilter.toLowerCase())
+                      .map((p) => {
                     const currentSelling = parseFloat(editPrices[p.base_product_id] || p.selling_price);
                     const profitPerSale = Math.max(0, currentSelling - p.base_price);
                     const isSaving = savingProductId === p.base_product_id;
@@ -1025,7 +1081,7 @@ export default function AgentDashboardPage() {
                         </td>
                       </tr>
                     );
-                  })}
+                  }))}
                 </tbody>
               </table>
             </div>

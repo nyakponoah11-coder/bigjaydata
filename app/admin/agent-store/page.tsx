@@ -41,6 +41,7 @@ export default function AdminAgentStorePage() {
   const [withdrawals, setWithdrawals] = useState<any[]>([]);
   const [orders, setOrders] = useState<any[]>([]);
   const [activeTab, setActiveTab] = useState<"products" | "agents" | "withdrawals" | "orders">("products");
+  const [productNetworkFilter, setProductNetworkFilter] = useState<string>("all");
 
   // Form states
   const [regFeeInput, setRegFeeInput] = useState<string>("0");
@@ -599,6 +600,50 @@ export default function AdminAgentStorePage() {
               </button>
             </div>
 
+            {/* Network Filter Bar */}
+            <div className="flex items-center gap-2 overflow-x-auto pb-1 pt-1">
+              {[
+                { id: "all", label: "All Networks", count: baseProducts.length },
+                {
+                  id: "mtn",
+                  label: "MTN",
+                  count: baseProducts.filter((p) => p.network?.toLowerCase() === "mtn").length,
+                  badge: "bg-amber-400/20 text-amber-300 border-amber-400/30",
+                },
+                {
+                  id: "telecel",
+                  label: "Telecel",
+                  count: baseProducts.filter((p) => p.network?.toLowerCase() === "telecel").length,
+                  badge: "bg-rose-500/20 text-rose-300 border-rose-500/30",
+                },
+                {
+                  id: "at",
+                  label: "AT (AirtelTigo)",
+                  count: baseProducts.filter((p) => p.network?.toLowerCase() === "at").length,
+                  badge: "bg-blue-500/20 text-blue-300 border-blue-500/30",
+                },
+              ].map((tab) => {
+                const isSelected = productNetworkFilter === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setProductNetworkFilter(tab.id)}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 border cursor-pointer ${
+                      isSelected
+                        ? "bg-slate-800 text-white border-emerald-500/60 shadow-sm ring-1 ring-emerald-500/30 font-black"
+                        : "bg-slate-900/60 text-slate-400 border-slate-800 hover:border-slate-700 hover:text-slate-200"
+                    }`}
+                  >
+                    <span>{tab.label}</span>
+                    <span className="px-1.5 py-0.5 rounded-full text-[10px] font-mono bg-slate-800 text-slate-300">
+                      {tab.count}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs">
                 <thead>
@@ -611,7 +656,18 @@ export default function AdminAgentStorePage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/60 font-medium">
-                  {baseProducts.map((p) => {
+                  {baseProducts
+                    .filter((p) => productNetworkFilter === "all" || p.network?.toLowerCase() === productNetworkFilter.toLowerCase())
+                    .length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="py-8 text-center text-slate-500">
+                        No base products found for {productNetworkFilter.toUpperCase()}.
+                      </td>
+                    </tr>
+                  ) : (
+                    baseProducts
+                      .filter((p) => productNetworkFilter === "all" || p.network?.toLowerCase() === productNetworkFilter.toLowerCase())
+                      .map((p) => {
                     const isEditing = editingId === p.id;
                     return (
                       <tr key={p.id} className="hover:bg-slate-800/40 transition-colors">
@@ -718,7 +774,7 @@ export default function AdminAgentStorePage() {
                         </td>
                       </tr>
                     );
-                  })}
+                  }))}
                 </tbody>
               </table>
             </div>

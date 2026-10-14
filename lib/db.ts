@@ -944,6 +944,8 @@ export const db = {
 
   async deleteProduct(id: string): Promise<boolean> {
     invalidateDbCache("products");
+    const existingProd = (globalStore.__bmgh_products || []).find((p) => p.id === id);
+
     if (isSupabaseConfigured && supabaseAdmin) {
       try {
         const { error } = await supabaseAdmin.from("products").delete().eq("id", id);
@@ -954,17 +956,35 @@ export const db = {
         globalStore.__bmgh_products = (globalStore.__bmgh_products || []).filter((p) => p.id !== id);
         invalidateDbCache("products");
         saveToDisk();
-        return true;
       } catch (err: any) {
         console.error("Supabase deleteProduct exception:", err?.message || err);
         throw err;
       }
+    } else {
+      const index = (globalStore.__bmgh_products || []).findIndex((p) => p.id === id);
+      if (index !== -1) {
+        globalStore.__bmgh_products!.splice(index, 1);
+        saveToDisk();
+      }
     }
 
-    const index = (globalStore.__bmgh_products || []).findIndex((p) => p.id === id);
-    if (index === -1) return false;
-    globalStore.__bmgh_products!.splice(index, 1);
-    saveToDisk();
+    // Cascade to agent base products if a matching product exists by ID or by matching network + size
+    try {
+      const baseProds = await this.getAgentBaseProducts();
+      const matchingBp = baseProds.find(
+        (bp) =>
+          bp.id === id ||
+          (existingProd &&
+            bp.network.toLowerCase().trim() === existingProd.network.toLowerCase().trim() &&
+            bp.size.toLowerCase().trim() === existingProd.size.toLowerCase().trim())
+      );
+      if (matchingBp) {
+        await this.deleteAgentBaseProduct(matchingBp.id);
+      }
+    } catch (err) {
+      console.warn("Cascade delete to agent base product error:", err);
+    }
+
     return true;
   },
 
@@ -1990,18 +2010,37 @@ export const db = {
 
   async deleteAgentBaseProduct(id: string): Promise<boolean> {
     const list = await this.getAgentBaseProducts();
+    const targetProduct = list.find((x) => x.id === id);
     const filtered = list.filter((x) => x.id !== id);
     globalStore.__bmgh_agent_base_products = filtered;
 
-    // Clean up corresponding custom agent products
+    // Clean up corresponding custom agent products in memory
     if (globalStore.__bmgh_agent_products) {
       globalStore.__bmgh_agent_products = globalStore.__bmgh_agent_products.filter(
         (ap) => ap.base_product_id !== id
       );
     }
 
-    invalidateServerCache("agent_base_products");
-    invalidateServerCache("agent_products_*");
+    // Clean up custom_prices from agents in memory
+    const aliasKey = targetProduct
+      ? `${targetProduct.network.toLowerCase().trim()}_${targetProduct.size.toLowerCase().trim()}`
+      : null;
+
+    if (globalStore.__bmgh_agents && Array.isArray(globalStore.__bmgh_agents)) {
+      globalStore.__bmgh_agents.forEach((agent) => {
+        if (agent.custom_prices) {
+          delete agent.custom_prices[id];
+          if (aliasKey) {
+            delete agent.custom_prices[aliasKey];
+          }
+        }
+      });
+    }
+
+    // Fully bust all caches so fresh data is served immediately
+    invalidateDbCache("agent_base_products");
+    invalidateDbCache("agent_products");
+    invalidateDbCache();
     saveToDisk();
 
     if (isSupabaseConfigured && supabaseAdmin) {
@@ -2016,10 +2055,28 @@ export const db = {
       try {
         await supabaseAdmin.from("settings").upsert({
           id: "agent_base_products_config",
+          store_name: "AgentBaseProductsConfig",
+          support_phone: "+233551234567",
+          whatsapp_number: "233551234567",
+          email: "support@bundlemartgh.com",
           announcement_text: JSON.stringify(filtered),
         });
       } catch (err) {
         console.warn("Agent base products Supabase delete error:", err);
+      }
+
+      // CRITICAL: Also update agent_products_registry_config so deleted products are permanently purged from Supabase!
+      try {
+        await supabaseAdmin.from("settings").upsert({
+          id: "agent_products_registry_config",
+          store_name: "AgentProductsRegistry",
+          support_phone: "+233551234567",
+          whatsapp_number: "233551234567",
+          email: "support@bundlemartgh.com",
+          announcement_text: JSON.stringify(globalStore.__bmgh_agent_products || []),
+        });
+      } catch (err) {
+        console.warn("Agent products registry Supabase delete sync error:", err);
       }
     }
 
@@ -2252,15 +2309,19 @@ export const db = {
 
   // AGENT CUSTOM PRODUCTS
   async getAgentProducts(agentId: string): Promise<AgentCustomProduct[]> {
+    const baseProducts = await this.getAgentBaseProducts();
+    const baseProductIds = new Set(baseProducts.map((bp) => bp.id));
+
     const cacheKey = `agent_products:${agentId}`;
     if (isCacheFresh(cacheKey, CACHE_TTLS.agent_products) && globalStore.__bmgh_agent_products) {
-      const filtered = globalStore.__bmgh_agent_products.filter((p) => p.agent_id === agentId);
+      const filtered = globalStore.__bmgh_agent_products.filter(
+        (p) => p.agent_id === agentId && baseProductIds.has(p.base_product_id)
+      );
       if (filtered.length > 0) {
         return filtered;
       }
     }
 
-    const baseProducts = await this.getAgentBaseProducts();
     const productMap = new Map<string, AgentCustomProduct>();
 
     if (isSupabaseConfigured && supabaseAdmin) {
@@ -2272,16 +2333,19 @@ export const db = {
           .eq("agent_id", agentId);
         if (!dpErr && Array.isArray(directProds) && directProds.length > 0) {
           directProds.forEach((dp: any) => {
-            productMap.set(dp.base_product_id, {
-              id: dp.id,
-              agent_id: dp.agent_id,
-              base_product_id: dp.base_product_id,
-              network: dp.network,
-              size: dp.size,
-              base_price: Number(dp.base_price),
-              selling_price: Number(dp.selling_price),
-              is_active: dp.is_active !== false,
-            });
+            // STRICT FILTER: Only load if base product actually exists!
+            if (baseProductIds.has(dp.base_product_id)) {
+              productMap.set(dp.base_product_id, {
+                id: dp.id,
+                agent_id: dp.agent_id,
+                base_product_id: dp.base_product_id,
+                network: dp.network,
+                size: dp.size,
+                base_price: Number(dp.base_price),
+                selling_price: Number(dp.selling_price),
+                is_active: dp.is_active !== false,
+              });
+            }
           });
         }
       } catch {}
@@ -2298,9 +2362,10 @@ export const db = {
           try {
             const list = JSON.parse(data.announcement_text);
             if (Array.isArray(list)) {
-              globalStore.__bmgh_agent_products = list;
+              // Sanitize globalStore to strip any deleted base products
+              globalStore.__bmgh_agent_products = list.filter((p: any) => baseProductIds.has(p.base_product_id));
               list
-                .filter((p: any) => p.agent_id === agentId)
+                .filter((p: any) => p.agent_id === agentId && baseProductIds.has(p.base_product_id))
                 .forEach((p: any) => {
                   productMap.set(p.base_product_id, {
                     id: p.id,
@@ -2322,7 +2387,7 @@ export const db = {
     // 3. Fallback to memory store if productMap is missing entries
     if (globalStore.__bmgh_agent_products) {
       globalStore.__bmgh_agent_products
-        .filter((p) => p.agent_id === agentId)
+        .filter((p) => p.agent_id === agentId && baseProductIds.has(p.base_product_id))
         .forEach((p) => {
           if (!productMap.has(p.base_product_id)) {
             productMap.set(p.base_product_id, p);
@@ -2376,12 +2441,13 @@ export const db = {
       });
     }
 
-    const result = Array.from(productMap.values());
+    // CRITICAL: Filter result strictly so orphaned/deleted base products can NEVER be returned!
+    const result = Array.from(productMap.values()).filter((p) => baseProductIds.has(p.base_product_id));
 
-    // Update globalStore cache
+    // Update globalStore cache (strictly keeping only active base products)
     if (!globalStore.__bmgh_agent_products) globalStore.__bmgh_agent_products = [];
     globalStore.__bmgh_agent_products = [
-      ...globalStore.__bmgh_agent_products.filter((p) => p.agent_id !== agentId),
+      ...globalStore.__bmgh_agent_products.filter((p) => p.agent_id !== agentId && baseProductIds.has(p.base_product_id)),
       ...result,
     ];
 

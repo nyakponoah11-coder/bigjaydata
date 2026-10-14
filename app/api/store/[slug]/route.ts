@@ -68,7 +68,7 @@ export async function GET(
       paystack_public_key: settings.paystack_public_key || process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY || "",
     }, {
       headers: {
-        "Cache-Control": "public, max-age=60, s-maxage=120, stale-while-revalidate=300",
+        "Cache-Control": "no-store, no-cache, must-revalidate",
       },
     });
   } catch (error: any) {
