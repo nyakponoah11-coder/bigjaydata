@@ -559,6 +559,8 @@ const CACHE_TTLS = {
   developer_api_config: 10 * 60 * 1000,  // 10 minutes
   developer_api_products: 10 * 60 * 1000,// 10 minutes
   orders: 30 * 1000,                     // 30 seconds
+  agent_orders: 30 * 1000,               // 30 seconds (local cache reduces egress)
+  agent_withdrawals: 30 * 1000,          // 30 seconds
   messages: 30 * 1000,                   // 30 seconds
 };
 
@@ -830,29 +832,27 @@ export const db = {
 
     if (isSupabaseConfigured && supabaseAdmin) {
       try {
-        let query = supabaseAdmin.from("products").select("*").order("price", { ascending: true });
-        if (network) {
-          query = query.eq("network", network.toLowerCase());
-        }
-        const { data, error } = await query;
-        if (!error && data) {
-          if (!network) {
-            globalStore.__bmgh_products = data as Product[];
-            markCacheFresh("products");
-            saveToDisk();
+        const { data, error } = await supabaseAdmin.from("products").select("*").order("price", { ascending: true });
+        if (!error && Array.isArray(data) && data.length > 0) {
+          globalStore.__bmgh_products = data as Product[];
+          markCacheFresh("products");
+          saveToDisk();
+          let list = data as Product[];
+          if (network) {
+            list = list.filter((p) => p.network.toLowerCase() === network.toLowerCase());
           }
-          return data as Product[];
+          return list.sort((a, b) => a.price - b.price);
         }
       } catch (err) {
         console.error("Supabase getProducts error (falling back to cache):", err);
       }
     }
     markCacheFresh("products");
-    let list = globalStore.__bmgh_products!;
+    let list = globalStore.__bmgh_products || [];
     if (network) {
       list = list.filter((p) => p.network.toLowerCase() === network.toLowerCase());
     }
-    return list.sort((a, b) => a.price - b.price);
+    return [...list].sort((a, b) => a.price - b.price);
   },
 
   async addProduct(product: Omit<Product, "id" | "created_at">): Promise<Product> {
@@ -998,6 +998,29 @@ export const db = {
     payment_status?: string;
     search?: string;
   }): Promise<Order[]> {
+    // Egress Protection: Serve from in-memory cache if no search and cache is fresh
+    if (!filter?.search && isCacheFresh("orders", CACHE_TTLS.orders) && globalStore.__bmgh_orders && globalStore.__bmgh_orders.length > 0) {
+      let results = [...globalStore.__bmgh_orders].map(normalizeOrder).sort(
+        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      );
+      if (filter?.network && filter.network !== "all") {
+        results = results.filter((o) => o.network.toLowerCase() === filter.network!.toLowerCase());
+      }
+      if (filter?.status && filter.status !== "all") {
+        results = results.filter((o) => o.status === filter.status);
+      }
+      if (filter?.delivery_status && filter.delivery_status !== "all") {
+        results = results.filter((o) => o.delivery_status === filter.delivery_status);
+      }
+      if (filter?.payment_status && filter.payment_status !== "all") {
+        results = results.filter((o) => o.payment_status === filter.payment_status);
+      }
+      if (filter?.date) {
+        results = results.filter((o) => o.created_at.startsWith(filter.date!));
+      }
+      return results;
+    }
+
     if (isSupabaseConfigured && supabaseAdmin) {
       try {
         let query = supabaseAdmin.from("orders").select("*").order("created_at", { ascending: false });
@@ -1018,7 +1041,13 @@ export const db = {
         }
         const { data, error } = await query;
         if (!error && data) {
-          let results = (data as Order[]).map(normalizeOrder);
+          const normalizedData = (data as Order[]).map(normalizeOrder);
+          if (!filter?.search && (!filter || Object.keys(filter).length === 0)) {
+            globalStore.__bmgh_orders = normalizedData;
+            markCacheFresh("orders");
+            saveToDisk();
+          }
+          let results = normalizedData;
           if (filter?.delivery_status && filter.delivery_status !== "all") {
             results = results.filter((o) => o.delivery_status === filter.delivery_status);
           }
@@ -1039,7 +1068,8 @@ export const db = {
       }
     }
 
-    let results = [...globalStore.__bmgh_orders!].map(normalizeOrder).sort(
+    markCacheFresh("orders");
+    let results = [...(globalStore.__bmgh_orders || [])].map(normalizeOrder).sort(
       (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
     );
 
@@ -1192,6 +1222,7 @@ export const db = {
         if (data) {
           const ord = normalizeOrder(data as Order);
           globalStore.__bmgh_orders = [ord, ...(globalStore.__bmgh_orders || [])];
+          invalidateDbCache("orders");
           saveToDisk();
           return ord;
         }
@@ -1225,6 +1256,7 @@ export const db = {
     });
 
     globalStore.__bmgh_orders!.unshift(newOrder);
+    invalidateDbCache("orders");
     saveToDisk();
     return newOrder;
   },
@@ -1312,6 +1344,7 @@ export const db = {
           } else {
             globalStore.__bmgh_orders = [ord, ...(globalStore.__bmgh_orders || [])];
           }
+          invalidateDbCache("orders");
           saveToDisk();
           return ord;
         }
@@ -1328,12 +1361,17 @@ export const db = {
     if (targetDeliveryStatus) order.delivery_status = targetDeliveryStatus;
     if (targetPaymentStatus) order.payment_status = targetPaymentStatus;
     if (datamartResponse) order.datamart_response = datamartResponse;
+    invalidateDbCache("orders");
     saveToDisk();
     return normalizeOrder(order);
   },
 
   // MESSAGES
   async getMessages(sessionId?: string): Promise<Message[]> {
+    if (!sessionId && isCacheFresh("messages", CACHE_TTLS.messages) && globalStore.__bmgh_messages && globalStore.__bmgh_messages.length > 0) {
+      return [...globalStore.__bmgh_messages].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    }
+
     let supabaseMsgs: Message[] = [];
     if (isSupabaseConfigured && supabaseAdmin) {
       try {
@@ -1375,6 +1413,13 @@ export const db = {
 
     const result = Array.from(mergedMap.values());
     result.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+    if (!sessionId) {
+      globalStore.__bmgh_messages = result;
+      markCacheFresh("messages");
+      saveToDisk();
+    }
+
     return result;
   },
 
@@ -1388,6 +1433,7 @@ export const db = {
 
     // Save to memory & disk immediately
     globalStore.__bmgh_messages = [newMsg, ...(globalStore.__bmgh_messages || [])];
+    invalidateDbCache("messages");
     saveToDisk();
 
     if (isSupabaseConfigured && supabaseAdmin) {
@@ -1405,6 +1451,7 @@ export const db = {
         if (!error && data) {
           const idx = globalStore.__bmgh_messages.findIndex((x) => x.id === newMsg.id);
           if (idx !== -1) globalStore.__bmgh_messages[idx] = data as Message;
+          invalidateDbCache("messages");
           saveToDisk();
           return data as Message;
         }
@@ -1424,6 +1471,7 @@ export const db = {
       localMsg.reply = replyText;
       localMsg.replied_at = replied_at;
       localMsg.is_read = true;
+      invalidateDbCache("messages");
       saveToDisk();
     }
 
@@ -1438,6 +1486,7 @@ export const db = {
         if (!error && data) {
           if (localMsg) {
             Object.assign(localMsg, data);
+            invalidateDbCache("messages");
             saveToDisk();
           }
           return data as Message;
@@ -1457,6 +1506,7 @@ export const db = {
     if (localMsg) {
       localMsg.ai_reply = aiReplyText;
       localMsg.ai_replied_at = ai_replied_at;
+      invalidateDbCache("messages");
       saveToDisk();
     }
 
@@ -1471,6 +1521,7 @@ export const db = {
         if (!error && data) {
           if (localMsg) {
             Object.assign(localMsg, data);
+            invalidateDbCache("messages");
             saveToDisk();
           }
           return data as Message;
@@ -1493,6 +1544,7 @@ export const db = {
     }
     const msg = globalStore.__bmgh_messages!.find((m) => m.id === id);
     if (msg) msg.is_read = true;
+    invalidateDbCache("messages");
     saveToDisk();
     return true;
   },
@@ -2651,6 +2703,15 @@ export const db = {
       return ref.startsWith("BMGH-") || id.startsWith("agord-ord-");
     };
 
+    const cacheKey = targetAgentId ? `agent_orders:${targetAgentId}` : "agent_orders_all";
+    if (isCacheFresh(cacheKey, CACHE_TTLS.agent_orders) && globalStore.__bmgh_agent_orders && globalStore.__bmgh_agent_orders.length > 0) {
+      const cleaned = globalStore.__bmgh_agent_orders.filter((o) => !isMasterPlatformOrder(o));
+      if (targetAgentId) {
+        return cleaned.filter((o) => o.agent_id === targetAgentId || o.agent_id === targetSlug);
+      }
+      return cleaned;
+    }
+
     // 1. Memory / Disk store orders (strictly for this agent, excluding master BMGH- orders)
     const memoryOrders = globalStore.__bmgh_agent_orders || [];
     memoryOrders.forEach((o) => {
@@ -2735,13 +2796,13 @@ export const db = {
       } catch {}
     }
 
-    if (globalStore.__bmgh_agent_orders) {
-      globalStore.__bmgh_agent_orders = globalStore.__bmgh_agent_orders.filter((o) => !isMasterPlatformOrder(o));
-    }
-
     const allMerged = Array.from(orderMap.values())
       .filter((o) => !isMasterPlatformOrder(o))
       .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+    globalStore.__bmgh_agent_orders = allMerged;
+    markCacheFresh(cacheKey);
+    saveToDisk();
 
     if (targetAgentId) {
       return allMerged.filter(
@@ -2900,6 +2961,14 @@ export const db = {
       }
     }
 
+    const cacheKey = targetAgentId ? `agent_withdrawals:${targetAgentId}` : "agent_withdrawals_all";
+    if (isCacheFresh(cacheKey, CACHE_TTLS.agent_withdrawals) && globalStore.__bmgh_agent_withdrawals && globalStore.__bmgh_agent_withdrawals.length > 0) {
+      if (targetAgentId) {
+        return globalStore.__bmgh_agent_withdrawals.filter((w) => w.agent_id === targetAgentId || w.agent_id === targetSlug);
+      }
+      return globalStore.__bmgh_agent_withdrawals;
+    }
+
     // 1. In-memory / disk withdrawals
     const memoryList = globalStore.__bmgh_agent_withdrawals || [];
     memoryList.forEach((w) => {
@@ -2961,6 +3030,10 @@ export const db = {
     const allMerged = Array.from(listMap.values()).sort(
       (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
     );
+
+    globalStore.__bmgh_agent_withdrawals = allMerged;
+    markCacheFresh(cacheKey);
+    saveToDisk();
 
     if (targetAgentId) {
       return allMerged.filter(
