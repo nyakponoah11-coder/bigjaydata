@@ -151,21 +151,48 @@ export default function AgentDashboardPage() {
         withRes.json(),
       ]);
 
+      const loadedOrders = ordData.success ? (ordData.orders || []) : [];
+      const loadedWithdrawals = withData.success ? (withData.withdrawals || []) : [];
+      if (ordData.success) setOrders(loadedOrders);
+      if (withData.success) setWithdrawals(loadedWithdrawals);
+
       if (profData.success && profData.agent) {
-        setAgent(profData.agent);
-        setStoreSlug(profData.agent.store_slug || "");
-        setStoreName(profData.agent.store_name || "");
-        setStoreDescription(profData.agent.description || "");
-        setStorePhone(profData.agent.phone || "");
-        setStoreTheme(profData.agent.theme || "emerald");
-        setStoreLogo(profData.agent.logo_url || "");
-        setWhatsappNumber(profData.agent.whatsapp_number || profData.agent.phone || "");
-        setWhatsappChannelUrl(profData.agent.whatsapp_channel_url || "");
-        setSupportEmail(profData.agent.support_email || profData.agent.email || "");
+        const totalProfitFromOrders = loadedOrders.reduce(
+          (sum: number, o: any) => sum + (Number(o.agent_profit) || 0),
+          0
+        );
+        const totalWithdrawnFromList = loadedWithdrawals
+          .filter((w: any) => w.status === "completed" || w.status === "pending")
+          .reduce((sum: number, w: any) => sum + (Number(w.amount) || 0), 0);
+
+        const currentEarned = Math.max(Number(profData.agent.total_earned || 0), Number(totalProfitFromOrders.toFixed(2)));
+        const currentWithdrawn = Math.max(Number(profData.agent.total_withdrawn || 0), Number(totalWithdrawnFromList.toFixed(2)));
+        const currentBalance = Math.max(
+          Number(profData.agent.wallet_balance || 0),
+          Number(Math.max(0, currentEarned - currentWithdrawn).toFixed(2))
+        );
+
+        const mergedAgent = {
+          ...profData.agent,
+          wallet_balance: currentBalance,
+          total_earned: currentEarned,
+          total_withdrawn: currentWithdrawn,
+        };
+
+        setAgent(mergedAgent);
+        setStoreSlug(mergedAgent.store_slug || "");
+        setStoreName(mergedAgent.store_name || "");
+        setStoreDescription(mergedAgent.description || "");
+        setStorePhone(mergedAgent.phone || "");
+        setStoreTheme(mergedAgent.theme || "emerald");
+        setStoreLogo(mergedAgent.logo_url || "");
+        setWhatsappNumber(mergedAgent.whatsapp_number || mergedAgent.phone || "");
+        setWhatsappChannelUrl(mergedAgent.whatsapp_channel_url || "");
+        setSupportEmail(mergedAgent.support_email || mergedAgent.email || "");
         if (profData.custom_domain) {
           setCustomDomain(profData.custom_domain);
         }
-        localStorage.setItem("bmgh_agent_session", JSON.stringify(profData.agent));
+        localStorage.setItem("bmgh_agent_session", JSON.stringify(mergedAgent));
       }
       if (prodData.success) {
         setProducts(prodData.products || []);
@@ -175,8 +202,6 @@ export default function AgentDashboardPage() {
         });
         setEditPrices(pricesMap);
       }
-      if (ordData.success) setOrders(ordData.orders || []);
-      if (withData.success) setWithdrawals(withData.withdrawals || []);
     } catch (err: any) {
       setError("Failed to fetch dashboard data");
     } finally {
@@ -401,8 +426,8 @@ export default function AgentDashboardPage() {
       setError("Minimum withdrawal amount is GHS 5.00.");
       return;
     }
-    if (num > (agent?.wallet_balance || 0)) {
-      setError(`Insufficient wallet balance. You have GHS ${(agent?.wallet_balance || 0).toFixed(2)}.`);
+    if (num > effectiveWalletBalance) {
+      setError(`Insufficient wallet balance. You have GHS ${effectiveWalletBalance.toFixed(2)}.`);
       return;
     }
 
@@ -518,6 +543,20 @@ export default function AgentDashboardPage() {
 
   const todaySpent = dateOrders.reduce((acc, o) => acc + (Number(o.amount) || 0), 0);
   const todayProfit = dateOrders.reduce((acc, o) => acc + (Number(o.agent_profit) || 0), 0);
+
+  // Overall accumulated order profit and current available wallet balance
+  const allTimeProfit = orders.reduce((acc, o) => {
+    return acc + (Number(o.agent_profit) || 0);
+  }, 0);
+
+  const totalWithdrawnAmount = withdrawals
+    .filter((w) => w.status === "completed" || w.status === "pending")
+    .reduce((acc, w) => acc + (Number(w.amount) || 0), 0);
+
+  const effectiveWalletBalance = Math.max(
+    Number(agent?.wallet_balance || 0),
+    Number(Math.max(0, allTimeProfit - totalWithdrawnAmount).toFixed(2))
+  );
 
   // Filtered orders for Orders tab
   const displayedOrders = ordersDateFilter
@@ -814,7 +853,7 @@ export default function AgentDashboardPage() {
                   <Wallet className="w-4 h-4 text-emerald-400" />
                 </div>
                 <div className="text-2xl font-black text-white font-mono">
-                  GHS {Number(agent?.wallet_balance || 0).toFixed(2)}
+                  GHS {effectiveWalletBalance.toFixed(2)}
                 </div>
                 <button
                   onClick={() => setActiveTab("withdrawals")}
@@ -1187,7 +1226,7 @@ export default function AgentDashboardPage() {
                 <div className="mt-2 p-3 rounded-2xl bg-slate-800/80 border border-slate-700/60 flex items-center justify-between">
                   <span className="text-xs text-slate-400">Available Balance:</span>
                   <span className="text-base font-black text-emerald-400 font-mono">
-                    GHS {Number(agent?.wallet_balance || 0).toFixed(2)}
+                    GHS {effectiveWalletBalance.toFixed(2)}
                   </span>
                 </div>
               </div>
@@ -1206,7 +1245,7 @@ export default function AgentDashboardPage() {
                       type="number"
                       step="0.1"
                       min="5"
-                      max={agent?.wallet_balance || 0}
+                      max={effectiveWalletBalance}
                       required
                       placeholder="5.00"
                       value={withdrawAmount}

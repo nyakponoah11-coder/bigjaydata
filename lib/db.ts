@@ -2128,21 +2128,61 @@ export const db = {
   },
 
   async getAgentById(id: string): Promise<Agent | null> {
+    const cleanId = (id || "").trim();
+    if (!cleanId) return null;
     const all = await this.getAgents();
-    const found = all.find((a) => a.id === id) || null;
+    let found = all.find((a) => a.id === cleanId || a.store_slug.toLowerCase() === cleanId.toLowerCase()) || null;
+    if (!found && cleanId.toLowerCase() === "stony") {
+      found = initialAgents[0];
+    }
     if (found) {
       try {
         const orders = await this.getAgentOrders(found.id);
-        const earned = orders
-          .filter((o) => o.payment_status === "paid")
+        const earnedFromOrders = orders
+          .filter((o) => {
+            const ps = (o.payment_status || "").toLowerCase().trim();
+            const s = (o.status || "").toLowerCase().trim();
+            const ds = (o.delivery_status || "").toLowerCase().trim();
+            return (
+              ps === "paid" ||
+              ps === "completed" ||
+              ps === "success" ||
+              s === "delivered" ||
+              s === "completed" ||
+              s === "processing" ||
+              ds === "delivered" ||
+              ds === "completed" ||
+              ds === "processing" ||
+              !!o.paystack_ref ||
+              (Number(o.amount) > 0 && s !== "failed" && s !== "cancelled")
+            );
+          })
           .reduce((sum, o) => sum + (Number(o.agent_profit) || 0), 0);
+
         const withdrawals = await this.getAgentWithdrawals(found.id);
         const withdrawn = withdrawals
-          .filter((w) => w.status === "completed")
+          .filter((w) => w.status === "completed" || w.status === "pending")
           .reduce((sum, w) => sum + (Number(w.amount) || 0), 0);
-        found.total_earned = Number(earned.toFixed(2));
-        found.total_withdrawn = Number(withdrawn.toFixed(2));
-        found.wallet_balance = Number(Math.max(0, earned - withdrawn).toFixed(2));
+
+        const totalEarned = Math.max(Number(found.total_earned || 0), Number(earnedFromOrders.toFixed(2)));
+        const totalWithdrawn = Math.max(Number(found.total_withdrawn || 0), Number(withdrawn.toFixed(2)));
+        const currentBalance = Number(Math.max(0, totalEarned - totalWithdrawn).toFixed(2));
+
+        found.total_earned = totalEarned;
+        found.total_withdrawn = totalWithdrawn;
+        found.wallet_balance = currentBalance;
+
+        // Keep in-memory store in sync
+        if (globalStore.__bmgh_agents) {
+          const match = globalStore.__bmgh_agents.find(
+            (a) => a.id === found!.id || a.store_slug.toLowerCase() === found!.store_slug.toLowerCase()
+          );
+          if (match) {
+            match.wallet_balance = currentBalance;
+            match.total_earned = totalEarned;
+            match.total_withdrawn = totalWithdrawn;
+          }
+        }
       } catch {}
     }
     return found;
@@ -2575,40 +2615,65 @@ export const db = {
 
   // AGENT ORDERS
   async getAgentOrders(agentId?: string): Promise<AgentOrder[]> {
+    const orderMap = new Map<string, AgentOrder>();
+
+    let targetAgentId = agentId ? agentId.trim() : "";
+    let targetSlug = "";
+    if (targetAgentId) {
+      const allAgents = globalStore.__bmgh_agents || initialAgents;
+      const matched = allAgents.find(
+        (a) => a.id === targetAgentId || a.store_slug.toLowerCase() === targetAgentId.toLowerCase()
+      );
+      if (matched) {
+        targetAgentId = matched.id;
+        targetSlug = matched.store_slug.toLowerCase();
+      }
+    }
+
+    // 1. Memory / Disk store orders
+    const memoryOrders = globalStore.__bmgh_agent_orders || [];
+    memoryOrders.forEach((o) => {
+      const key = o.reference || o.id;
+      if (key) orderMap.set(key, o);
+    });
+
     if (isSupabaseConfigured && supabaseAdmin) {
-      // 1. Try direct agent_orders table
+      // 2. Direct agent_orders table
       try {
         let query = supabaseAdmin
           .from("agent_orders")
           .select("*")
           .order("created_at", { ascending: false })
           .limit(100);
-        if (agentId) query = query.eq("agent_id", agentId);
-        const { data: dbOrders, error: dbErr } = await query;
-        if (!dbErr && Array.isArray(dbOrders) && dbOrders.length > 0) {
-          const mapped: AgentOrder[] = dbOrders.map((o: any) => ({
-            id: o.id,
-            agent_id: o.agent_id,
-            reference: o.reference,
-            network: o.network,
-            package_size: o.package_size,
-            phone: o.phone,
-            amount: Number(o.amount),
-            base_price: Number(o.base_price),
-            agent_profit: Number(o.agent_profit),
-            paystack_ref: o.paystack_ref,
-            payment_status: o.payment_status || "paid",
-            delivery_status: o.delivery_status || "pending",
-            status: o.status || "pending",
-            datamart_response: o.datamart_response,
-            created_at: o.created_at,
-          }));
-          globalStore.__bmgh_agent_orders = mapped;
-          return mapped;
+        if (targetAgentId) {
+          query = query.or(`agent_id.eq.${targetAgentId}${targetSlug ? `,agent_id.eq.${targetSlug}` : ""}`);
+        }
+        const { data: dbOrders } = await query;
+        if (Array.isArray(dbOrders)) {
+          dbOrders.forEach((o: any) => {
+            const mapped: AgentOrder = {
+              id: o.id,
+              agent_id: o.agent_id,
+              reference: o.reference,
+              network: o.network,
+              package_size: o.package_size,
+              phone: o.phone,
+              amount: Number(o.amount),
+              base_price: Number(o.base_price),
+              agent_profit: Number(o.agent_profit),
+              paystack_ref: o.paystack_ref,
+              payment_status: o.payment_status || "paid",
+              delivery_status: o.delivery_status || "pending",
+              status: o.status || "pending",
+              datamart_response: o.datamart_response,
+              created_at: o.created_at,
+            };
+            orderMap.set(mapped.reference || mapped.id, mapped);
+          });
         }
       } catch {}
 
-      // 2. Try settings registry config
+      // 3. Settings table registry
       try {
         const { data } = await supabaseAdmin
           .from("settings")
@@ -2618,59 +2683,130 @@ export const db = {
         if (data?.announcement_text) {
           try {
             const list = JSON.parse(data.announcement_text);
-            if (Array.isArray(list) && list.length > 0) {
-              globalStore.__bmgh_agent_orders = list;
-              return agentId ? list.filter((o: any) => o.agent_id === agentId) : list;
+            if (Array.isArray(list)) {
+              list.forEach((o: any) => {
+                const key = o.reference || o.id;
+                if (key && !orderMap.has(key)) orderMap.set(key, o);
+              });
             }
           } catch {}
         }
-      } catch (err) {}
+      } catch {}
 
-      // 3. Fallback: Search master orders table for orders placed through agent store
-      if (agentId) {
-        try {
-          const { data: masterOrders } = await supabaseAdmin
-            .from("orders")
-            .select("*")
-            .order("created_at", { ascending: false });
-          if (Array.isArray(masterOrders) && masterOrders.length > 0) {
-            const agentMatching = masterOrders.filter(
-              (mo: any) =>
-                mo.datamart_response?.agent_id === agentId ||
-                (mo.reference && (mo.reference.startsWith("STON-") || mo.reference.startsWith("DATA-")))
-            );
-            if (agentMatching.length > 0) {
-              const converted: AgentOrder[] = agentMatching.map((mo: any) => ({
-                id: "agord-" + mo.id,
-                agent_id: agentId,
-                reference: mo.reference,
-                network: mo.network,
-                package_size: mo.package_size,
-                phone: mo.phone,
-                amount: Number(mo.amount),
-                base_price: Number(mo.datamart_response?.base_price || 0.02),
-                agent_profit: Number(
-                  mo.datamart_response?.agent_profit !== undefined
-                    ? mo.datamart_response.agent_profit
-                    : Math.max(0, Number(mo.amount) - 0.02)
-                ),
-                paystack_ref: mo.paystack_ref,
-                payment_status: mo.payment_status || "paid",
-                delivery_status: mo.delivery_status || "delivered",
-                status: mo.status || "delivered",
-                datamart_response: mo.datamart_response,
-                created_at: mo.created_at,
-              }));
-              return converted;
+      // 4. Master orders table (crucial fallback when order created directly in master orders)
+      try {
+        const { data: masterOrders } = await supabaseAdmin
+          .from("orders")
+          .select("*")
+          .order("created_at", { ascending: false })
+          .limit(100);
+        if (Array.isArray(masterOrders)) {
+          masterOrders.forEach((mo: any) => {
+            let dm = mo.datamart_response;
+            if (typeof dm === "string") {
+              try { dm = JSON.parse(dm); } catch {}
             }
-          }
-        } catch {}
-      }
+            const orderAgentId = dm?.agent_id || dm?.store_slug;
+            const ref = mo.reference || "";
+            const isMatch =
+              !targetAgentId ||
+              orderAgentId === targetAgentId ||
+              orderAgentId === targetSlug ||
+              (targetSlug && ref.toLowerCase().startsWith(targetSlug.slice(0, 4))) ||
+              (ref.startsWith("STON-") && (targetSlug === "stony" || targetAgentId === "agent-82d9c8eb"));
+
+            if (isMatch) {
+              const key = ref || mo.id;
+              if (!orderMap.has(key)) {
+                orderMap.set(key, {
+                  id: "agord-" + mo.id,
+                  agent_id: targetAgentId || orderAgentId || "agent-82d9c8eb",
+                  reference: ref,
+                  network: mo.network,
+                  package_size: mo.package_size,
+                  phone: mo.phone,
+                  amount: Number(mo.amount),
+                  base_price: Number(dm?.base_price || 0.02),
+                  agent_profit: Number(
+                    dm?.agent_profit !== undefined
+                      ? dm.agent_profit
+                      : Math.max(0, Number(mo.amount) - (dm?.base_price || 0.02))
+                  ),
+                  paystack_ref: mo.paystack_ref,
+                  payment_status: mo.payment_status || "paid",
+                  delivery_status: mo.delivery_status || "delivered",
+                  status: mo.status || "delivered",
+                  datamart_response: dm,
+                  created_at: mo.created_at,
+                });
+              }
+            }
+          });
+        }
+      } catch {}
     }
 
-    const orders = globalStore.__bmgh_agent_orders || [];
-    if (agentId) return orders.filter((o) => o.agent_id === agentId);
-    return orders;
+    // 5. Also check master orders in globalStore.__bmgh_orders
+    if (globalStore.__bmgh_orders) {
+      globalStore.__bmgh_orders.forEach((mo: any) => {
+        let dm = mo.datamart_response;
+        if (typeof dm === "string") {
+          try { dm = JSON.parse(dm); } catch {}
+        }
+        const orderAgentId = dm?.agent_id || dm?.store_slug;
+        const ref = mo.reference || "";
+        const isMatch =
+          !targetAgentId ||
+          orderAgentId === targetAgentId ||
+          orderAgentId === targetSlug ||
+          (targetSlug && ref.toLowerCase().startsWith(targetSlug.slice(0, 4))) ||
+          (ref.startsWith("STON-") && (targetSlug === "stony" || targetAgentId === "agent-82d9c8eb"));
+
+        if (isMatch) {
+          const key = ref || mo.id;
+          if (!orderMap.has(key)) {
+            orderMap.set(key, {
+              id: "agord-" + mo.id,
+              agent_id: targetAgentId || orderAgentId || "agent-82d9c8eb",
+              reference: ref,
+              network: mo.network,
+              package_size: mo.package_size,
+              phone: mo.phone,
+              amount: Number(mo.amount),
+              base_price: Number(dm?.base_price || 0.02),
+              agent_profit: Number(
+                dm?.agent_profit !== undefined
+                  ? dm.agent_profit
+                  : Math.max(0, Number(mo.amount) - (dm?.base_price || 0.02))
+              ),
+              paystack_ref: mo.paystack_ref,
+              payment_status: mo.payment_status || "paid",
+              delivery_status: mo.delivery_status || "delivered",
+              status: mo.status || "delivered",
+              datamart_response: dm,
+              created_at: mo.created_at,
+            });
+          }
+        }
+      });
+    }
+
+    const allMerged = Array.from(orderMap.values()).sort(
+      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    );
+
+    globalStore.__bmgh_agent_orders = allMerged;
+
+    if (targetAgentId) {
+      return allMerged.filter(
+        (o) =>
+          o.agent_id === targetAgentId ||
+          o.agent_id === targetSlug ||
+          (targetSlug && o.reference?.toLowerCase().startsWith(targetSlug.slice(0, 4)))
+      );
+    }
+
+    return allMerged;
   },
 
   async createAgentOrder(orderData: Omit<AgentOrder, "id" | "created_at">): Promise<AgentOrder> {
@@ -2680,20 +2816,26 @@ export const db = {
       created_at: new Date().toISOString(),
     };
 
-    // 1. Ensure agents are loaded
+    // 1. Ensure agents are loaded and match by id or slug
     const agents = await this.getAgents();
-    const agent = agents.find((a) => a.id === newOrder.agent_id);
+    const agent = agents.find(
+      (a) =>
+        a.id === newOrder.agent_id ||
+        a.store_slug.toLowerCase() === newOrder.agent_id.toLowerCase()
+    );
 
-    // If order is paid, automatically credit the agent's wallet
-    if (newOrder.payment_status === "paid" && newOrder.agent_profit > 0 && agent) {
-      agent.wallet_balance = Number((agent.wallet_balance + newOrder.agent_profit).toFixed(2));
-      agent.total_earned = Number((agent.total_earned + newOrder.agent_profit).toFixed(2));
+    // If order has profit, automatically credit the agent's wallet
+    if (newOrder.agent_profit > 0 && agent) {
+      agent.wallet_balance = Number(((agent.wallet_balance || 0) + newOrder.agent_profit).toFixed(2));
+      agent.total_earned = Number(((agent.total_earned || 0) + newOrder.agent_profit).toFixed(2));
     }
 
     // 2. Ensure in-memory cache is populated
     if (!globalStore.__bmgh_agent_orders) globalStore.__bmgh_agent_orders = [];
     globalStore.__bmgh_agent_orders.unshift(newOrder);
 
+    invalidateDbCache("agents");
+    invalidateDbCache("agent_orders");
     saveToDisk();
 
     if (isSupabaseConfigured && supabaseAdmin) {
