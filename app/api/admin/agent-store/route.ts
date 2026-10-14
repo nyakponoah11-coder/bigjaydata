@@ -171,6 +171,19 @@ export async function POST(req: Request) {
       });
     }
 
+    if (action === "reset_finances") {
+      const { agent_id } = body;
+      if (!agent_id) {
+        return NextResponse.json({ success: false, message: "Agent ID is required" }, { status: 400 });
+      }
+
+      await db.resetAgentFinances(agent_id);
+      return NextResponse.json({
+        success: true,
+        message: "Agent test orders, withdrawals, and balances successfully reset to GHS 0.00.",
+      });
+    }
+
     return NextResponse.json({ success: false, message: "Invalid action" }, { status: 400 });
   } catch (error: any) {
     console.error("[Admin Agent Store API] POST error:", error);

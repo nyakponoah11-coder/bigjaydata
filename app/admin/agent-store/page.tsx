@@ -26,6 +26,7 @@ import {
   Ban,
   Edit2,
   Zap,
+  RotateCcw,
 } from "lucide-react";
 
 export default function AdminAgentStorePage() {
@@ -872,6 +873,38 @@ export default function AdminAgentStorePage() {
                               className="p-1.5 rounded-lg bg-slate-800 hover:bg-amber-500/20 hover:text-amber-300 text-slate-400 border border-slate-700 transition-colors"
                             >
                               <KeyRound className="w-3.5 h-3.5" />
+                            </button>
+
+                            {/* Reset Finances / Test Data */}
+                            <button
+                              onClick={async () => {
+                                if (
+                                  confirm(
+                                    `Reset all orders, withdrawals, and balances for "${a.name}" (${a.store_name}) to fresh GHS 0.00?`
+                                  )
+                                ) {
+                                  try {
+                                    const res = await fetch("/api/admin/agent-store", {
+                                      method: "POST",
+                                      headers: { "Content-Type": "application/json" },
+                                      body: JSON.stringify({ action: "reset_finances", agent_id: a.id }),
+                                    });
+                                    const d = await res.json();
+                                    if (d.success) {
+                                      alert(d.message);
+                                      fetchData();
+                                    } else {
+                                      alert(d.message || "Failed to reset finances");
+                                    }
+                                  } catch (e: any) {
+                                    alert(e.message);
+                                  }
+                                }
+                              }}
+                              title="Reset Finances & Test Transactions to GHS 0.00"
+                              className="p-1.5 rounded-lg bg-slate-800 hover:bg-cyan-500/20 hover:text-cyan-300 text-slate-400 border border-slate-700 transition-colors"
+                            >
+                              <RotateCcw className="w-3.5 h-3.5" />
                             </button>
 
                             {/* Suspend / Reactivate */}

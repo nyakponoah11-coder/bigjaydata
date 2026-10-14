@@ -2199,6 +2199,15 @@ export const db = {
       found = initialAgents[0];
     }
     if (found) {
+      // One-time automatic reset for Stony to permanently clear development test orders and test withdrawals
+      if (found.id === "agent-82d9c8eb" || found.store_slug.toLowerCase() === "stony") {
+        const resetKey = "__bmgh_stony_test_data_cleared_v1";
+        if (!(globalStore as any)[resetKey]) {
+          (globalStore as any)[resetKey] = true;
+          await this.resetAgentFinances(found.id);
+        }
+      }
+
       try {
         const orders = await this.getAgentOrders(found.id);
         const earnedFromOrders = orders
@@ -2421,6 +2430,117 @@ export const db = {
 
     if (globalStore.__bmgh_agent_products) {
       globalStore.__bmgh_agent_products = globalStore.__bmgh_agent_products.filter((p) => p.agent_id !== id);
+    }
+
+    return true;
+  },
+
+  async resetAgentFinances(id: string): Promise<boolean> {
+    invalidateServerCache("agents");
+    invalidateDbCache("agent_orders");
+    invalidateDbCache("agent_withdrawals");
+
+    const agents = await this.getAgents();
+    const agent = agents.find((a) => a.id === id || a.store_slug.toLowerCase() === id.toLowerCase());
+    if (!agent) return false;
+
+    const targetId = agent.id;
+    const targetSlug = agent.store_slug.toLowerCase();
+
+    // 1. Reset numbers on agent
+    agent.wallet_balance = 0;
+    agent.total_earned = 0;
+    agent.total_withdrawn = 0;
+
+    // 2. Clear from memory
+    if (globalStore.__bmgh_agent_orders) {
+      globalStore.__bmgh_agent_orders = globalStore.__bmgh_agent_orders.filter(
+        (o) => o.agent_id !== targetId && o.agent_id !== targetSlug
+      );
+    }
+    if (globalStore.__bmgh_agent_withdrawals) {
+      globalStore.__bmgh_agent_withdrawals = globalStore.__bmgh_agent_withdrawals.filter(
+        (w) => w.agent_id !== targetId && w.agent_id !== targetSlug
+      );
+    }
+
+    saveToDisk();
+
+    // 3. Supabase cleanup
+    if (isSupabaseConfigured && supabaseAdmin) {
+      try {
+        await Promise.all([
+          supabaseAdmin.from("agent_orders").delete().or(`agent_id.eq.${targetId},agent_id.eq.${targetSlug}`),
+          supabaseAdmin.from("agent_withdrawals").delete().or(`agent_id.eq.${targetId},agent_id.eq.${targetSlug}`),
+          supabaseAdmin.from("agents").update({ wallet_balance: 0, total_earned: 0, total_withdrawn: 0 }).eq("id", targetId),
+        ]);
+      } catch (err) {
+        console.warn("Supabase direct reset error:", err);
+      }
+
+      // Update registry backups in settings
+      try {
+        const { data: ordReg } = await supabaseAdmin
+          .from("settings")
+          .select("announcement_text")
+          .eq("id", "agent_orders_registry_config")
+          .maybeSingle();
+        if (ordReg?.announcement_text) {
+          try {
+            const list = JSON.parse(ordReg.announcement_text);
+            if (Array.isArray(list)) {
+              const cleaned = list.filter((o: any) => o.agent_id !== targetId && o.agent_id !== targetSlug);
+              await supabaseAdmin.from("settings").upsert({
+                id: "agent_orders_registry_config",
+                announcement_text: JSON.stringify(cleaned),
+              });
+            }
+          } catch {}
+        }
+
+        const { data: withReg } = await supabaseAdmin
+          .from("settings")
+          .select("announcement_text")
+          .eq("id", "agent_withdrawals_registry_config")
+          .maybeSingle();
+        if (withReg?.announcement_text) {
+          try {
+            const list = JSON.parse(withReg.announcement_text);
+            if (Array.isArray(list)) {
+              const cleaned = list.filter((w: any) => w.agent_id !== targetId && w.agent_id !== targetSlug);
+              await supabaseAdmin.from("settings").upsert({
+                id: "agent_withdrawals_registry_config",
+                announcement_text: JSON.stringify(cleaned),
+              });
+            }
+          } catch {}
+        }
+
+        const { data: agReg } = await supabaseAdmin
+          .from("settings")
+          .select("announcement_text")
+          .eq("id", "agents_registry_config")
+          .maybeSingle();
+        if (agReg?.announcement_text) {
+          try {
+            const list = JSON.parse(agReg.announcement_text);
+            if (Array.isArray(list)) {
+              const updated = list.map((a: any) => {
+                if (a.id === targetId || a.store_slug?.toLowerCase() === targetSlug) {
+                  return { ...a, wallet_balance: 0, total_earned: 0, total_withdrawn: 0 };
+                }
+                return a;
+              });
+              await supabaseAdmin.from("settings").upsert({
+                id: "agents_registry_config",
+                announcement_text: JSON.stringify(updated),
+              });
+            }
+          } catch {}
+        }
+      } catch (backupErr) {
+        console.warn("Supabase backup registry reset error:", backupErr);
+      }
     }
 
     return true;
