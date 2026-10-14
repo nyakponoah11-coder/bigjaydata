@@ -340,10 +340,20 @@ export default function StorefrontClientView({
   const currentNetworkConfig =
     NETWORK_CONFIGS.find((n) => n.id === selectedNetwork.toLowerCase()) || NETWORK_CONFIGS[0];
 
-  // Filter products by selected network
-  const networkProducts = productList.filter(
-    (p) => p.network.toLowerCase() === selectedNetwork.toLowerCase()
-  );
+  // Filter products by selected network and sort ascending by size (1GB, 2GB, 3GB, 5GB, etc.)
+  const networkProducts = productList
+    .filter((p) => p.network.toLowerCase() === selectedNetwork.toLowerCase())
+    .sort((a, b) => {
+      const parseMb = (s: string) => {
+        if (!s) return 0;
+        const c = s.trim().toUpperCase();
+        const n = parseFloat(c.replace(/[^0-9.]/g, "")) || 0;
+        if (c.includes("TB")) return n * 1024 * 1024;
+        if (c.includes("GB")) return n * 1024;
+        return n;
+      };
+      return parseMb(a.size) - parseMb(b.size) || (Number(a.price) || 0) - (Number(b.price) || 0);
+    });
 
   // Handle Order Status Lookup
   const handleTrackOrder = async (e: React.FormEvent) => {

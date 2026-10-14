@@ -93,6 +93,16 @@ export function normalizeOrder(order: any): Order {
   };
 }
 
+export function parsePackageSize(sizeStr: string): number {
+  if (!sizeStr) return 0;
+  const clean = sizeStr.trim().toUpperCase();
+  const num = parseFloat(clean.replace(/[^0-9.]/g, "")) || 0;
+  if (clean.includes("TB")) return num * 1024 * 1024;
+  if (clean.includes("GB")) return num * 1024;
+  if (clean.includes("MB")) return num;
+  return num;
+}
+
 
 export interface Settings {
   id: string;
@@ -2551,6 +2561,17 @@ export const db = {
     // CRITICAL: Filter result strictly so orphaned/deleted base products can NEVER be returned!
     const result = Array.from(productMap.values()).filter((p) => baseProductIds.has(p.base_product_id));
 
+    // Sort strictly by network and package size (1GB, 2GB, 3GB, 5GB, 10GB) so items never jump to the bottom
+    result.sort((a, b) => {
+      const na = (a.network || "").toLowerCase();
+      const nb = (b.network || "").toLowerCase();
+      if (na !== nb) return na.localeCompare(nb);
+      const sa = parsePackageSize(a.size);
+      const sb = parsePackageSize(b.size);
+      if (sa !== sb) return sa - sb;
+      return (Number(a.base_price) || 0) - (Number(b.base_price) || 0);
+    });
+
     // Update globalStore cache (strictly keeping only active base products)
     if (!globalStore.__bmgh_agent_products) globalStore.__bmgh_agent_products = [];
     globalStore.__bmgh_agent_products = [
@@ -2698,9 +2719,10 @@ export const db = {
     }
 
     const isMasterPlatformOrder = (o: any) => {
-      const ref = String(o?.reference || "").toUpperCase();
       const id = String(o?.id || "");
-      return ref.startsWith("BMGH-") || id.startsWith("agord-ord-");
+      const basePrice = Number(o?.base_price || 0);
+      // Only the fake 100 platform copies from the older version had id starting with "agord-ord-" and base_price <= 0.02
+      return id.startsWith("agord-ord-") && basePrice <= 0.02;
     };
 
     const cacheKey = targetAgentId ? `agent_orders:${targetAgentId}` : "agent_orders_all";
@@ -2712,7 +2734,7 @@ export const db = {
       return cleaned;
     }
 
-    // 1. Memory / Disk store orders (strictly for this agent, excluding master BMGH- orders)
+    // 1. Memory / Disk store orders (strictly for this agent)
     const memoryOrders = globalStore.__bmgh_agent_orders || [];
     memoryOrders.forEach((o) => {
       if (isMasterPlatformOrder(o)) return;
@@ -2722,12 +2744,13 @@ export const db = {
     });
 
     if (isSupabaseConfigured && supabaseAdmin) {
-      // Auto-purge any leaked master BMGH- orders from agent_orders table
+      // Auto-purge only the fake cloned platform records (id like agord-ord-% with base_price <= 0.02)
       try {
         await supabaseAdmin
           .from("agent_orders")
           .delete()
-          .or("reference.like.BMGH-%,id.like.agord-ord-%");
+          .like("id", "agord-ord-%")
+          .lte("base_price", 0.02);
       } catch {}
 
       // 2. Direct agent_orders table (strictly for this agent)
@@ -2792,6 +2815,41 @@ export const db = {
               }
             }
           } catch {}
+        }
+      } catch {}
+
+      // 4. Also retrieve any orders placed through this agent's store from the master orders table
+      try {
+        if (targetAgentId) {
+          const { data: storeOrders } = await supabaseAdmin
+            .from("orders")
+            .select("*")
+            .or(`datamart_response->>agent_id.eq.${targetAgentId}${targetSlug ? `,datamart_response->>agent_id.eq.${targetSlug}` : ""}`);
+          if (Array.isArray(storeOrders)) {
+            storeOrders.forEach((so: any) => {
+              const profit = Number(so.datamart_response?.agent_profit) || Math.max(0, Number(so.amount) - 4.0);
+              const mapped: AgentOrder = {
+                id: "agord-" + (so.id || so.reference),
+                agent_id: targetAgentId,
+                reference: so.reference,
+                network: so.network,
+                package_size: so.package_size,
+                phone: so.phone,
+                amount: Number(so.amount),
+                base_price: Math.max(0, Number(so.amount) - profit),
+                agent_profit: profit,
+                paystack_ref: so.paystack_ref,
+                payment_status: so.payment_status || "paid",
+                delivery_status: so.delivery_status || "delivered",
+                status: so.status || "delivered",
+                datamart_response: so.datamart_response,
+                created_at: so.created_at,
+              };
+              if (!orderMap.has(mapped.reference)) {
+                orderMap.set(mapped.reference, mapped);
+              }
+            });
+          }
         }
       } catch {}
     }

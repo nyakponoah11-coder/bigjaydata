@@ -38,6 +38,28 @@ import {
 } from "lucide-react";
 import { encodeAgentToken } from "@/lib/agent-link";
 
+function parsePackageSize(sizeStr: string): number {
+  if (!sizeStr) return 0;
+  const clean = sizeStr.trim().toUpperCase();
+  const num = parseFloat(clean.replace(/[^0-9.]/g, "")) || 0;
+  if (clean.includes("TB")) return num * 1024 * 1024;
+  if (clean.includes("GB")) return num * 1024;
+  if (clean.includes("MB")) return num;
+  return num;
+}
+
+function sortProductList(items: any[]): any[] {
+  return [...items].sort((a, b) => {
+    const na = (a.network || "").toLowerCase();
+    const nb = (b.network || "").toLowerCase();
+    if (na !== nb) return na.localeCompare(nb);
+    const sa = parsePackageSize(a.size);
+    const sb = parsePackageSize(b.size);
+    if (sa !== sb) return sa - sb;
+    return (Number(a.base_price) || 0) - (Number(b.base_price) || 0);
+  });
+}
+
 export default function AgentDashboardPage() {
   const router = useRouter();
   const [agent, setAgent] = useState<any>(null);
@@ -161,7 +183,6 @@ export default function AgentDashboardPage() {
             if (
               ps === "failed" ||
               ps === "cancelled" ||
-              ps === "pending" ||
               s === "failed" ||
               s === "cancelled" ||
               ds === "failed" ||
@@ -173,10 +194,16 @@ export default function AgentDashboardPage() {
               ps === "paid" ||
               ps === "completed" ||
               ps === "success" ||
+              ps === "processing" ||
               s === "delivered" ||
               s === "completed" ||
+              s === "processing" ||
+              s === "pending" ||
               ds === "delivered" ||
-              ds === "completed"
+              ds === "completed" ||
+              ds === "processing" ||
+              ds === "pending" ||
+              (Number(o.agent_profit) || 0) > 0
             );
           })
           .reduce(
@@ -189,12 +216,17 @@ export default function AgentDashboardPage() {
 
         const currentEarned = Number(totalProfitFromOrders.toFixed(2));
         const currentWithdrawn = Number(totalWithdrawnFromList.toFixed(2));
-        const currentBalance = Number(Math.max(0, currentEarned - currentWithdrawn).toFixed(2));
+        
+        // Never wipe out real wallet balance if orders are still syncing
+        const dbWalletBalance = Number(profData.agent.wallet_balance || 0);
+        const calcBalance = Number(Math.max(0, currentEarned - currentWithdrawn).toFixed(2));
+        const effectiveBal = dbWalletBalance > 0 ? dbWalletBalance : calcBalance;
+        const effectiveEarned = currentEarned > 0 ? currentEarned : Number((profData.agent.total_earned || (effectiveBal + currentWithdrawn)).toFixed(2));
 
         const mergedAgent = {
           ...profData.agent,
-          wallet_balance: currentBalance,
-          total_earned: currentEarned,
+          wallet_balance: effectiveBal,
+          total_earned: effectiveEarned,
           total_withdrawn: currentWithdrawn,
         };
 
@@ -214,9 +246,10 @@ export default function AgentDashboardPage() {
         localStorage.setItem("bmgh_agent_session", JSON.stringify(mergedAgent));
       }
       if (prodData.success) {
-        setProducts(prodData.products || []);
+        const sorted = sortProductList(prodData.products || []);
+        setProducts(sorted);
         const pricesMap: Record<string, string> = {};
-        (prodData.products || []).forEach((p: any) => {
+        sorted.forEach((p: any) => {
           pricesMap[p.base_product_id] = String(p.selling_price);
         });
         setEditPrices(pricesMap);
@@ -360,8 +393,10 @@ export default function AgentDashboardPage() {
         setNotice("Retail price updated successfully!");
         setRecentlySavedId(p.base_product_id);
         setProducts((prev) =>
-          prev.map((item) =>
-            item.base_product_id === p.base_product_id ? { ...item, selling_price: newPrice } : item
+          sortProductList(
+            prev.map((item) =>
+              item.base_product_id === p.base_product_id ? { ...item, selling_price: newPrice } : item
+            )
           )
         );
         setTimeout(() => {
@@ -428,8 +463,10 @@ export default function AgentDashboardPage() {
       const data = await res.json();
       if (data.success) {
         setProducts((prev) =>
-          prev.map((item) =>
-            item.base_product_id === p.base_product_id ? { ...item, is_active: nextState } : item
+          sortProductList(
+            prev.map((item) =>
+              item.base_product_id === p.base_product_id ? { ...item, is_active: nextState } : item
+            )
           )
         );
       }
@@ -561,7 +598,6 @@ export default function AgentDashboardPage() {
     if (
       ps === "failed" ||
       ps === "cancelled" ||
-      ps === "pending" ||
       s === "failed" ||
       s === "cancelled" ||
       ds === "failed" ||
@@ -573,15 +609,21 @@ export default function AgentDashboardPage() {
       ps === "paid" ||
       ps === "completed" ||
       ps === "success" ||
+      ps === "processing" ||
       s === "delivered" ||
       s === "completed" ||
+      s === "processing" ||
+      s === "pending" ||
       ds === "delivered" ||
-      ds === "completed"
+      ds === "completed" ||
+      ds === "processing" ||
+      ds === "pending" ||
+      (Number(o.agent_profit) || 0) > 0
     );
   };
 
-  // Overall accumulated store profit and current available wallet balance (strictly for confirmed paid storefront orders)
-  const allTimeProfit = orders.filter(isOrderPaid).reduce((acc, o) => {
+  // Overall accumulated store profit and current available wallet balance
+  const calculatedProfit = orders.filter(isOrderPaid).reduce((acc, o) => {
     return acc + (Number(o.agent_profit) || 0);
   }, 0);
 
@@ -589,10 +631,12 @@ export default function AgentDashboardPage() {
     .filter((w) => w.status === "completed" || w.status === "pending")
     .reduce((acc, w) => acc + (Number(w.amount) || 0), 0);
 
-  const effectiveWalletBalance = Math.max(
-    0,
-    Number((allTimeProfit - totalWithdrawnAmount).toFixed(2))
-  );
+  const rawAgentBalance = Number(agent?.wallet_balance || 0);
+  const calculatedBalance = Math.max(0, Number((calculatedProfit - totalWithdrawnAmount).toFixed(2)));
+  const effectiveWalletBalance = rawAgentBalance > 0 ? rawAgentBalance : calculatedBalance;
+  const allTimeProfit = calculatedProfit > 0 
+    ? calculatedProfit 
+    : Number((effectiveWalletBalance + totalWithdrawnAmount).toFixed(2));
 
   // Filtered orders for Orders tab
   const displayedOrders = ordersDateFilter
