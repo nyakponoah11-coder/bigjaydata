@@ -1289,6 +1289,11 @@ export default function AgentDashboardPage() {
                             >
                               {w.status}
                             </span>
+                            {(w.paystack_transfer_code || (w.note && w.note.includes("Paystack"))) && (
+                              <div className="text-[9px] text-blue-400 font-mono mt-0.5 font-bold flex items-center gap-1">
+                                <span>⚡ Paystack</span>
+                              </div>
+                            )}
                           </td>
                         </tr>
                       ))

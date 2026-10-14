@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { disbursePaystackTransfer } from "@/lib/paystack";
 
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { id, status, note } = body;
+    const { id, status, note, pay_with_paystack } = body;
 
     if (!id || !status) {
       return NextResponse.json(
@@ -17,12 +18,54 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, message: "Invalid status" }, { status: 400 });
     }
 
-    const updated = await db.updateWithdrawalStatus(id, status, note);
-    if (!updated) {
+    const allWithdrawals = await db.getAgentWithdrawals();
+    const targetWd = allWithdrawals.find((w) => w.id === id);
+    if (!targetWd) {
       return NextResponse.json({ success: false, message: "Withdrawal request not found" }, { status: 404 });
     }
 
-    return NextResponse.json({ success: true, withdrawal: updated });
+    let extra: { paystack_transfer_code?: string; paystack_status?: string } | undefined = undefined;
+    let finalNote = note;
+
+    if (pay_with_paystack && status === "completed") {
+      const agent = await db.getAgentById(targetWd.agent_id);
+      const recipientName = agent?.name || agent?.store_name || "Agent Partner";
+
+      const transferResult = await disbursePaystackTransfer({
+        amount: targetWd.amount,
+        recipient_phone: targetWd.momo_number,
+        recipient_name: recipientName,
+        network: targetWd.momo_network,
+        reason: `Agent Profit Payout - ${agent?.store_name || targetWd.agent_id}`,
+      });
+
+      if (!transferResult.success) {
+        return NextResponse.json(
+          {
+            success: false,
+            message: `Paystack Payout Failed: ${transferResult.message}`,
+            details: transferResult,
+          },
+          { status: 400 }
+        );
+      }
+
+      extra = {
+        paystack_transfer_code: transferResult.transfer_code,
+        paystack_status: transferResult.status,
+      };
+      finalNote = (note ? note + " | " : "") + `Paid via Paystack Transfer: ${transferResult.transfer_code || "Success"}`;
+    }
+
+    const updated = await db.updateWithdrawalStatus(id, status, finalNote, extra);
+
+    return NextResponse.json({
+      success: true,
+      withdrawal: updated,
+      message: pay_with_paystack
+        ? `Payout of GHS ${Number(targetWd.amount).toFixed(2)} sent via Paystack Transfer!`
+        : `Withdrawal status updated to ${status}.`,
+    });
   } catch (error: any) {
     return NextResponse.json(
       { success: false, message: error?.message || "Failed to update withdrawal status" },

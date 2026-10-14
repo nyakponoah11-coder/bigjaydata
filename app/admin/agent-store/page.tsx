@@ -25,6 +25,7 @@ import {
   Trash2,
   Ban,
   Edit2,
+  Zap,
 } from "lucide-react";
 
 export default function AdminAgentStorePage() {
@@ -335,6 +336,8 @@ export default function AdminAgentStorePage() {
     }
   };
 
+  const [payingPaystackId, setPayingPaystackId] = useState<string | null>(null);
+
   const handleWithdrawalStatus = async (id: string, status: "completed" | "rejected") => {
     try {
       const res = await fetch("/api/admin/agent-store/withdrawals", {
@@ -349,6 +352,41 @@ export default function AdminAgentStorePage() {
       }
     } catch (err) {
       setError("Failed to update withdrawal");
+    }
+  };
+
+  const handlePaystackPayout = async (id: string) => {
+    const target = withdrawals.find((w) => w.id === id);
+    if (!target) return;
+    if (
+      !confirm(
+        `Are you sure you want to disburse GHS ${Number(target.amount).toFixed(2)} to ${target.momo_network.toUpperCase()} (${target.momo_number}) via live Paystack Transfer?`
+      )
+    ) {
+      return;
+    }
+
+    try {
+      setPayingPaystackId(id);
+      setError("");
+      setNotice("");
+      const res = await fetch("/api/admin/agent-store/withdrawals", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, status: "completed", pay_with_paystack: true }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.message || "Paystack payout failed");
+      }
+      setNotice(data.message || "Payout disbursed via Paystack successfully!");
+      setWithdrawals((prev) => prev.map((w) => (w.id === id ? data.withdrawal : w)));
+      fetchData();
+      setTimeout(() => setNotice(""), 6000);
+    } catch (err: any) {
+      setError(err?.message || "Paystack payout failed");
+    } finally {
+      setPayingPaystackId(null);
     }
   };
 
@@ -869,24 +907,54 @@ export default function AdminAgentStorePage() {
                                   ? "bg-emerald-500/20 text-emerald-400"
                                   : w.status === "rejected"
                                   ? "bg-rose-500/20 text-rose-400"
-                                  : "bg-amber-500/20 text-amber-400"
+                                   : "bg-amber-500/20 text-amber-400"
                               }`}
                             >
                               {w.status}
                             </span>
+                            {w.paystack_transfer_code && (
+                              <div className="text-[9px] text-blue-400 font-mono mt-0.5 font-normal">
+                                {w.paystack_transfer_code}
+                              </div>
+                            )}
+                            {w.note && !w.paystack_transfer_code && (
+                              <div className="text-[9px] text-slate-500 truncate max-w-[120px] mt-0.5" title={w.note}>
+                                {w.note}
+                              </div>
+                            )}
                           </td>
                           <td className="py-3 px-4 text-right">
                             {w.status === "pending" && (
-                              <div className="flex items-center justify-end gap-2">
+                              <div className="flex items-center justify-end gap-1.5">
+                                <button
+                                  disabled={payingPaystackId === w.id}
+                                  onClick={() => handlePaystackPayout(w.id)}
+                                  className="px-2.5 py-1 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 disabled:opacity-50 text-white text-[10px] font-bold rounded-lg flex items-center gap-1 shadow-sm transition-all"
+                                  title="Send instant payout via Paystack Transfer API"
+                                >
+                                  {payingPaystackId === w.id ? (
+                                    <>
+                                      <Loader2 className="w-3 h-3 animate-spin" />
+                                      Sending...
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Zap className="w-3 h-3 text-amber-300" />
+                                      Pay via Paystack
+                                    </>
+                                  )}
+                                </button>
                                 <button
                                   onClick={() => handleWithdrawalStatus(w.id, "completed")}
-                                  className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-bold rounded-lg"
+                                  className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] font-bold rounded-lg transition-colors"
+                                  title="Mark as paid manually"
                                 >
                                   Mark Paid
                                 </button>
                                 <button
                                   onClick={() => handleWithdrawalStatus(w.id, "rejected")}
-                                  className="px-2.5 py-1 bg-rose-600 hover:bg-rose-500 text-white text-[10px] font-bold rounded-lg"
+                                  className="px-2.5 py-1 bg-rose-600/80 hover:bg-rose-500 text-white text-[10px] font-bold rounded-lg transition-colors"
+                                  title="Reject and refund agent balance"
                                 >
                                   Reject
                                 </button>

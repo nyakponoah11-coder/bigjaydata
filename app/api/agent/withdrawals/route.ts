@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { sendWithdrawalOtpEmail, isRealEmailConfigured } from "@/lib/email";
+import { disbursePaystackTransfer } from "@/lib/paystack";
 
 // In-memory OTP storage fallback
 const withdrawalOtps = new Map<string, { code: string; expires: number }>();
@@ -59,7 +60,7 @@ export async function POST(req: Request) {
 
     // Step 2: Submit withdrawal with verification code
     if (action === "submit_withdrawal") {
-      const { amount, momo_number, momo_network, verification_code } = body;
+      const { amount, momo_number, momo_network, verification_code, instant_paystack } = body;
 
       const numAmount = Number(amount);
       if (isNaN(numAmount) || numAmount < 5.0) {
@@ -120,20 +121,56 @@ export async function POST(req: Request) {
       await db.updateAgent(agent_id, { withdrawal_otp: null, withdrawal_otp_expires: null });
 
       // Create withdrawal and deduct wallet balance
+      let payoutNote = `Payout request for ${numAmount.toFixed(2)} GHS to ${momo_network} ${momo_number}`;
+      let finalStatus: "pending" | "completed" = "pending";
+      let paystackTransferCode: string | undefined = undefined;
+
+      const storeConfig = await db.getAgentStoreConfig();
+      const shouldAttemptPaystack = Boolean(storeConfig.auto_paystack_payout || instant_paystack);
+
+      if (shouldAttemptPaystack) {
+        const transferRes = await disbursePaystackTransfer({
+          amount: numAmount,
+          recipient_phone: String(momo_number).trim(),
+          recipient_name: agent.name || agent.store_name || "Agent",
+          network: String(momo_network).trim(),
+          reason: `FastData Agent Payout - ${agent.store_name}`,
+        });
+
+        if (transferRes.success) {
+          finalStatus = "completed";
+          paystackTransferCode = transferRes.transfer_code;
+          payoutNote += ` | Paid via Paystack (${transferRes.transfer_code || "Success"})`;
+        } else {
+          payoutNote += ` | Paystack attempt: ${transferRes.message} (Queued for admin payout)`;
+        }
+      }
+
       const withdrawal = await db.createAgentWithdrawal({
         agent_id,
         amount: numAmount,
         momo_number: String(momo_number).trim(),
         momo_network: String(momo_network).trim(),
         verification_code: cleanCode,
-        note: `Payout request for ${numAmount.toFixed(2)} GHS to ${momo_network} ${momo_number}`,
+        note: payoutNote,
       });
+
+      if (finalStatus === "completed") {
+        await db.updateWithdrawalStatus(withdrawal.id, "completed", payoutNote, {
+          paystack_transfer_code: paystackTransferCode,
+          paystack_status: "success",
+        });
+        withdrawal.status = "completed";
+      }
 
       return NextResponse.json({
         success: true,
         withdrawal,
         new_balance: agent.wallet_balance,
-        message: `Payout request for GHS ${numAmount.toFixed(2)} submitted successfully!`,
+        paystack_disbursed: finalStatus === "completed",
+        message: finalStatus === "completed"
+          ? `Payout of GHS ${numAmount.toFixed(2)} sent directly to your ${momo_network.toUpperCase()} (${momo_number}) via Paystack!`
+          : `Payout request for GHS ${numAmount.toFixed(2)} submitted successfully! (Pending review)`,
       });
     }
 

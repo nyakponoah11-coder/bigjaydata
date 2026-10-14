@@ -171,6 +171,7 @@ export interface AgentStoreConfig {
   admin_enabled?: boolean;
   registration_fee: number;
   custom_domain?: string;
+  auto_paystack_payout?: boolean;
 }
 
 export interface AgentBaseProduct {
@@ -254,6 +255,8 @@ export interface AgentWithdrawal {
   verification_code: string;
   verified: boolean;
   note?: string;
+  paystack_transfer_code?: string;
+  paystack_status?: string;
   created_at: string;
 }
 
@@ -1700,12 +1703,14 @@ export const db = {
           let developer_master_enabled = true;
           let admin_enabled = true;
           let custom_domain = "";
+          let auto_paystack_payout = false;
           try {
             if (data.store_name.startsWith("{")) {
               const parsed = JSON.parse(data.store_name);
               developer_master_enabled = parsed.developer_master_enabled !== false;
               admin_enabled = parsed.admin_enabled !== false;
               custom_domain = parsed.custom_domain || "";
+              auto_paystack_payout = Boolean(parsed.auto_paystack_payout);
             } else {
               developer_master_enabled = data.store_name !== "false" && data.store_name !== "0";
               admin_enabled = developer_master_enabled;
@@ -1723,6 +1728,7 @@ export const db = {
             admin_enabled,
             registration_fee,
             custom_domain,
+            auto_paystack_payout,
           };
           markCacheFresh("agent_config");
           return globalStore.__bmgh_agent_config;
@@ -1745,6 +1751,7 @@ export const db = {
       admin_enabled: true,
       registration_fee: 0,
       custom_domain: "fastdata-gh.vercel.app",
+      auto_paystack_payout: false,
     };
   },
 
@@ -1767,6 +1774,11 @@ export const db = {
         ? config.custom_domain.trim().replace(/^https?:\/\//i, "").replace(/\/+$/, "")
         : current.custom_domain || "";
 
+    const auto_paystack_payout =
+      config.auto_paystack_payout !== undefined
+        ? Boolean(config.auto_paystack_payout)
+        : current.auto_paystack_payout ?? false;
+
     // If caller specifically set is_enabled directly without specifying master:
     if (config.developer_master_enabled === undefined && config.admin_enabled === undefined && config.is_enabled !== undefined) {
       // Default direct caller to admin_enabled AND developer_master_enabled, respecting master lock
@@ -1786,6 +1798,7 @@ export const db = {
       admin_enabled,
       registration_fee,
       custom_domain,
+      auto_paystack_payout,
     };
     invalidateDbCache("agent_config");
     saveToDisk();
@@ -1794,7 +1807,7 @@ export const db = {
       try {
         await supabaseAdmin.from("settings").upsert({
           id: "agent_store_config",
-          store_name: JSON.stringify({ developer_master_enabled, admin_enabled, custom_domain }),
+          store_name: JSON.stringify({ developer_master_enabled, admin_enabled, custom_domain, auto_paystack_payout }),
           announcement_text: String(registration_fee),
         });
       } catch (err) {
@@ -2773,7 +2786,12 @@ export const db = {
     return newWithdrawal;
   },
 
-  async updateWithdrawalStatus(id: string, status: "pending" | "completed" | "rejected", note?: string): Promise<AgentWithdrawal | null> {
+  async updateWithdrawalStatus(
+    id: string,
+    status: "pending" | "completed" | "rejected",
+    note?: string,
+    extra?: { paystack_transfer_code?: string; paystack_status?: string }
+  ): Promise<AgentWithdrawal | null> {
     const list = globalStore.__bmgh_agent_withdrawals || [];
     const w = list.find((x) => x.id === id);
     if (!w) return null;
@@ -2787,6 +2805,8 @@ export const db = {
     }
     w.status = status;
     if (note) w.note = note;
+    if (extra?.paystack_transfer_code) w.paystack_transfer_code = extra.paystack_transfer_code;
+    if (extra?.paystack_status) w.paystack_status = extra.paystack_status;
     saveToDisk();
 
     if (isSupabaseConfigured && supabaseAdmin) {
