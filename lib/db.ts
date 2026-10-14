@@ -2207,28 +2207,36 @@ export const db = {
             const s = (o.status || "").toLowerCase().trim();
             const ds = (o.delivery_status || "").toLowerCase().trim();
             
-            // Never credit profit for unpaid, pending, failed, or cancelled orders
+            // Reject failed, cancelled, or refunded
             if (
               ps === "failed" ||
               ps === "cancelled" ||
-              ps === "pending" ||
+              ps === "refunded" ||
               s === "failed" ||
               s === "cancelled" ||
+              s === "refunded" ||
               ds === "failed" ||
-              ds === "cancelled"
+              ds === "cancelled" ||
+              ds === "refunded"
             ) {
               return false;
             }
 
-            // Only credit when payment is confirmed or order was fulfilled
+            // Count any valid paid, completed, processing, or fulfilled store purchase
             return (
               ps === "paid" ||
               ps === "completed" ||
               ps === "success" ||
+              ps === "processing" ||
               s === "delivered" ||
               s === "completed" ||
+              s === "processing" ||
+              s === "pending" ||
               ds === "delivered" ||
-              ds === "completed"
+              ds === "completed" ||
+              ds === "processing" ||
+              ds === "pending" ||
+              (Number(o.agent_profit) || 0) > 0
             );
           })
           .reduce((sum, o) => sum + (Number(o.agent_profit) || 0), 0);
@@ -2238,7 +2246,10 @@ export const db = {
           .filter((w) => w.status === "completed" || w.status === "pending")
           .reduce((sum, w) => sum + (Number(w.amount) || 0), 0);
 
-        const totalEarned = Number(earnedFromOrders.toFixed(2));
+        const existingEarned = Number(found.total_earned || 0);
+        const existingBalance = Number(found.wallet_balance || 0);
+        
+        const totalEarned = Number(Math.max(earnedFromOrders, existingEarned, existingBalance + withdrawn).toFixed(2));
         const totalWithdrawn = Number(withdrawn.toFixed(2));
         const currentBalance = Number(Math.max(0, totalEarned - totalWithdrawn).toFixed(2));
 

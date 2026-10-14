@@ -217,11 +217,13 @@ export default function AgentDashboardPage() {
         const currentEarned = Number(totalProfitFromOrders.toFixed(2));
         const currentWithdrawn = Number(totalWithdrawnFromList.toFixed(2));
         
-        // Never wipe out real wallet balance if orders are still syncing
         const dbWalletBalance = Number(profData.agent.wallet_balance || 0);
-        const calcBalance = Number(Math.max(0, currentEarned - currentWithdrawn).toFixed(2));
-        const effectiveBal = dbWalletBalance > 0 ? dbWalletBalance : calcBalance;
-        const effectiveEarned = currentEarned > 0 ? currentEarned : Number((profData.agent.total_earned || (effectiveBal + currentWithdrawn)).toFixed(2));
+        const dbTotalEarned = Number(profData.agent.total_earned || 0);
+        
+        // Effective earned profit
+        const effectiveEarned = Number(Math.max(currentEarned, dbTotalEarned, dbWalletBalance + currentWithdrawn).toFixed(2));
+        // Effective available balance is earned minus withdrawn
+        const effectiveBal = Number(Math.max(0, effectiveEarned - currentWithdrawn).toFixed(2));
 
         const mergedAgent = {
           ...profData.agent,
@@ -623,7 +625,7 @@ export default function AgentDashboardPage() {
   };
 
   // Overall accumulated store profit and current available wallet balance
-  const calculatedProfit = orders.filter(isOrderPaid).reduce((acc, o) => {
+  const profitFromOrders = orders.filter(isOrderPaid).reduce((acc, o) => {
     return acc + (Number(o.agent_profit) || 0);
   }, 0);
 
@@ -631,12 +633,17 @@ export default function AgentDashboardPage() {
     .filter((w) => w.status === "completed" || w.status === "pending")
     .reduce((acc, w) => acc + (Number(w.amount) || 0), 0);
 
-  const rawAgentBalance = Number(agent?.wallet_balance || 0);
-  const calculatedBalance = Math.max(0, Number((calculatedProfit - totalWithdrawnAmount).toFixed(2)));
-  const effectiveWalletBalance = rawAgentBalance > 0 ? rawAgentBalance : calculatedBalance;
-  const allTimeProfit = calculatedProfit > 0 
-    ? calculatedProfit 
-    : Number((effectiveWalletBalance + totalWithdrawnAmount).toFixed(2));
+  const agentDbEarned = Number(agent?.total_earned || 0);
+  const agentDbBalance = Number(agent?.wallet_balance || 0);
+
+  // Total store profit
+  const allTimeProfit = Math.max(profitFromOrders, agentDbEarned, agentDbBalance + totalWithdrawnAmount);
+
+  // Available wallet balance: Total store profit minus total withdrawn!
+  const effectiveWalletBalance = Math.max(
+    0,
+    Number((allTimeProfit - totalWithdrawnAmount).toFixed(2))
+  );
 
   // Filtered orders for Orders tab
   const displayedOrders = ordersDateFilter
