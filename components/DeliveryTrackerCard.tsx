@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { DeliveryTrackerData } from "@/lib/datamart";
 import { getCachedDeliveryTracker, saveDeliveryTrackerSession } from "@/lib/device-session";
+import { createSmartInterval, cachedAsync } from "@/lib/localCache";
 
 interface Props {
   variant?: "store" | "admin";
@@ -23,15 +24,17 @@ export default function DeliveryTrackerCard({
     return getCachedDeliveryTracker();
   });
 
-  const fetchTrackerData = async () => {
-    // Skip polling if document is hidden to conserve bandwidth
-    if (typeof document !== "undefined" && document.visibilityState === "hidden") {
-      return;
-    }
-
+  const fetchTrackerData = async (forceFresh = false) => {
     try {
-      const res = await fetch("/api/delivery-tracker");
-      const data = await res.json();
+      const data = await cachedAsync(
+        "delivery_tracker_metrics",
+        async () => {
+          const res = await fetch("/api/delivery-tracker", { cache: "no-store" });
+          return await res.json();
+        },
+        30000,
+        forceFresh
+      );
       if (data && (data.status === "success" || data.data)) {
         setTracker(data);
         saveDeliveryTrackerSession(data);
@@ -49,9 +52,8 @@ export default function DeliveryTrackerCard({
       fetchTrackerData();
     }
 
-    // High efficiency: poll every 90 seconds instead of hammering every 15s
-    const interval = setInterval(fetchTrackerData, 90000);
-    return () => clearInterval(interval);
+    const cleanup = createSmartInterval(() => fetchTrackerData(true), 45000);
+    return cleanup;
   }, []);
 
   const dataObj = (tracker?.data || tracker || {}) as any;

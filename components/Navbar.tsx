@@ -69,24 +69,32 @@ export default function Navbar({
       return;
     }
 
-    fetch("/api/settings")
-      .then((r) => r.json())
-      .then((d) => {
-        if (d?.settings?.whatsapp_channel_url && String(d.settings.whatsapp_channel_url).trim()) {
-          const fresh = String(d.settings.whatsapp_channel_url).trim();
-          setChannelUrl(fresh);
-          try {
-            localStorage.setItem("bigjay_whatsapp_channel_url", fresh);
-          } catch {}
-        }
-        if (d?.settings) {
-          saveSettingsSession(d.settings);
-        }
-        if (d?.agent_store_enabled !== undefined) {
-          setAgentStoreLive(Boolean(d.agent_store_enabled));
-        }
-      })
-      .catch(() => {});
+    import("@/lib/localCache").then(({ cachedAsync }) => {
+      cachedAsync(
+        "public_settings",
+        async () => {
+          const r = await fetch("/api/settings", { cache: "no-store" });
+          return await r.json();
+        },
+        60 * 1000
+      )
+        .then((d) => {
+          if (d?.settings?.whatsapp_channel_url && String(d.settings.whatsapp_channel_url).trim()) {
+            const fresh = String(d.settings.whatsapp_channel_url).trim();
+            setChannelUrl(fresh);
+            try {
+              localStorage.setItem("bigjay_whatsapp_channel_url", fresh);
+            } catch {}
+          }
+          if (d?.settings) {
+            saveSettingsSession(d.settings);
+          }
+          if (d?.agent_store_enabled !== undefined) {
+            setAgentStoreLive(Boolean(d.agent_store_enabled));
+          }
+        })
+        .catch(() => {});
+    });
   }, [whatsappChannelUrl, isAgentStoreEnabled]);
 
   const sanitizeUrl = (url?: string) => {

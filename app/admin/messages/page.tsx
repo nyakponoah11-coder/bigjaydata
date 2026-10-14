@@ -60,8 +60,13 @@ export default function AdminMessagesPage() {
 
   useEffect(() => {
     fetchMessages();
-    const interval = setInterval(fetchMessages, 12000);
-    return () => clearInterval(interval);
+    let cleanupSmart: (() => void) | null = null;
+    import("@/lib/localCache").then(({ createSmartInterval }) => {
+      cleanupSmart = createSmartInterval(fetchMessages, 25000);
+    });
+    return () => {
+      if (cleanupSmart) cleanupSmart();
+    };
   }, []);
 
   // Format timestamp helper in 12-hour AM/PM format

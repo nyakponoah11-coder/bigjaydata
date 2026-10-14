@@ -24,6 +24,7 @@ import {
   KeyRound,
   Trash2,
   Ban,
+  Edit2,
 } from "lucide-react";
 
 export default function AdminAgentStorePage() {
@@ -57,6 +58,24 @@ export default function AdminAgentStorePage() {
   // Edit product
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editBasePrice, setEditBasePrice] = useState("");
+  const [editSuggestedPrice, setEditSuggestedPrice] = useState("");
+
+  // Delete product modal
+  const [deleteProductModal, setDeleteProductModal] = useState<{
+    open: boolean;
+    productId: string;
+    network: string;
+    size: string;
+    basePrice: number;
+    loading: boolean;
+  }>({
+    open: false,
+    productId: "",
+    network: "",
+    size: "",
+    basePrice: 0,
+    loading: false,
+  });
 
   // Agent Management Modals
   const [resetModal, setResetModal] = useState<{
@@ -264,20 +283,55 @@ export default function AdminAgentStorePage() {
 
   const handleUpdateProductPrice = async (id: string) => {
     try {
-      const numPrice = parseFloat(editBasePrice);
-      if (isNaN(numPrice) || numPrice <= 0) return;
+      const numBase = parseFloat(editBasePrice);
+      const numSuggested = parseFloat(editSuggestedPrice);
+      if (isNaN(numBase) || numBase <= 0) {
+        setError("Please enter a valid base price");
+        return;
+      }
       const res = await fetch("/api/admin/agent-store/products", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id, base_price: numPrice }),
+        body: JSON.stringify({
+          id,
+          base_price: numBase,
+          suggested_price: !isNaN(numSuggested) && numSuggested > 0 ? numSuggested : numBase + 1.0,
+        }),
       });
       const data = await res.json();
       if (data.success) {
         setBaseProducts((prev) => prev.map((p) => (p.id === id ? data.product : p)));
         setEditingId(null);
+        setNotice("Base price and suggested price updated successfully");
+        setTimeout(() => setNotice(""), 3500);
+      } else {
+        setError(data.message || "Failed to update price");
       }
-    } catch (err) {
-      setError("Failed to update price");
+    } catch (err: any) {
+      setError(err?.message || "Failed to update price");
+    }
+  };
+
+  const handleDeleteProductConfirm = async () => {
+    if (!deleteProductModal.productId) return;
+    try {
+      setDeleteProductModal((prev) => ({ ...prev, loading: true }));
+      setError("");
+      const res = await fetch(`/api/admin/agent-store/products?id=${encodeURIComponent(deleteProductModal.productId)}`, {
+        method: "DELETE",
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.message || "Failed to delete agent product/price");
+      }
+      setBaseProducts((prev) => prev.filter((p) => p.id !== deleteProductModal.productId));
+      setNotice(`Deleted ${deleteProductModal.network.toUpperCase()} ${deleteProductModal.size} price successfully`);
+      setDeleteProductModal({ open: false, productId: "", network: "", size: "", basePrice: 0, loading: false });
+      setTimeout(() => setNotice(""), 4000);
+    } catch (err: any) {
+      setError(err?.message || "Failed to delete price");
+    } finally {
+      setDeleteProductModal((prev) => ({ ...prev, loading: false }));
     }
   };
 
@@ -539,26 +593,16 @@ export default function AdminAgentStorePage() {
                         <td className="py-3 px-4 font-mono font-bold text-white">{p.size}</td>
                         <td className="py-3 px-4">
                           {isEditing ? (
-                            <div className="flex items-center gap-2">
+                            <div>
                               <input
                                 type="number"
                                 step="0.1"
                                 value={editBasePrice}
                                 onChange={(e) => setEditBasePrice(e.target.value)}
-                                className="w-24 bg-slate-800 border border-slate-700 rounded-lg px-2 py-1 text-white font-mono text-xs"
+                                className="w-24 bg-slate-800 border border-emerald-500/50 rounded-lg px-2 py-1 text-white font-mono text-xs focus:outline-none focus:ring-1 focus:ring-emerald-400"
+                                placeholder="Base Price"
                               />
-                              <button
-                                onClick={() => handleUpdateProductPrice(p.id)}
-                                className="px-2 py-1 bg-emerald-600 text-white rounded-lg text-[10px] font-bold"
-                              >
-                                Save
-                              </button>
-                              <button
-                                onClick={() => setEditingId(null)}
-                                className="px-2 py-1 bg-slate-700 text-slate-300 rounded-lg text-[10px]"
-                              >
-                                Cancel
-                              </button>
+                              <div className="text-[10px] text-slate-500 mt-0.5 font-sans">Admin Cost</div>
                             </div>
                           ) : (
                             <span className="font-mono font-black text-amber-300 text-sm">
@@ -566,20 +610,72 @@ export default function AdminAgentStorePage() {
                             </span>
                           )}
                         </td>
-                        <td className="py-3 px-4 font-mono text-slate-400">
-                          GHS {Number(p.suggested_price || p.base_price).toFixed(2)}
+                        <td className="py-3 px-4">
+                          {isEditing ? (
+                            <div>
+                              <input
+                                type="number"
+                                step="0.1"
+                                value={editSuggestedPrice}
+                                onChange={(e) => setEditSuggestedPrice(e.target.value)}
+                                className="w-24 bg-slate-800 border border-slate-700 rounded-lg px-2 py-1 text-white font-mono text-xs focus:outline-none focus:ring-1 focus:ring-slate-500"
+                                placeholder="Retail Price"
+                              />
+                              <div className="text-[10px] text-slate-500 mt-0.5 font-sans">Suggested Retail</div>
+                            </div>
+                          ) : (
+                            <span className="font-mono text-slate-400">
+                              GHS {Number(p.suggested_price || p.base_price).toFixed(2)}
+                            </span>
+                          )}
                         </td>
                         <td className="py-3 px-4 text-right">
-                          {!isEditing && (
-                            <button
-                              onClick={() => {
-                                setEditingId(p.id);
-                                setEditBasePrice(String(p.base_price));
-                              }}
-                              className="text-xs text-emerald-400 hover:text-emerald-300 font-bold"
-                            >
-                              Edit Base Price
-                            </button>
+                          {isEditing ? (
+                            <div className="flex items-center justify-end gap-1.5">
+                              <button
+                                onClick={() => handleUpdateProductPrice(p.id)}
+                                className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-[11px] font-bold shadow transition-all"
+                              >
+                                Save
+                              </button>
+                              <button
+                                onClick={() => setEditingId(null)}
+                                className="px-2.5 py-1 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded-lg text-[11px] transition-all"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center justify-end gap-2">
+                              <button
+                                onClick={() => {
+                                  setEditingId(p.id);
+                                  setEditBasePrice(String(p.base_price));
+                                  setEditSuggestedPrice(String(p.suggested_price || p.base_price));
+                                }}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 text-xs font-bold transition-colors"
+                              >
+                                <Edit2 className="w-3 h-3" />
+                                <span>Edit</span>
+                              </button>
+                              <button
+                                onClick={() =>
+                                  setDeleteProductModal({
+                                    open: true,
+                                    productId: p.id,
+                                    network: p.network,
+                                    size: p.size,
+                                    basePrice: Number(p.base_price),
+                                    loading: false,
+                                  })
+                                }
+                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 text-xs font-bold transition-colors"
+                                title="Delete Price"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                                <span>Delete</span>
+                              </button>
+                            </div>
                           )}
                         </td>
                       </tr>
@@ -1065,6 +1161,64 @@ export default function AdminAgentStorePage() {
                     className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold shadow-lg shadow-rose-600/30 flex items-center justify-center gap-1.5 transition-all disabled:opacity-50"
                   >
                     {deleteModal.loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Permanently Delete"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Delete Base Product / Price Modal */}
+        {deleteProductModal.open && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="bg-slate-900 border border-rose-900/60 rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl relative">
+              <div className="flex items-center gap-2.5 pb-4 border-b border-slate-800">
+                <div className="w-10 h-10 rounded-xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-400">
+                  <Trash2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-white">Delete Agent Store Price</h3>
+                  <p className="text-[11px] text-rose-400 font-bold">Remove Base Product</p>
+                </div>
+              </div>
+
+              <div className="mt-4 space-y-4">
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  Are you sure you want to delete the price for{" "}
+                  <strong className="text-white uppercase">{deleteProductModal.network} {deleteProductModal.size}</strong>{" "}
+                  (Cost: GHS {deleteProductModal.basePrice.toFixed(2)})?
+                </p>
+
+                <div className="p-3 bg-rose-950/40 border border-rose-800/60 rounded-xl text-[11px] text-rose-300 space-y-1">
+                  <div>• This package will be removed from all agent store catalogs.</div>
+                  <div>• Existing registered custom prices for this package will be cleared.</div>
+                  <div className="font-bold pt-1">This action cannot be undone.</div>
+                </div>
+
+                <div className="flex gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setDeleteProductModal({
+                        open: false,
+                        productId: "",
+                        network: "",
+                        size: "",
+                        basePrice: 0,
+                        loading: false,
+                      })
+                    }
+                    className="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={deleteProductModal.loading}
+                    onClick={handleDeleteProductConfirm}
+                    className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold shadow-lg shadow-rose-600/30 flex items-center justify-center gap-1.5 transition-all disabled:opacity-50"
+                  >
+                    {deleteProductModal.loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Delete Price"}
                   </button>
                 </div>
               </div>

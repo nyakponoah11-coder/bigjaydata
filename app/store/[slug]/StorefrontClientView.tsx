@@ -4,6 +4,7 @@ import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import DeliveryTrackerCard from "@/components/DeliveryTrackerCard";
 import { getCachedAgentStore, saveAgentStoreSession } from "@/lib/device-session";
+import { createSmartInterval, cachedAsync } from "@/lib/localCache";
 import {
   Store,
   Sparkles,
@@ -91,19 +92,23 @@ export default function StorefrontClientView({
     }
   }, [agent?.store_slug]);
 
-  // One-time lazy background fetch only if device session has no products
+  // Auto-refresh product prices with client cache and tab-visibility aware smart interval (prevents egress exhaustion)
   useEffect(() => {
-    const cached = getCachedAgentStore(agent.store_slug || agent.id);
-    if (cached && Array.isArray(cached) && cached.length > 0) {
-      return;
-    }
-
     let isMounted = true;
-    const fetchFreshProducts = async () => {
+    const fetchFreshProducts = async (forceFresh = false) => {
       try {
-        const res = await fetch(`/api/agent/products?agent_id=${agent.id}`);
-        const data = await res.json();
-        if (data.success && Array.isArray(data.products) && isMounted) {
+        const data = await cachedAsync(
+          `store_products_${agent.id}`,
+          async () => {
+            const res = await fetch(`/api/agent/products?agent_id=${agent.id}`, {
+              cache: "no-store",
+            });
+            return await res.json();
+          },
+          30000,
+          forceFresh
+        );
+        if (data?.success && Array.isArray(data.products) && isMounted) {
           const mapped: ProductItem[] = data.products
             .filter((p: any) => p.is_active !== false)
             .map((p: any) => ({
@@ -120,9 +125,17 @@ export default function StorefrontClientView({
       } catch (err) {}
     };
 
-    fetchFreshProducts();
+    const cached = getCachedAgentStore(agent.store_slug || agent.id);
+    if (cached && Array.isArray(cached) && cached.length > 0) {
+      setProductList(cached);
+    } else {
+      fetchFreshProducts();
+    }
+
+    const cleanup = createSmartInterval(() => fetchFreshProducts(true), 30000);
     return () => {
       isMounted = false;
+      cleanup();
     };
   }, [agent.id, agent.store_slug]);
 

@@ -39,10 +39,21 @@ export default function AnnouncementBanner({
     if (text && text.trim()) return;
 
     let isMounted = true;
-    const fetchLiveBanner = async () => {
+    const fetchLiveBanner = async (forceFresh = false) => {
       try {
-        const res = await fetch("/api/settings");
-        const data = await res.json();
+        const { cachedAsync } = await import("@/lib/localCache");
+        const data = await cachedAsync(
+          "public_settings",
+          async () => {
+            const res = await fetch("/api/settings", {
+              cache: "no-store",
+              headers: { "Cache-Control": "no-cache" },
+            });
+            return await res.json();
+          },
+          60 * 1000,
+          forceFresh
+        );
         if (isMounted && data?.success && data?.settings) {
           if (data.settings.announcement_text !== undefined) {
             setCurrentText(data.settings.announcement_text);
@@ -56,8 +67,13 @@ export default function AnnouncementBanner({
     };
 
     fetchLiveBanner();
+
+    // Listen for focus events to auto-refresh when admin saves settings in another tab
+    const handleFocus = () => fetchLiveBanner(false);
+    window.addEventListener("focus", handleFocus);
     return () => {
       isMounted = false;
+      window.removeEventListener("focus", handleFocus);
     };
   }, [text]);
 

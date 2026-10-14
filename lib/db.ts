@@ -470,6 +470,7 @@ const globalStore = globalThis as unknown as {
   __bmgh_developer_api_config?: DeveloperApiConfig;
   __bmgh_developer_api_products?: DeveloperApiProduct[];
   __bmgh_developer_accounts?: DeveloperAccount[];
+  __bmgh_cache_timestamps?: Record<string, number>;
 };
 
 function saveToDisk() {
@@ -575,12 +576,22 @@ export function invalidateDbCache(keyPrefix?: string): void {
     Object.keys(memCacheTimestamps).forEach((k) => delete memCacheTimestamps[k]);
     return;
   }
+  const cleanPrefix = keyPrefix.endsWith("*") ? keyPrefix.slice(0, -1) : keyPrefix;
   Object.keys(memCacheTimestamps).forEach((k) => {
-    if (k === keyPrefix || k.startsWith(keyPrefix + ":") || k.startsWith(keyPrefix + "_")) {
+    if (
+      k === keyPrefix ||
+      k.startsWith(cleanPrefix) ||
+      k.startsWith(cleanPrefix + ":") ||
+      k.startsWith(cleanPrefix + "_")
+    ) {
       delete memCacheTimestamps[k];
     }
   });
 }
+
+export const isServerCacheValid = isCacheFresh;
+export const markServerCache = markCacheFresh;
+export const invalidateServerCache = invalidateDbCache;
 
 export const db = {
   // SETTINGS
@@ -675,7 +686,7 @@ export const db = {
           return merged;
         }
       } catch (err) {
-        console.error("Supabase getSettings error:", err);
+        console.error("Supabase getSettings error (falling back to cache):", err);
       }
     }
     markCacheFresh("settings");
@@ -785,6 +796,7 @@ export const db = {
           }
           invalidateDbCache("settings");
           saveToDisk();
+          invalidateServerCache("settings");
           return globalStore.__bmgh_settings;
         }
       } catch (err) {
@@ -798,6 +810,7 @@ export const db = {
     };
     invalidateDbCache("settings");
     saveToDisk();
+    invalidateServerCache("settings");
     return globalStore.__bmgh_settings;
   },
 
@@ -827,7 +840,7 @@ export const db = {
           return data as Product[];
         }
       } catch (err) {
-        console.error("Supabase getProducts error:", err);
+        console.error("Supabase getProducts error (falling back to cache):", err);
       }
     }
     markCacheFresh("products");
@@ -1847,11 +1860,13 @@ export const db = {
         ? globalStore.__bmgh_agent_base_products
         : initialAgentBaseProducts;
     globalStore.__bmgh_agent_base_products = current;
+    markCacheFresh("agent_base_products");
     return current;
   },
 
   async createAgentBaseProduct(p: Omit<AgentBaseProduct, "id" | "created_at">): Promise<AgentBaseProduct> {
     invalidateDbCache("agent_base_products");
+    invalidateDbCache("agent_products");
     const list = await this.getAgentBaseProducts();
     const newProduct: AgentBaseProduct = {
       ...p,
@@ -1893,6 +1908,8 @@ export const db = {
   },
 
   async updateAgentBaseProduct(id: string, updates: Partial<AgentBaseProduct>): Promise<AgentBaseProduct | null> {
+    invalidateServerCache("agent_base_products");
+    invalidateServerCache("agent_products_*");
     const list = await this.getAgentBaseProducts();
     const idx = list.findIndex((x) => x.id === id);
     if (idx === -1) return null;
@@ -1962,9 +1979,27 @@ export const db = {
     const list = await this.getAgentBaseProducts();
     const filtered = list.filter((x) => x.id !== id);
     globalStore.__bmgh_agent_base_products = filtered;
+
+    // Clean up corresponding custom agent products
+    if (globalStore.__bmgh_agent_products) {
+      globalStore.__bmgh_agent_products = globalStore.__bmgh_agent_products.filter(
+        (ap) => ap.base_product_id !== id
+      );
+    }
+
+    invalidateServerCache("agent_base_products");
+    invalidateServerCache("agent_products_*");
     saveToDisk();
 
     if (isSupabaseConfigured && supabaseAdmin) {
+      try {
+        await supabaseAdmin.from("agent_base_products").delete().eq("id", id);
+      } catch {}
+
+      try {
+        await supabaseAdmin.from("agent_products").delete().eq("base_product_id", id);
+      } catch {}
+
       try {
         await supabaseAdmin.from("settings").upsert({
           id: "agent_base_products_config",
@@ -2018,6 +2053,7 @@ export const db = {
       }
     });
     globalStore.__bmgh_agents = current;
+    markServerCache("agents");
     return current;
   },
 
@@ -2099,6 +2135,7 @@ export const db = {
 
     if (!globalStore.__bmgh_agents) globalStore.__bmgh_agents = [];
     globalStore.__bmgh_agents.unshift(newAgent);
+    invalidateServerCache("agents");
 
     // Initialize custom products with suggested prices from base products
     const baseProducts = await this.getAgentBaseProducts();
@@ -2140,6 +2177,7 @@ export const db = {
   },
 
   async updateAgent(id: string, updates: Partial<Agent>): Promise<Agent | null> {
+    invalidateServerCache("agents");
     const agents = await this.getAgents();
     const idx = agents.findIndex((a) => a.id === id);
     if (idx === -1) return null;
@@ -2166,6 +2204,7 @@ export const db = {
   },
 
   async deleteAgent(id: string): Promise<boolean> {
+    invalidateServerCache("agents");
     const agents = await this.getAgents();
     const filtered = agents.filter((a) => a.id !== id && a.store_slug !== id);
     globalStore.__bmgh_agents = filtered;
@@ -2801,14 +2840,14 @@ export const db = {
       } catch (err) {}
     }
     markCacheFresh("developer_api_config");
-    return (
+    const fallback =
       globalStore.__bmgh_developer_api_config || {
         is_enabled: true,
         api_key_price: 0,
         min_wallet_funding: 10,
         notice_message: "FastData Developer API Gateway",
-      }
-    );
+      };
+    return fallback;
   },
 
   async updateDeveloperApiConfig(config: Partial<DeveloperApiConfig>): Promise<DeveloperApiConfig> {

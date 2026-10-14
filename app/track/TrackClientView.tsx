@@ -48,6 +48,8 @@ export default function TrackClientView({ storeName }: { storeName: string }) {
   const handleRefreshLive = async (ref: string) => {
     setSyncingRef(ref);
     try {
+      const { invalidateCache } = await import("@/lib/localCache");
+      invalidateCache(`order_track_${ref}`);
       const res = await fetch(`/api/orders/track?q=${encodeURIComponent(ref)}&sync=true`);
       const data = await res.json();
       if (res.ok && data.orders) {
@@ -133,11 +135,21 @@ export default function TrackClientView({ storeName }: { storeName: string }) {
     setSearched(true);
 
     try {
-      const res = await fetch(`/api/orders/track?q=${encodeURIComponent(clean)}&sync=true`);
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.message || "Failed to search");
-      setOrders(data.orders || []);
-      if (data.orders && data.orders.length > 0) {
+      const { cachedAsync } = await import("@/lib/localCache");
+      const data = await cachedAsync(
+        `order_track_${clean}`,
+        async () => {
+          const res = await fetch(`/api/orders/track?q=${encodeURIComponent(clean)}&sync=true`);
+          if (!res.ok) {
+            const errJson = await res.json().catch(() => ({}));
+            throw new Error(errJson.message || "Failed to search");
+          }
+          return await res.json();
+        },
+        20 * 1000
+      );
+      setOrders(data?.orders || []);
+      if (data?.orders && data.orders.length > 0) {
         saveDeviceSession("last_tracked", { query: clean, orders: data.orders }, 30 * 60 * 1000);
       }
     } catch (err: any) {

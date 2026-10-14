@@ -24,16 +24,19 @@ export default function FreeDataBanner() {
 
   useEffect(() => {
     let isMounted = true;
-    const fetchActive = async () => {
-      // Skip background poll when tab hidden to conserve database egress
-      if (typeof document !== "undefined" && document.visibilityState === "hidden") {
-        return;
-      }
-
+    const fetchActive = async (forceFresh = false) => {
       try {
-        const res = await fetch("/api/vouchers/active");
-        const data = await res.json();
-        if (isMounted && data.active && data.voucher) {
+        const { cachedAsync } = await import("@/lib/localCache");
+        const data = await cachedAsync(
+          "active_voucher_banner",
+          async () => {
+            const res = await fetch("/api/vouchers/active");
+            return await res.json();
+          },
+          45000,
+          forceFresh
+        );
+        if (isMounted && data?.active && data?.voucher) {
           setVoucher(data.voucher);
           saveActiveVoucherSession(data.voucher);
         } else if (isMounted) {
@@ -55,11 +58,16 @@ export default function FreeDataBanner() {
       fetchActive();
     }
 
-    // High efficiency: poll active giveaway every 3 minutes instead of 20 seconds
-    const interval = setInterval(fetchActive, 180000);
+    let cleanupSmart: (() => void) | null = null;
+    import("@/lib/localCache").then(({ createSmartInterval }) => {
+      if (isMounted) {
+        cleanupSmart = createSmartInterval(() => fetchActive(true), 60000);
+      }
+    });
+
     return () => {
       isMounted = false;
-      clearInterval(interval);
+      if (cleanupSmart) cleanupSmart();
     };
   }, []);
 
