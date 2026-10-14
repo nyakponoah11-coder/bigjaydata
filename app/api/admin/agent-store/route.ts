@@ -12,11 +12,58 @@ export async function GET() {
       db.getAgentOrders(),
     ]);
 
+    const isPaid = (o: any) => {
+      const ps = (o.payment_status || "").toLowerCase().trim();
+      const s = (o.status || "").toLowerCase().trim();
+      const ds = (o.delivery_status || "").toLowerCase().trim();
+      if (
+        ps === "failed" ||
+        ps === "cancelled" ||
+        ps === "refunded" ||
+        s === "failed" ||
+        s === "cancelled" ||
+        s === "refunded" ||
+        ds === "failed" ||
+        ds === "cancelled" ||
+        ds === "refunded"
+      ) {
+        return false;
+      }
+      return (
+        ps === "paid" ||
+        ps === "completed" ||
+        ps === "success" ||
+        s === "delivered" ||
+        s === "completed" ||
+        ds === "delivered" ||
+        ds === "completed"
+      );
+    };
+
+    const synchronizedAgents = agents.map((agent) => {
+      const agentOrders = orders.filter(
+        (o) => (o.agent_id === agent.id || o.agent_id === agent.store_slug) && isPaid(o)
+      );
+      const earned = Number(agentOrders.reduce((sum, o) => sum + (Number(o.agent_profit) || 0), 0).toFixed(2));
+      const agentWithdrawals = withdrawals.filter(
+        (w) => (w.agent_id === agent.id || w.agent_id === agent.store_slug) && (w.status === "completed" || w.status === "pending")
+      );
+      const withdrawn = Number(agentWithdrawals.reduce((sum, w) => sum + (Number(w.amount) || 0), 0).toFixed(2));
+      const balance = Number(Math.max(0, earned - withdrawn).toFixed(2));
+
+      return {
+        ...agent,
+        total_earned: earned,
+        total_withdrawn: withdrawn,
+        wallet_balance: balance,
+      };
+    });
+
     return NextResponse.json({
       success: true,
       config,
       baseProducts,
-      agents,
+      agents: synchronizedAgents,
       withdrawals,
       orders,
     });

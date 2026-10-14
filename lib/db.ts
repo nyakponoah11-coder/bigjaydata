@@ -2222,21 +2222,15 @@ export const db = {
               return false;
             }
 
-            // Count any valid paid, completed, processing, or fulfilled store purchase
+            // Strictly count ONLY confirmed paid or delivered store orders
             return (
               ps === "paid" ||
               ps === "completed" ||
               ps === "success" ||
-              ps === "processing" ||
               s === "delivered" ||
               s === "completed" ||
-              s === "processing" ||
-              s === "pending" ||
               ds === "delivered" ||
-              ds === "completed" ||
-              ds === "processing" ||
-              ds === "pending" ||
-              (Number(o.agent_profit) || 0) > 0
+              ds === "completed"
             );
           })
           .reduce((sum, o) => sum + (Number(o.agent_profit) || 0), 0);
@@ -2246,10 +2240,7 @@ export const db = {
           .filter((w) => w.status === "completed" || w.status === "pending")
           .reduce((sum, w) => sum + (Number(w.amount) || 0), 0);
 
-        const existingEarned = Number(found.total_earned || 0);
-        const existingBalance = Number(found.wallet_balance || 0);
-        
-        const totalEarned = Number(Math.max(earnedFromOrders, existingEarned, existingBalance + withdrawn).toFixed(2));
+        const totalEarned = Number(earnedFromOrders.toFixed(2));
         const totalWithdrawn = Number(withdrawn.toFixed(2));
         const currentBalance = Number(Math.max(0, totalEarned - totalWithdrawn).toFixed(2));
 
@@ -2730,10 +2721,13 @@ export const db = {
     }
 
     const isMasterPlatformOrder = (o: any) => {
+      const ref = String(o?.reference || "").toUpperCase();
       const id = String(o?.id || "");
       const basePrice = Number(o?.base_price || 0);
-      // Only the fake 100 platform copies from the older version had id starting with "agord-ord-" and base_price <= 0.02
-      return id.startsWith("agord-ord-") && basePrice <= 0.02;
+      return (
+        (ref.startsWith("BMGH-") && !o.agent_id && !o.datamart_response?.agent_id) ||
+        (id.startsWith("agord-ord-") && basePrice <= 0.02)
+      );
     };
 
     const cacheKey = targetAgentId ? `agent_orders:${targetAgentId}` : "agent_orders_all";
@@ -2838,7 +2832,7 @@ export const db = {
             .or(`datamart_response->>agent_id.eq.${targetAgentId}${targetSlug ? `,datamart_response->>agent_id.eq.${targetSlug}` : ""}`);
           if (Array.isArray(storeOrders)) {
             storeOrders.forEach((so: any) => {
-              const profit = Number(so.datamart_response?.agent_profit) || Math.max(0, Number(so.amount) - 4.0);
+              const profit = Number(so.datamart_response?.agent_profit) || 0;
               const mapped: AgentOrder = {
                 id: "agord-" + (so.id || so.reference),
                 agent_id: targetAgentId,
@@ -2883,6 +2877,15 @@ export const db = {
   },
 
   async createAgentOrder(orderData: Omit<AgentOrder, "id" | "created_at">): Promise<AgentOrder> {
+    // 0. Deduplication check: if order with this reference already exists, return existing to avoid duplicate entries and double-crediting!
+    if (orderData.reference) {
+      const existingList = globalStore.__bmgh_agent_orders || [];
+      const match = existingList.find((o) => o.reference === orderData.reference);
+      if (match) {
+        return match;
+      }
+    }
+
     const newOrder: AgentOrder = {
       ...orderData,
       id: "agord-" + crypto.randomUUID().slice(0, 8),

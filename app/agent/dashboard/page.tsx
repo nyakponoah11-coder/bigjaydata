@@ -175,37 +175,36 @@ export default function AgentDashboardPage() {
       if (withData.success) setWithdrawals(loadedWithdrawals);
 
       if (profData.success && profData.agent) {
+        const isPaidOrder = (o: any) => {
+          const ps = (o.payment_status || "").toLowerCase().trim();
+          const s = (o.status || "").toLowerCase().trim();
+          const ds = (o.delivery_status || "").toLowerCase().trim();
+          if (
+            ps === "failed" ||
+            ps === "cancelled" ||
+            ps === "refunded" ||
+            s === "failed" ||
+            s === "cancelled" ||
+            s === "refunded" ||
+            ds === "failed" ||
+            ds === "cancelled" ||
+            ds === "refunded"
+          ) {
+            return false;
+          }
+          return (
+            ps === "paid" ||
+            ps === "completed" ||
+            ps === "success" ||
+            s === "delivered" ||
+            s === "completed" ||
+            ds === "delivered" ||
+            ds === "completed"
+          );
+        };
+
         const totalProfitFromOrders = loadedOrders
-          .filter((o: any) => {
-            const ps = (o.payment_status || "").toLowerCase().trim();
-            const s = (o.status || "").toLowerCase().trim();
-            const ds = (o.delivery_status || "").toLowerCase().trim();
-            if (
-              ps === "failed" ||
-              ps === "cancelled" ||
-              s === "failed" ||
-              s === "cancelled" ||
-              ds === "failed" ||
-              ds === "cancelled"
-            ) {
-              return false;
-            }
-            return (
-              ps === "paid" ||
-              ps === "completed" ||
-              ps === "success" ||
-              ps === "processing" ||
-              s === "delivered" ||
-              s === "completed" ||
-              s === "processing" ||
-              s === "pending" ||
-              ds === "delivered" ||
-              ds === "completed" ||
-              ds === "processing" ||
-              ds === "pending" ||
-              (Number(o.agent_profit) || 0) > 0
-            );
-          })
+          .filter(isPaidOrder)
           .reduce(
             (sum: number, o: any) => sum + (Number(o.agent_profit) || 0),
             0
@@ -216,19 +215,12 @@ export default function AgentDashboardPage() {
 
         const currentEarned = Number(totalProfitFromOrders.toFixed(2));
         const currentWithdrawn = Number(totalWithdrawnFromList.toFixed(2));
-        
-        const dbWalletBalance = Number(profData.agent.wallet_balance || 0);
-        const dbTotalEarned = Number(profData.agent.total_earned || 0);
-        
-        // Effective earned profit
-        const effectiveEarned = Number(Math.max(currentEarned, dbTotalEarned, dbWalletBalance + currentWithdrawn).toFixed(2));
-        // Effective available balance is earned minus withdrawn
-        const effectiveBal = Number(Math.max(0, effectiveEarned - currentWithdrawn).toFixed(2));
+        const currentBalance = Number(Math.max(0, currentEarned - currentWithdrawn).toFixed(2));
 
         const mergedAgent = {
           ...profData.agent,
-          wallet_balance: effectiveBal,
-          total_earned: effectiveEarned,
+          wallet_balance: currentBalance,
+          total_earned: currentEarned,
           total_withdrawn: currentWithdrawn,
         };
 
@@ -600,10 +592,13 @@ export default function AgentDashboardPage() {
     if (
       ps === "failed" ||
       ps === "cancelled" ||
+      ps === "refunded" ||
       s === "failed" ||
       s === "cancelled" ||
+      s === "refunded" ||
       ds === "failed" ||
-      ds === "cancelled"
+      ds === "cancelled" ||
+      ds === "refunded"
     ) {
       return false;
     }
@@ -611,35 +606,28 @@ export default function AgentDashboardPage() {
       ps === "paid" ||
       ps === "completed" ||
       ps === "success" ||
-      ps === "processing" ||
       s === "delivered" ||
       s === "completed" ||
-      s === "processing" ||
-      s === "pending" ||
       ds === "delivered" ||
-      ds === "completed" ||
-      ds === "processing" ||
-      ds === "pending" ||
-      (Number(o.agent_profit) || 0) > 0
+      ds === "completed"
     );
   };
 
-  // Overall accumulated store profit and current available wallet balance
-  const profitFromOrders = orders.filter(isOrderPaid).reduce((acc, o) => {
-    return acc + (Number(o.agent_profit) || 0);
-  }, 0);
+  // Overall accumulated store profit and current available wallet balance strictly from confirmed paid orders
+  const allTimeProfit = Number(
+    orders.filter(isOrderPaid).reduce((acc, o) => {
+      return acc + (Number(o.agent_profit) || 0);
+    }, 0).toFixed(2)
+  );
 
-  const totalWithdrawnAmount = withdrawals
-    .filter((w) => w.status === "completed" || w.status === "pending")
-    .reduce((acc, w) => acc + (Number(w.amount) || 0), 0);
+  const totalWithdrawnAmount = Number(
+    withdrawals
+      .filter((w) => w.status === "completed" || w.status === "pending")
+      .reduce((acc, w) => acc + (Number(w.amount) || 0), 0)
+      .toFixed(2)
+  );
 
-  const agentDbEarned = Number(agent?.total_earned || 0);
-  const agentDbBalance = Number(agent?.wallet_balance || 0);
-
-  // Total store profit
-  const allTimeProfit = Math.max(profitFromOrders, agentDbEarned, agentDbBalance + totalWithdrawnAmount);
-
-  // Available wallet balance: Total store profit minus total withdrawn!
+  // Available wallet balance: strictly Total store profit minus total withdrawn!
   const effectiveWalletBalance = Math.max(
     0,
     Number((allTimeProfit - totalWithdrawnAmount).toFixed(2))
