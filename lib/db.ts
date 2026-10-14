@@ -2645,15 +2645,30 @@ export const db = {
       }
     }
 
-    // 1. Memory / Disk store orders (strictly for this agent)
+    const isMasterPlatformOrder = (o: any) => {
+      const ref = String(o?.reference || "").toUpperCase();
+      const id = String(o?.id || "");
+      return ref.startsWith("BMGH-") || id.startsWith("agord-ord-");
+    };
+
+    // 1. Memory / Disk store orders (strictly for this agent, excluding master BMGH- orders)
     const memoryOrders = globalStore.__bmgh_agent_orders || [];
     memoryOrders.forEach((o) => {
+      if (isMasterPlatformOrder(o)) return;
       if (targetAgentId && o.agent_id !== targetAgentId && o.agent_id !== targetSlug) return;
       const key = o.reference || o.id;
       if (key) orderMap.set(key, o);
     });
 
     if (isSupabaseConfigured && supabaseAdmin) {
+      // Auto-purge any leaked master BMGH- orders from agent_orders table
+      try {
+        await supabaseAdmin
+          .from("agent_orders")
+          .delete()
+          .or("reference.like.BMGH-%,id.like.agord-ord-%");
+      } catch {}
+
       // 2. Direct agent_orders table (strictly for this agent)
       try {
         let query = supabaseAdmin
@@ -2667,6 +2682,7 @@ export const db = {
         const { data: dbOrders } = await query;
         if (Array.isArray(dbOrders)) {
           dbOrders.forEach((o: any) => {
+            if (isMasterPlatformOrder(o)) return;
             const mapped: AgentOrder = {
               id: o.id,
               agent_id: o.agent_id,
@@ -2700,20 +2716,32 @@ export const db = {
           try {
             const list = JSON.parse(data.announcement_text);
             if (Array.isArray(list)) {
-              list.forEach((o: any) => {
+              const cleanedList = list.filter((o: any) => !isMasterPlatformOrder(o));
+              cleanedList.forEach((o: any) => {
                 if (targetAgentId && o.agent_id !== targetAgentId && o.agent_id !== targetSlug) return;
                 const key = o.reference || o.id;
                 if (key && !orderMap.has(key)) orderMap.set(key, o);
               });
+              if (cleanedList.length !== list.length) {
+                supabaseAdmin
+                  .from("settings")
+                  .update({ announcement_text: JSON.stringify(cleanedList) })
+                  .eq("id", "agent_orders_registry_config")
+                  .then(() => {});
+              }
             }
           } catch {}
         }
       } catch {}
     }
 
-    const allMerged = Array.from(orderMap.values()).sort(
-      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-    );
+    if (globalStore.__bmgh_agent_orders) {
+      globalStore.__bmgh_agent_orders = globalStore.__bmgh_agent_orders.filter((o) => !isMasterPlatformOrder(o));
+    }
+
+    const allMerged = Array.from(orderMap.values())
+      .filter((o) => !isMasterPlatformOrder(o))
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
     if (targetAgentId) {
       return allMerged.filter(
