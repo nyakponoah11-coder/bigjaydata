@@ -27,21 +27,35 @@ export async function generateMetadata({
   const storeDesc =
     agent.description ||
     `Get fast, non-expiry MTN, Telecel, and AT data bundles from ${agent.store_name}. 100% automated delivery to your line in 60s.`;
+  const storeImage = agent.logo_url || "/agent-icon.png";
 
   return {
     title: storeTitle,
     description: storeDesc,
     applicationName: agent.store_name,
+    icons: {
+      icon: storeImage,
+      apple: storeImage,
+    },
     openGraph: {
       title: storeTitle,
       description: storeDesc,
       siteName: agent.store_name,
       type: "website",
+      images: [
+        {
+          url: storeImage,
+          width: 800,
+          height: 800,
+          alt: `${agent.store_name} Data Store`,
+        },
+      ],
     },
     twitter: {
       card: "summary",
       title: storeTitle,
       description: storeDesc,
+      images: [storeImage],
     },
   };
 }

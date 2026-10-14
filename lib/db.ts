@@ -441,6 +441,7 @@ const initialAgents: Agent[] = [
     momo_number: "05922753424",
     momo_network: "MTN",
     description: "Welcome to Stony Data Store. Enjoy instant automated non-expiry data for MTN, Telecel, and AT.",
+    logo_url: "/agent-icon.png",
     password_hash: "123456",
     theme: "pearl",
     wallet_balance: 0,
@@ -2203,7 +2204,10 @@ export const db = {
     const clean = slug.toLowerCase().trim();
     const all = await this.getAgents();
     const found = all.find((a) => a.store_slug.toLowerCase() === clean);
-    if (found) return found;
+    if (found) {
+      if (!found.logo_url) found.logo_url = "/agent-icon.png";
+      return found;
+    }
     if (clean === "stony") return initialAgents[0];
     return null;
   },

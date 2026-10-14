@@ -27,21 +27,35 @@ export async function generateMetadata({
   const storeDesc =
     agent.description ||
     `Get fast, non-expiry MTN, Telecel, and AT data bundles from ${agent.store_name}. 100% automated delivery to your line in 60s.`;
+  const storeImage = agent.logo_url || "/agent-icon.png";
 
   return {
     title: storeTitle,
     description: storeDesc,
     applicationName: agent.store_name,
+    icons: {
+      icon: storeImage,
+      apple: storeImage,
+    },
     openGraph: {
       title: storeTitle,
       description: storeDesc,
       siteName: agent.store_name,
       type: "website",
+      images: [
+        {
+          url: storeImage,
+          width: 800,
+          height: 800,
+          alt: `${agent.store_name} Data Store`,
+        },
+      ],
     },
     twitter: {
       card: "summary",
       title: storeTitle,
       description: storeDesc,
+      images: [storeImage],
     },
   };
 }
@@ -65,12 +79,12 @@ export default async function ShortStorefrontPage({
       <div className="min-h-screen bg-gradient-to-b from-[#070b14] via-[#0b1021] to-[#050811] text-slate-100 flex flex-col justify-between p-4 sm:p-6 selection:bg-indigo-500 selection:text-white">
         {/* Top Minimal Nav */}
         <div className="max-w-6xl mx-auto w-full flex items-center justify-between py-4">
-          <a href="/" className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-black border border-slate-800 flex items-center justify-center p-0.5 shadow-md">
-              <img src="/logo.png" alt="BundleMartGh" className="w-full h-full object-contain" />
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-center p-1 shadow-md overflow-hidden">
+              <img src={agent.logo_url || "/agent-icon.png"} alt={agent.store_name} className="w-full h-full object-contain" />
             </div>
-            <span className="font-extrabold text-base tracking-tight text-white">BundleMartGh</span>
-          </a>
+            <span className="font-extrabold text-base tracking-tight text-white">{agent.store_name}</span>
+          </div>
 
           <a
             href="/"
@@ -106,20 +120,14 @@ export default async function ShortStorefrontPage({
               <span>Scheduled Maintenance</span>
             </div>
             <p className="text-xs text-slate-400">
-              Agent stores are currently undergoing maintenance. Visit the main BundleMartGh store for instant data bundles.
+              This store is currently undergoing routine maintenance. Please check back shortly.
             </p>
-            <a
-              href="/"
-              className="w-full py-2.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-rose-600/30 block text-center"
-            >
-              Visit Main Store
-            </a>
           </div>
         </div>
 
         {/* Footer */}
         <div className="max-w-6xl mx-auto w-full text-center py-6 border-t border-slate-800/60 text-xs text-slate-500">
-          BundleMartGh Agent Storefronts • Automated Data Delivery for Ghana
+          Automated Data Portal • Instant 24/7 Delivery
         </div>
       </div>
     );
