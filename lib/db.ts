@@ -2143,18 +2143,29 @@ export const db = {
             const ps = (o.payment_status || "").toLowerCase().trim();
             const s = (o.status || "").toLowerCase().trim();
             const ds = (o.delivery_status || "").toLowerCase().trim();
+            
+            // Never credit profit for unpaid, pending, failed, or cancelled orders
+            if (
+              ps === "failed" ||
+              ps === "cancelled" ||
+              ps === "pending" ||
+              s === "failed" ||
+              s === "cancelled" ||
+              ds === "failed" ||
+              ds === "cancelled"
+            ) {
+              return false;
+            }
+
+            // Only credit when payment is confirmed or order was fulfilled
             return (
               ps === "paid" ||
               ps === "completed" ||
               ps === "success" ||
               s === "delivered" ||
               s === "completed" ||
-              s === "processing" ||
               ds === "delivered" ||
-              ds === "completed" ||
-              ds === "processing" ||
-              !!o.paystack_ref ||
-              (Number(o.amount) > 0 && s !== "failed" && s !== "cancelled")
+              ds === "completed"
             );
           })
           .reduce((sum, o) => sum + (Number(o.agent_profit) || 0), 0);
@@ -2824,8 +2835,12 @@ export const db = {
         a.store_slug.toLowerCase() === newOrder.agent_id.toLowerCase()
     );
 
-    // If order has profit, automatically credit the agent's wallet
-    if (newOrder.agent_profit > 0 && agent) {
+    // Strictly credit the agent's wallet ONLY when payment is confirmed successful
+    const ps = (newOrder.payment_status || "").toLowerCase().trim();
+    const st = (newOrder.status || "").toLowerCase().trim();
+    const isPaymentConfirmed = ps === "paid" || ps === "completed" || ps === "success" || st === "delivered";
+
+    if (isPaymentConfirmed && newOrder.agent_profit > 0 && agent) {
       agent.wallet_balance = Number(((agent.wallet_balance || 0) + newOrder.agent_profit).toFixed(2));
       agent.total_earned = Number(((agent.total_earned || 0) + newOrder.agent_profit).toFixed(2));
     }

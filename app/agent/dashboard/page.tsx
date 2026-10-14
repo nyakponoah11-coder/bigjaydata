@@ -157,10 +157,36 @@ export default function AgentDashboardPage() {
       if (withData.success) setWithdrawals(loadedWithdrawals);
 
       if (profData.success && profData.agent) {
-        const totalProfitFromOrders = loadedOrders.reduce(
-          (sum: number, o: any) => sum + (Number(o.agent_profit) || 0),
-          0
-        );
+        const totalProfitFromOrders = loadedOrders
+          .filter((o: any) => {
+            const ps = (o.payment_status || "").toLowerCase().trim();
+            const s = (o.status || "").toLowerCase().trim();
+            const ds = (o.delivery_status || "").toLowerCase().trim();
+            if (
+              ps === "failed" ||
+              ps === "cancelled" ||
+              ps === "pending" ||
+              s === "failed" ||
+              s === "cancelled" ||
+              ds === "failed" ||
+              ds === "cancelled"
+            ) {
+              return false;
+            }
+            return (
+              ps === "paid" ||
+              ps === "completed" ||
+              ps === "success" ||
+              s === "delivered" ||
+              s === "completed" ||
+              ds === "delivered" ||
+              ds === "completed"
+            );
+          })
+          .reduce(
+            (sum: number, o: any) => sum + (Number(o.agent_profit) || 0),
+            0
+          );
         const totalWithdrawnFromList = loadedWithdrawals
           .filter((w: any) => w.status === "completed" || w.status === "pending")
           .reduce((sum: number, w: any) => sum + (Number(w.amount) || 0), 0);
@@ -541,11 +567,37 @@ export default function AgentDashboardPage() {
     return new Date(o.created_at).toISOString().split("T")[0] === selectedDate;
   });
 
-  const todaySpent = dateOrders.reduce((acc, o) => acc + (Number(o.amount) || 0), 0);
-  const todayProfit = dateOrders.reduce((acc, o) => acc + (Number(o.agent_profit) || 0), 0);
+  const isOrderPaid = (o: any) => {
+    const ps = (o.payment_status || "").toLowerCase().trim();
+    const s = (o.status || "").toLowerCase().trim();
+    const ds = (o.delivery_status || "").toLowerCase().trim();
+    if (
+      ps === "failed" ||
+      ps === "cancelled" ||
+      ps === "pending" ||
+      s === "failed" ||
+      s === "cancelled" ||
+      ds === "failed" ||
+      ds === "cancelled"
+    ) {
+      return false;
+    }
+    return (
+      ps === "paid" ||
+      ps === "completed" ||
+      ps === "success" ||
+      s === "delivered" ||
+      s === "completed" ||
+      ds === "delivered" ||
+      ds === "completed"
+    );
+  };
 
-  // Overall accumulated order profit and current available wallet balance
-  const allTimeProfit = orders.reduce((acc, o) => {
+  const todaySpent = dateOrders.filter(isOrderPaid).reduce((acc, o) => acc + (Number(o.amount) || 0), 0);
+  const todayProfit = dateOrders.filter(isOrderPaid).reduce((acc, o) => acc + (Number(o.agent_profit) || 0), 0);
+
+  // Overall accumulated order profit and current available wallet balance (strictly for confirmed paid orders)
+  const allTimeProfit = orders.filter(isOrderPaid).reduce((acc, o) => {
     return acc + (Number(o.agent_profit) || 0);
   }, 0);
 
