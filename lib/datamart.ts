@@ -751,6 +751,16 @@ export async function checkDataMartOrderStatus(orderReference: string): Promise<
 export async function syncOrderWithDataMart(order: Order): Promise<Order> {
   if (!order) return order;
 
+  // If order was passed from a lightweight bulk query lacking datamart_response, fetch it on-demand
+  if (!order.datamart_response && order.reference) {
+    try {
+      const full = await db.getOrderByReference(order.reference);
+      if (full?.datamart_response) {
+        order = { ...order, datamart_response: full.datamart_response };
+      }
+    } catch {}
+  }
+
   // Extract candidate references to query DataMart:
   // 1. DataMart purchase order reference (e.g. GN-AB12CD34) from datamart_response
   // 2. DataMart purchaseId / datamart_id
