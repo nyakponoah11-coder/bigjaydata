@@ -35,6 +35,8 @@ import {
   Radio,
   Lock,
   Globe,
+  Menu,
+  X,
 } from "lucide-react";
 import { encodeAgentToken } from "@/lib/agent-link";
 import { invalidateCache } from "@/lib/localCache";
@@ -73,6 +75,7 @@ export default function AgentDashboardPage() {
   const [shortening, setShortening] = useState<boolean>(false);
 
   const [copied, setCopied] = useState(false);
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
 
   // Products States
   const [products, setProducts] = useState<any[]>([]);
@@ -793,32 +796,41 @@ export default function AgentDashboardPage() {
               </div>
             </div>
 
-            {/* Quick Actions */}
+            {/* Right Side: Quick Actions & Admin-Style Menu Toggle */}
             <div className="flex items-center gap-2 sm:gap-3">
               <button
                 onClick={() => agent?.id && loadDashboardData(agent.id, true)}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-300 hover:text-white border border-slate-700 transition-colors cursor-pointer"
+                className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-300 hover:text-white border border-slate-700 transition-colors cursor-pointer"
                 title="Refresh dashboard metrics"
               >
                 <RefreshCw className="w-3.5 h-3.5 text-slate-400" />
-                <span className="hidden sm:inline">Refresh</span>
+                <span>Refresh</span>
               </button>
 
               <a
                 href={activeDisplayUrl || directShortUrl}
                 target="_blank"
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold text-white border border-slate-700 transition-colors"
+                rel="noopener noreferrer"
+                className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold text-white border border-slate-700 transition-colors"
               >
                 <Eye className="w-3.5 h-3.5 text-emerald-400" />
-                <span className="hidden sm:inline">View Store</span>
+                <span>View Store</span>
               </a>
 
+              {/* Admin-Style Menu Bar Toggle Button */}
               <button
-                onClick={handleSignOut}
-                className="p-2 rounded-xl bg-slate-800/80 hover:bg-rose-900/30 text-slate-400 hover:text-rose-400 transition-colors"
-                title="Sign Out"
+                onClick={() => setIsDrawerOpen(!isDrawerOpen)}
+                className="flex items-center gap-2 px-3.5 py-2 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white transition-all shadow-md group cursor-pointer"
+                aria-label="Toggle agent menu"
               >
-                <LogOut className="w-4 h-4" />
+                {isDrawerOpen ? (
+                  <X className="w-5 h-5" />
+                ) : (
+                  <Menu className="w-5 h-5 group-hover:rotate-90 transition-transform duration-200" />
+                )}
+                <span className="text-xs font-black tracking-wider uppercase">
+                  {isDrawerOpen ? "Close" : "Agent Menu"}
+                </span>
               </button>
             </div>
           </div>
@@ -932,13 +944,13 @@ export default function AgentDashboardPage() {
           </div>
         </div>
 
-        {/* Tab Menu Navigation */}
-        <div className="flex border-b border-slate-800 overflow-x-auto gap-1 pb-1">
+        {/* Agent Navigation Menu Bar */}
+        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-2 shadow-lg flex items-center overflow-x-auto gap-1">
           {[
             { id: "home", label: "Homepage", icon: LayoutDashboard },
-            { id: "products", label: "Products", icon: Package },
-            { id: "orders", label: "Orders", icon: ShoppingCart },
-            { id: "withdrawals", label: "Withdrawal", icon: Wallet },
+            { id: "products", label: "Products", icon: Package, badge: products.length > 0 ? `${products.length}` : null },
+            { id: "orders", label: "Orders", icon: ShoppingCart, badge: orders.length > 0 ? `${orders.length}` : null },
+            { id: "withdrawals", label: "Withdrawal", icon: Wallet, badge: `GHS ${effectiveWalletBalance.toFixed(2)}` },
             { id: "settings", label: "Settings", icon: Settings },
           ].map((t) => {
             const Icon = t.icon;
@@ -947,14 +959,25 @@ export default function AgentDashboardPage() {
               <button
                 key={t.id}
                 onClick={() => setActiveTab(t.id as any)}
-                className={`flex items-center gap-2 py-3 px-4 sm:px-6 text-xs font-bold rounded-2xl transition-all shrink-0 ${
+                className={`flex items-center gap-2 py-2.5 px-4 sm:px-5 text-xs font-bold rounded-2xl transition-all shrink-0 cursor-pointer ${
                   active
-                    ? "bg-emerald-600 text-white shadow-lg shadow-emerald-600/20"
-                    : "text-slate-400 hover:text-white hover:bg-slate-900"
+                    ? "bg-emerald-600 text-white shadow-lg shadow-emerald-600/30"
+                    : "text-slate-400 hover:text-white hover:bg-slate-800"
                 }`}
               >
-                <Icon className="w-4 h-4" />
+                <Icon className="w-4 h-4 text-emerald-400" />
                 <span>{t.label}</span>
+                {t.badge && (
+                  <span
+                    className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ${
+                      active
+                        ? "bg-white/20 text-white"
+                        : "bg-slate-800 text-slate-300 border border-slate-700"
+                    }`}
+                  >
+                    {t.badge}
+                  </span>
+                )}
               </button>
             );
           })}
@@ -1851,6 +1874,128 @@ export default function AgentDashboardPage() {
           </div>
         )}
       </main>
+
+      {/* Slide-out Agent Menu Drawer (identical to Admin Dashboard) */}
+      {isDrawerOpen && (
+        <div className="fixed inset-0 z-50 flex justify-end">
+          {/* Backdrop (Tap to close) */}
+          <div
+            onClick={() => setIsDrawerOpen(false)}
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm transition-opacity"
+          />
+
+          {/* Side Drawer Panel */}
+          <aside className="relative w-80 sm:w-96 max-w-[85vw] h-full bg-[#0b1320] border-l border-slate-800 shadow-2xl p-6 flex flex-col justify-between overflow-y-auto z-50 animate-in slide-in-from-right duration-300 text-white">
+            <div>
+              {/* Drawer Top Header */}
+              <div className="flex items-center justify-between pb-5 border-b border-slate-800">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-10 h-10 rounded-2xl overflow-hidden bg-gradient-to-tr from-emerald-500 to-teal-400 p-0.5 shadow-md">
+                    <div className="w-full h-full bg-slate-950 rounded-[14px] flex items-center justify-center">
+                      <Store className="w-5 h-5 text-emerald-400" />
+                    </div>
+                  </div>
+                  <div>
+                    <h3 className="font-extrabold text-base text-white tracking-tight leading-none">
+                      {agent?.store_name || "Agent Store"}
+                    </h3>
+                    <span className="text-[10px] text-emerald-400 font-bold uppercase tracking-wider">
+                      Partner Portal Menu
+                    </span>
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => setIsDrawerOpen(false)}
+                  className="w-9 h-9 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-white flex items-center justify-center transition-colors cursor-pointer"
+                  aria-label="Close menu"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Navigation Items */}
+              <nav className="py-6 space-y-2">
+                {[
+                  { id: "home", label: "Dashboard / Home", icon: LayoutDashboard },
+                  { id: "products", label: "Products & Pricing", icon: Package, badge: products.length > 0 ? `${products.length} Items` : null },
+                  { id: "orders", label: "Store Orders", icon: ShoppingCart, badge: orders.length > 0 ? `${orders.length} Sales` : null },
+                  { id: "withdrawals", label: "Withdraw Profit", icon: Wallet, badge: `GHS ${effectiveWalletBalance.toFixed(2)}` },
+                  { id: "settings", label: "Store Settings", icon: Settings },
+                ].map((item) => {
+                  const Icon = item.icon;
+                  const isActive = activeTab === item.id;
+                  return (
+                    <button
+                      key={item.id}
+                      onClick={() => {
+                        setActiveTab(item.id as any);
+                        setIsDrawerOpen(false);
+                      }}
+                      className={`w-full flex items-center justify-between px-4 py-3 rounded-2xl text-sm font-bold transition-all cursor-pointer ${
+                        isActive
+                          ? "bg-emerald-600 text-white shadow-lg shadow-emerald-600/30"
+                          : "text-slate-300 hover:text-white hover:bg-slate-900 border border-transparent hover:border-slate-800"
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <Icon className="w-4 h-4 text-emerald-400" />
+                        <span>{item.label}</span>
+                      </div>
+                      {item.badge && (
+                        <span
+                          className={`text-[9px] font-extrabold px-2 py-0.5 rounded-full ${
+                            isActive
+                              ? "bg-white/20 text-white"
+                              : "bg-emerald-500/10 text-emerald-300 border border-emerald-500/20"
+                          }`}
+                        >
+                          {item.badge}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </nav>
+            </div>
+
+            {/* Bottom Actions: View Storefront, Copy Link, Sign Out */}
+            <div className="pt-6 border-t border-slate-800 space-y-2.5">
+              <a
+                href={activeDisplayUrl || directShortUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center justify-between px-4 py-2.5 rounded-2xl text-xs font-semibold text-slate-300 hover:text-white hover:bg-slate-900 border border-slate-800 transition-colors"
+              >
+                <span className="flex items-center gap-2">
+                  <ExternalLink className="w-4 h-4 text-emerald-400" />
+                  View Customer Store
+                </span>
+                <span className="text-[10px] text-slate-500">Live ↗</span>
+              </a>
+
+              <button
+                onClick={() => handleCopyLink()}
+                className="w-full flex items-center justify-between px-4 py-2.5 rounded-2xl text-xs font-semibold text-slate-300 hover:text-white hover:bg-slate-900 border border-slate-800 transition-colors cursor-pointer"
+              >
+                <span className="flex items-center gap-2">
+                  {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4 text-emerald-400" />}
+                  <span>{copied ? "Link Copied!" : "Copy Store Link"}</span>
+                </span>
+                <span className="text-[10px] text-slate-500 font-mono">/{storeSlug}</span>
+              </button>
+
+              <button
+                onClick={handleSignOut}
+                className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-2xl text-xs font-bold bg-red-950/40 hover:bg-red-950/70 text-red-400 border border-red-900/40 transition-colors cursor-pointer"
+              >
+                <LogOut className="w-4 h-4" />
+                Sign Out Partner
+              </button>
+            </div>
+          </aside>
+        </div>
+      )}
     </div>
   );
 }
