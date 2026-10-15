@@ -260,13 +260,17 @@ export default function AgentDashboardPage() {
             (sum: number, o: any) => sum + (Number(o.agent_profit) || 0),
             0
           );
-        const totalWithdrawnFromList = currentWithList
-          .filter((w: any) => w.status === "completed" || w.status === "pending")
+        const completedWithdrawn = currentWithList
+          .filter((w: any) => w.status === "completed")
+          .reduce((sum: number, w: any) => sum + (Number(w.amount) || 0), 0);
+        const pendingWithdrawn = currentWithList
+          .filter((w: any) => w.status === "pending" && Number(w.amount) <= totalProfitFromOrders)
           .reduce((sum: number, w: any) => sum + (Number(w.amount) || 0), 0);
 
         const currentEarned = Number(totalProfitFromOrders.toFixed(2));
-        const currentWithdrawn = Number(totalWithdrawnFromList.toFixed(2));
-        const currentBalance = Number(Math.max(0, currentEarned - currentWithdrawn).toFixed(2));
+        const currentWithdrawn = Number(completedWithdrawn.toFixed(2));
+        const calculatedBalance = Number(Math.max(0, currentEarned - currentWithdrawn - pendingWithdrawn).toFixed(2));
+        const currentBalance = Math.max(Number(profData.agent?.wallet_balance || 0), calculatedBalance);
 
         const mergedAgent = {
           ...profData.agent,
@@ -710,15 +714,22 @@ export default function AgentDashboardPage() {
 
   const totalWithdrawnAmount = Number(
     withdrawals
-      .filter((w) => w.status === "completed" || w.status === "pending")
+      .filter((w) => w.status === "completed")
       .reduce((acc, w) => acc + (Number(w.amount) || 0), 0)
       .toFixed(2)
   );
 
-  // Available wallet balance: strictly Total store profit minus total withdrawn!
+  const pendingWithdrawnAmount = Number(
+    withdrawals
+      .filter((w) => w.status === "pending" && Number(w.amount) <= allTimeProfit)
+      .reduce((acc, w) => acc + (Number(w.amount) || 0), 0)
+      .toFixed(2)
+  );
+
+  // Available wallet balance: Total store profit minus completed and valid pending withdrawals
   const effectiveWalletBalance = Math.max(
-    0,
-    Number((allTimeProfit - totalWithdrawnAmount).toFixed(2))
+    Number(agent?.wallet_balance || 0),
+    Math.max(0, Number((allTimeProfit - totalWithdrawnAmount - pendingWithdrawnAmount).toFixed(2)))
   );
 
   // Filtered orders for Orders tab

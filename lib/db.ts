@@ -1034,7 +1034,7 @@ export const db = {
       try {
         let query = supabaseAdmin
           .from("orders")
-          .select("id, reference, network, package_size, phone, amount, paystack_ref, payment_status, delivery_status, status, created_at, source, api_key_id, developer_name, agent_id, agent_profit, store_slug")
+          .select("*")
           .order("created_at", { ascending: false });
         if (!filter?.search) {
           query = query.limit(100);
@@ -2305,13 +2305,17 @@ export const db = {
           .reduce((sum, o) => sum + (Number(o.agent_profit) || 0), 0);
 
         const withdrawals = await this.getAgentWithdrawals(found.id);
-        const withdrawn = withdrawals
-          .filter((w) => w.status === "completed" || w.status === "pending")
+        const completedWithdrawn = withdrawals
+          .filter((w) => w.status === "completed")
           .reduce((sum, w) => sum + (Number(w.amount) || 0), 0);
 
         const totalEarned = Number(earnedFromOrders.toFixed(2));
-        const totalWithdrawn = Number(withdrawn.toFixed(2));
-        const currentBalance = Number(Math.max(0, totalEarned - totalWithdrawn).toFixed(2));
+        const totalWithdrawn = Number(completedWithdrawn.toFixed(2));
+        const pendingWithdrawn = withdrawals
+          .filter((w) => w.status === "pending" && Number(w.amount) <= totalEarned)
+          .reduce((sum, w) => sum + (Number(w.amount) || 0), 0);
+        const calculatedBalance = Number(Math.max(0, totalEarned - totalWithdrawn - pendingWithdrawn).toFixed(2));
+        const currentBalance = Math.max(Number(found.wallet_balance || 0), calculatedBalance);
 
         found.total_earned = totalEarned;
         found.total_withdrawn = totalWithdrawn;
