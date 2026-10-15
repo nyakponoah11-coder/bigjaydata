@@ -33,7 +33,7 @@ export interface Order {
   payment_status: "paid" | "pending" | "failed" | string;
   delivery_status: DeliveryStatus | string;
   status: "pending" | "waiting" | "processing" | "completed" | "delivered" | "failed" | "refunded" | "cancelled" | string;
-  datamart_response: any;
+  datamart_response?: any;
   source?: "web" | "agent" | "api" | string;
   api_key_id?: string;
   developer_name?: string;
@@ -1032,7 +1032,10 @@ export const db = {
 
     if (isSupabaseConfigured && supabaseAdmin) {
       try {
-        let query = supabaseAdmin.from("orders").select("*").order("created_at", { ascending: false });
+        let query = supabaseAdmin
+          .from("orders")
+          .select("id, reference, network, package_size, phone, amount, paystack_ref, payment_status, delivery_status, status, created_at, source, api_key_id, developer_name, agent_id, agent_profit, store_slug")
+          .order("created_at", { ascending: false });
         if (!filter?.search) {
           query = query.limit(100);
         }
