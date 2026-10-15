@@ -22,6 +22,7 @@ import {
   BrainCircuit,
   Store,
   Code,
+  Users,
 } from "lucide-react";
 
 interface Props {
@@ -156,6 +157,7 @@ export default function AdminLayout({ children }: Props) {
   const navItems = [
     { label: "Dashboard", href: "/admin", icon: LayoutDashboard },
     { label: "Orders", href: "/admin/orders", icon: ShoppingCart },
+    { label: "Customers", href: "/admin/customers", icon: Users, badge: "Contacts" },
     { label: "Direct Purchase", href: "/admin/direct-purchase", icon: Zap, badge: "DataMart" },
     { label: "Free Data Vouchers", href: "/admin/vouchers", icon: Gift, badge: "Promo" },
     { label: "Agent Stores", href: "/admin/agent-store", icon: Store, badge: "New" },

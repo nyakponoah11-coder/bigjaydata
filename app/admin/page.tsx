@@ -19,6 +19,7 @@ import {
   Bot,
   Wallet,
   Zap,
+  Users,
 } from "lucide-react";
 
 export default function AdminDashboardPage() {
@@ -101,6 +102,15 @@ export default function AdminDashboardPage() {
               <Zap className="w-3.5 h-3.5 text-slate-950" />
               <span>Direct Buy</span>
             </button>
+
+            <Link
+              href="/admin/customers"
+              className="py-2 px-3.5 bg-slate-800 hover:bg-slate-700 text-emerald-400 hover:text-emerald-300 font-bold border border-slate-700 rounded-xl text-xs flex items-center gap-1.5 transition-all"
+              title="Customer Phone Directory & Copy All Numbers"
+            >
+              <Users className="w-3.5 h-3.5" />
+              <span>Customers</span>
+            </Link>
 
             <button
               onClick={() => fetchStats(selectedDate)}
