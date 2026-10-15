@@ -439,6 +439,7 @@ const globalStore = globalThis as unknown as {
   __bmgh_developer_api_products?: DeveloperApiProduct[];
   __bmgh_developer_accounts?: DeveloperAccount[];
   __bmgh_cache_timestamps?: Record<string, number>;
+  __bmgh_agents_zeroed_migrated?: boolean;
 };
 
 function saveToDisk() {
@@ -2137,6 +2138,29 @@ export const db = {
 
   // AGENTS
   async getAgents(): Promise<Agent[]> {
+    if (isSupabaseConfigured && supabaseAdmin && !globalStore.__bmgh_agents_zeroed_migrated) {
+      globalStore.__bmgh_agents_zeroed_migrated = true;
+      (async () => {
+        try {
+          const { data: flag } = await supabaseAdmin
+            .from("settings")
+            .select("store_name")
+            .eq("id", "agents_zeroed_migration_v1")
+            .maybeSingle();
+          if (!flag?.store_name) {
+            console.log("[DB] Executing one-time global zero reset of all agent finances...");
+            await db.resetAllAgentFinances();
+            await supabaseAdmin.from("settings").upsert({
+              id: "agents_zeroed_migration_v1",
+              store_name: "completed",
+            });
+          }
+        } catch (mErr) {
+          console.warn("One-time zero reset migration check failed:", mErr);
+        }
+      })();
+    }
+
     if (isCacheFresh("agents", CACHE_TTLS.agents) && globalStore.__bmgh_agents && globalStore.__bmgh_agents.length > 0) {
       return globalStore.__bmgh_agents;
     }
@@ -2272,7 +2296,7 @@ export const db = {
           .filter((w) => w.status === "pending" && Number(w.amount) <= totalEarned)
           .reduce((sum, w) => sum + (Number(w.amount) || 0), 0);
         const calculatedBalance = Number(Math.max(0, totalEarned - totalWithdrawn - pendingWithdrawn).toFixed(2));
-        const currentBalance = Math.max(Number(found.wallet_balance || 0), calculatedBalance);
+        const currentBalance = calculatedBalance;
 
         found.total_earned = totalEarned;
         found.total_withdrawn = totalWithdrawn;
@@ -2491,6 +2515,21 @@ export const db = {
       );
     }
 
+    // Clear agent references from master orders in memory
+    if (globalStore.__bmgh_orders) {
+      globalStore.__bmgh_orders.forEach((mo) => {
+        if (
+          mo.datamart_response?.agent_id === targetId ||
+          mo.datamart_response?.agent_id === targetSlug ||
+          mo.datamart_response?.store_slug?.toLowerCase() === targetSlug
+        ) {
+          delete mo.datamart_response.agent_id;
+          delete mo.datamart_response.store_slug;
+          delete mo.datamart_response.agent_profit;
+        }
+      });
+    }
+
     saveToDisk();
 
     // 3. Supabase cleanup
@@ -2503,6 +2542,27 @@ export const db = {
         ]);
       } catch (err) {
         console.warn("Supabase direct reset error:", err);
+      }
+
+      // Clear agent tags from master orders table
+      try {
+        const { data: storeOrders } = await supabaseAdmin
+          .from("orders")
+          .select("id, datamart_response")
+          .or(
+            `datamart_response->>agent_id.eq.${targetId},datamart_response->>agent_id.eq.${targetSlug},datamart_response->>store_slug.eq.${targetSlug}`
+          );
+        if (Array.isArray(storeOrders) && storeOrders.length > 0) {
+          for (const so of storeOrders) {
+            const cleaned = { ...(so.datamart_response || {}) };
+            delete cleaned.agent_id;
+            delete cleaned.store_slug;
+            delete cleaned.agent_profit;
+            await supabaseAdmin.from("orders").update({ datamart_response: cleaned }).eq("id", so.id);
+          }
+        }
+      } catch (ordErr) {
+        console.warn("Supabase clean orders error:", ordErr);
       }
 
       // Update registry backups in settings
@@ -2565,6 +2625,103 @@ export const db = {
             }
           } catch {}
         }
+      } catch (backupErr) {
+        console.warn("Supabase backup registry reset error:", backupErr);
+      }
+    }
+
+    return true;
+  },
+
+  async resetAllAgentFinances(): Promise<boolean> {
+    invalidateServerCache("agents");
+    invalidateDbCache("agent_orders");
+    invalidateDbCache("agent_withdrawals");
+
+    // 1. Reset all agents in memory
+    const agents = await this.getAgents();
+    agents.forEach((a) => {
+      a.wallet_balance = 0;
+      a.total_earned = 0;
+      a.total_withdrawn = 0;
+    });
+
+    if (globalStore.__bmgh_agents) {
+      globalStore.__bmgh_agents.forEach((a) => {
+        a.wallet_balance = 0;
+        a.total_earned = 0;
+        a.total_withdrawn = 0;
+      });
+    }
+
+    // 2. Clear all agent orders and withdrawals in memory
+    globalStore.__bmgh_agent_orders = [];
+    globalStore.__bmgh_agent_withdrawals = [];
+
+    // 3. Clear agent tag from master platform orders in memory
+    if (globalStore.__bmgh_orders) {
+      globalStore.__bmgh_orders.forEach((mo) => {
+        if (mo.datamart_response) {
+          delete mo.datamart_response.agent_id;
+          delete mo.datamart_response.store_slug;
+          delete mo.datamart_response.agent_profit;
+        }
+      });
+    }
+
+    saveToDisk();
+
+    // 4. Supabase cleanup
+    if (isSupabaseConfigured && supabaseAdmin) {
+      try {
+        await Promise.all([
+          supabaseAdmin.from("agent_orders").delete().gte("created_at", "1970-01-01"),
+          supabaseAdmin.from("agent_withdrawals").delete().gte("created_at", "1970-01-01"),
+          supabaseAdmin.from("agents").update({ wallet_balance: 0, total_earned: 0, total_withdrawn: 0 }).neq("id", "none"),
+        ]);
+      } catch (err) {
+        console.warn("Supabase all reset error:", err);
+      }
+
+      // Clear agent tags from master orders table
+      try {
+        const { data: storeOrders } = await supabaseAdmin
+          .from("orders")
+          .select("id, datamart_response")
+          .not("datamart_response", "is", null);
+        if (Array.isArray(storeOrders) && storeOrders.length > 0) {
+          for (const so of storeOrders) {
+            if (so.datamart_response?.agent_id || so.datamart_response?.store_slug || so.datamart_response?.agent_profit) {
+              const cleaned = { ...so.datamart_response };
+              delete cleaned.agent_id;
+              delete cleaned.store_slug;
+              delete cleaned.agent_profit;
+              await supabaseAdmin.from("orders").update({ datamart_response: cleaned }).eq("id", so.id);
+            }
+          }
+        }
+      } catch (ordErr) {
+        console.warn("Supabase clean orders error:", ordErr);
+      }
+
+      // Update registry backups in settings
+      try {
+        await Promise.all([
+          supabaseAdmin.from("settings").upsert({
+            id: "agent_orders_registry_config",
+            announcement_text: JSON.stringify([]),
+          }),
+          supabaseAdmin.from("settings").upsert({
+            id: "agent_withdrawals_registry_config",
+            announcement_text: JSON.stringify([]),
+          }),
+          supabaseAdmin.from("settings").upsert({
+            id: "agents_registry_config",
+            announcement_text: JSON.stringify(
+              agents.map((a) => ({ ...a, wallet_balance: 0, total_earned: 0, total_withdrawn: 0 }))
+            ),
+          }),
+        ]);
       } catch (backupErr) {
         console.warn("Supabase backup registry reset error:", backupErr);
       }

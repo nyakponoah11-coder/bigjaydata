@@ -2,8 +2,13 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { sendSuspensionEmail, sendPasswordResetEmail } from "@/lib/email";
 
-export async function GET() {
+export async function GET(req: Request) {
   try {
+    const { searchParams } = new URL(req.url);
+    if (searchParams.get("reset_all") === "1" || searchParams.get("reset_all_finances") === "true") {
+      await db.resetAllAgentFinances();
+    }
+
     const [config, baseProducts, agents, withdrawals, orders] = await Promise.all([
       db.getAgentStoreConfig(),
       db.getAgentBaseProducts(),
@@ -52,7 +57,7 @@ export async function GET() {
       );
       const pendingWithdrawn = Number(pendingWithdrawals.reduce((sum, w) => sum + (Number(w.amount) || 0), 0).toFixed(2));
       const calculatedBalance = Number(Math.max(0, earned - withdrawn - pendingWithdrawn).toFixed(2));
-      const balance = Math.max(Number(agent.wallet_balance || 0), calculatedBalance);
+      const balance = calculatedBalance;
 
       return {
         ...agent,
@@ -184,6 +189,14 @@ export async function POST(req: Request) {
       return NextResponse.json({
         success: true,
         message: "Agent test orders, withdrawals, and balances successfully reset to GHS 0.00.",
+      });
+    }
+
+    if (action === "reset_all_finances") {
+      await db.resetAllAgentFinances();
+      return NextResponse.json({
+        success: true,
+        message: "All agent store accounts, test orders, and withdrawals have been successfully reset to GHS 0.00.",
       });
     }
 
