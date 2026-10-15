@@ -853,135 +853,20 @@ export default function AgentDashboardPage() {
           </div>
         )}
 
-        {/* Store Link Banner */}
-        <div className="bg-gradient-to-r from-emerald-950 via-slate-900 to-slate-900 border border-emerald-800/40 rounded-3xl p-5 sm:p-6 shadow-xl relative overflow-hidden flex flex-col gap-4">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div className="space-y-2">
-              <div className="inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-emerald-400 bg-emerald-500/10 px-2.5 py-0.5 rounded-full">
-                <Sparkles className="w-3 h-3" />
-                Customer Storefront URL
-              </div>
-              <h2 className="text-lg font-black text-white">Share Your Store with Customers</h2>
-
-              {/* 100% White-Labeled Link Badge */}
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="px-3 py-1.5 rounded-lg text-xs font-black bg-emerald-400 text-slate-950 flex items-center gap-1.5 shadow-sm">
-                  <ShieldCheck className="w-4 h-4 text-slate-950" />
-                  <span>100% White-Labeled (bundlemartgh.com Hidden)</span>
-                </span>
-                <span className="text-[11px] text-emerald-300 font-medium">
-                  Zero setup needed • Ready to share with customers
-                </span>
-              </div>
-
-
-              {/* Active URL display */}
-              <div className="space-y-1.5">
-                <p className="text-xs text-emerald-300 font-mono bg-slate-950/80 px-3 py-2 rounded-xl border border-slate-800 break-all select-all flex items-center justify-between gap-2">
-                  <span>{activeDisplayUrl || directShortUrl}</span>
-                </p>
-
-                <p className="text-[11px] text-cyan-300 font-semibold flex items-center gap-1.5 pt-0.5">
-                  <ShieldCheck className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
-                  <span>Direct Agent Link: Opens your personalized store with your custom prices.</span>
-                </p>
-              </div>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2 shrink-0 md:self-end">
-              <button
-                onClick={() => handleCopyLink(activeDisplayUrl)}
-                className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs shadow-md transition-all cursor-pointer"
-              >
-                {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                <span>{copied ? "Copied!" : "Copy Link"}</span>
-              </button>
-
-              <button
-                onClick={() => setActiveTab("settings")}
-                className="inline-flex items-center gap-1.5 px-3 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs border border-slate-700 transition-colors cursor-pointer"
-                title="Edit your store name or URL slug"
-              >
-                <Settings className="w-3.5 h-3.5 text-amber-400" />
-                <span>Edit Link</span>
-              </button>
-
-              <a
-                href={`https://wa.me/?text=${encodeURIComponent(
-                  `Buy cheap MTN, Telecel & AT data bundles instantly on my portal: ${activeDisplayUrl || directShortUrl}`
-                )}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs border border-slate-700 transition-colors"
-              >
-                <Share2 className="w-3.5 h-3.5 text-emerald-400" />
-                <span>WhatsApp</span>
-              </a>
-
-              <a
-                href={activeDisplayUrl || directShortUrl}
-                target="_blank"
-                className="p-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors"
-                title="Open storefront"
-              >
-                <ExternalLink className="w-4 h-4" />
-              </a>
-            </div>
+        {/* Active Tab Subheader (When viewing non-home tabs) */}
+        {activeTab !== "home" && (
+          <div className="flex items-center justify-between bg-slate-900/60 border border-slate-800 px-4 py-2.5 rounded-2xl">
+            <button
+              onClick={() => setActiveTab("home")}
+              className="text-xs text-slate-300 hover:text-emerald-400 flex items-center gap-1.5 font-bold transition-colors cursor-pointer"
+            >
+              <span>← Back to Dashboard</span>
+            </button>
+            <span className="text-xs font-black uppercase tracking-wider text-emerald-400">
+              {activeTab}
+            </span>
           </div>
-
-          <div className="text-[11px] text-slate-400 border-t border-slate-800/80 pt-2 flex flex-wrap items-center justify-between gap-2">
-            <div className="flex items-center gap-1.5">
-              <Lock className="w-3 h-3 text-cyan-400 shrink-0" />
-              <span>
-                Your store link is: <strong className="text-white font-mono">{activeDisplayUrl || directShortUrl}</strong>. You can customize this link anytime in Settings.
-              </span>
-            </div>
-            {customDomain && (
-              <span className="text-emerald-400 font-mono text-[10px] bg-emerald-950/60 border border-emerald-800/50 px-2 py-0.5 rounded-full">
-                Custom Domain Active: {customDomain}
-              </span>
-            )}
-          </div>
-        </div>
-
-        {/* Agent Navigation Menu Bar */}
-        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-2 shadow-lg flex items-center overflow-x-auto gap-1">
-          {[
-            { id: "home", label: "Homepage", icon: LayoutDashboard },
-            { id: "products", label: "Products", icon: Package, badge: products.length > 0 ? `${products.length}` : null },
-            { id: "orders", label: "Orders", icon: ShoppingCart, badge: orders.length > 0 ? `${orders.length}` : null },
-            { id: "withdrawals", label: "Withdrawal", icon: Wallet, badge: `GHS ${effectiveWalletBalance.toFixed(2)}` },
-            { id: "settings", label: "Settings", icon: Settings },
-          ].map((t) => {
-            const Icon = t.icon;
-            const active = activeTab === t.id;
-            return (
-              <button
-                key={t.id}
-                onClick={() => setActiveTab(t.id as any)}
-                className={`flex items-center gap-2 py-2.5 px-4 sm:px-5 text-xs font-bold rounded-2xl transition-all shrink-0 cursor-pointer ${
-                  active
-                    ? "bg-emerald-600 text-white shadow-lg shadow-emerald-600/30"
-                    : "text-slate-400 hover:text-white hover:bg-slate-800"
-                }`}
-              >
-                <Icon className="w-4 h-4 text-emerald-400" />
-                <span>{t.label}</span>
-                {t.badge && (
-                  <span
-                    className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ${
-                      active
-                        ? "bg-white/20 text-white"
-                        : "bg-slate-800 text-slate-300 border border-slate-700"
-                    }`}
-                  >
-                    {t.badge}
-                  </span>
-                )}
-              </button>
-            );
-          })}
-        </div>
+        )}
 
         {/* TAB 1: HOMEPAGE (Storefront Performance & Activity) */}
         {activeTab === "home" && (
@@ -1914,8 +1799,69 @@ export default function AgentDashboardPage() {
                 </button>
               </div>
 
+              {/* Customer Storefront Link Card Inside Drawer */}
+              <div className="mt-4 p-4 rounded-2xl bg-slate-900 border border-emerald-800/40 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-emerald-400">
+                    <Sparkles className="w-3 h-3" />
+                    Customer Store Link
+                  </div>
+                  <span className="text-[9px] font-bold text-slate-300 bg-slate-800 px-2 py-0.5 rounded-full border border-slate-700 flex items-center gap-1">
+                    <ShieldCheck className="w-3 h-3 text-emerald-400" />
+                    100% White-Labeled
+                  </span>
+                </div>
+
+                <div className="space-y-1">
+                  <p className="text-xs text-emerald-300 font-mono bg-slate-950 px-3 py-2 rounded-xl border border-slate-800 break-all select-all">
+                    {activeDisplayUrl || directShortUrl}
+                  </p>
+                  <p className="text-[10px] text-slate-400">
+                    Direct Agent Link: Opens your personalized store with your custom prices.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-1.5 pt-1">
+                  <button
+                    onClick={() => handleCopyLink(activeDisplayUrl)}
+                    className="flex-1 py-2 px-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs rounded-xl flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-sm"
+                  >
+                    {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                    <span>{copied ? "Copied!" : "Copy Link"}</span>
+                  </button>
+
+                  <a
+                    href={`https://wa.me/?text=${encodeURIComponent(
+                      `Buy cheap MTN, Telecel & AT data bundles instantly on my portal: ${activeDisplayUrl || directShortUrl}`
+                    )}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="p-2 bg-slate-800 hover:bg-slate-700 text-emerald-400 rounded-xl border border-slate-700 transition-colors flex items-center justify-center"
+                    title="Share on WhatsApp"
+                  >
+                    <Share2 className="w-4 h-4" />
+                  </a>
+
+                  <a
+                    href={activeDisplayUrl || directShortUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-xl border border-slate-700 transition-colors flex items-center justify-center"
+                    title="Open storefront"
+                  >
+                    <ExternalLink className="w-4 h-4" />
+                  </a>
+                </div>
+
+                {customDomain && (
+                  <div className="text-[10px] text-emerald-400 font-mono bg-emerald-950/60 border border-emerald-800/50 px-2 py-1 rounded-lg">
+                    Custom Domain Active: {customDomain}
+                  </div>
+                )}
+              </div>
+
               {/* Navigation Items */}
-              <nav className="py-6 space-y-2">
+              <nav className="py-5 space-y-2">
                 {[
                   { id: "home", label: "Dashboard / Home", icon: LayoutDashboard },
                   { id: "products", label: "Products & Pricing", icon: Package, badge: products.length > 0 ? `${products.length} Items` : null },
@@ -1959,32 +1905,8 @@ export default function AgentDashboardPage() {
               </nav>
             </div>
 
-            {/* Bottom Actions: View Storefront, Copy Link, Sign Out */}
-            <div className="pt-6 border-t border-slate-800 space-y-2.5">
-              <a
-                href={activeDisplayUrl || directShortUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center justify-between px-4 py-2.5 rounded-2xl text-xs font-semibold text-slate-300 hover:text-white hover:bg-slate-900 border border-slate-800 transition-colors"
-              >
-                <span className="flex items-center gap-2">
-                  <ExternalLink className="w-4 h-4 text-emerald-400" />
-                  View Customer Store
-                </span>
-                <span className="text-[10px] text-slate-500">Live ↗</span>
-              </a>
-
-              <button
-                onClick={() => handleCopyLink()}
-                className="w-full flex items-center justify-between px-4 py-2.5 rounded-2xl text-xs font-semibold text-slate-300 hover:text-white hover:bg-slate-900 border border-slate-800 transition-colors cursor-pointer"
-              >
-                <span className="flex items-center gap-2">
-                  {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4 text-emerald-400" />}
-                  <span>{copied ? "Link Copied!" : "Copy Store Link"}</span>
-                </span>
-                <span className="text-[10px] text-slate-500 font-mono">/{storeSlug}</span>
-              </button>
-
+            {/* Bottom Actions: Sign Out */}
+            <div className="pt-4 border-t border-slate-800">
               <button
                 onClick={handleSignOut}
                 className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-2xl text-xs font-bold bg-red-950/40 hover:bg-red-950/70 text-red-400 border border-red-900/40 transition-colors cursor-pointer"
