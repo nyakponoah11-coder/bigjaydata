@@ -2675,8 +2675,8 @@ export const db = {
     if (isSupabaseConfigured && supabaseAdmin) {
       try {
         await Promise.all([
-          supabaseAdmin.from("agent_orders").delete().gte("created_at", "1970-01-01"),
-          supabaseAdmin.from("agent_withdrawals").delete().gte("created_at", "1970-01-01"),
+          supabaseAdmin.from("agent_orders").delete().neq("id", "none"),
+          supabaseAdmin.from("agent_withdrawals").delete().neq("id", "none"),
           supabaseAdmin.from("agents").update({ wallet_balance: 0, total_earned: 0, total_withdrawn: 0 }).neq("id", "none"),
         ]);
       } catch (err) {
@@ -2709,14 +2709,26 @@ export const db = {
         await Promise.all([
           supabaseAdmin.from("settings").upsert({
             id: "agent_orders_registry_config",
+            store_name: "AgentOrdersRegistry",
+            support_phone: "+233551234567",
+            whatsapp_number: "233551234567",
+            email: "support@bundlemartgh.com",
             announcement_text: JSON.stringify([]),
           }),
           supabaseAdmin.from("settings").upsert({
             id: "agent_withdrawals_registry_config",
+            store_name: "AgentWithdrawalsRegistry",
+            support_phone: "+233551234567",
+            whatsapp_number: "233551234567",
+            email: "support@bundlemartgh.com",
             announcement_text: JSON.stringify([]),
           }),
           supabaseAdmin.from("settings").upsert({
             id: "agents_registry_config",
+            store_name: "AgentsRegistry",
+            support_phone: "+233551234567",
+            whatsapp_number: "233551234567",
+            email: "support@bundlemartgh.com",
             announcement_text: JSON.stringify(
               agents.map((a) => ({ ...a, wallet_balance: 0, total_earned: 0, total_withdrawn: 0 }))
             ),
