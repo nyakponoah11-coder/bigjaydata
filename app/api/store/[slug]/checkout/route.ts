@@ -137,7 +137,7 @@ export async function POST(
         payment_status: "paid",
         delivery_status: "processing",
         status: "processing",
-        datamart_response: { agent_id: agent.id, agent_profit: agentProfit },
+        datamart_response: { agent_id: agent.id, agent_profit: agentProfit, store_slug: agent.store_slug, source: "agent" },
       });
     }
 

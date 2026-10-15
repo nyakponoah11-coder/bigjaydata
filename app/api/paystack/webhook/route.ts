@@ -110,6 +110,27 @@ export async function POST(request: Request) {
         // Background creation if checkout closed before client trigger
         console.log(`[Paystack Webhook] Creating and dispatching new order ${reference}...`);
 
+        let resolvedAgent = null;
+        let webhookAgentProfit = 0;
+        let webhookBaseCost = amount;
+        if (storeSlug) {
+          try {
+            resolvedAgent = await db.getAgentBySlug(storeSlug);
+            if (resolvedAgent) {
+              const agentProducts = await db.getAgentProducts(resolvedAgent.id);
+              const matched = agentProducts.find(
+                (p) =>
+                  p.network.toLowerCase() === network.toLowerCase() &&
+                  p.size.toLowerCase() === package_size.toLowerCase()
+              );
+              webhookBaseCost = matched ? matched.base_price : amount;
+              webhookAgentProfit = Math.max(0, Number((amount - webhookBaseCost).toFixed(2)));
+            }
+          } catch (agentLookupErr) {
+            console.warn("[Paystack Webhook] Agent lookup warning:", agentLookupErr);
+          }
+        }
+
         const newOrder = await db.createOrder({
           reference,
           network: network.toLowerCase(),
@@ -120,7 +141,12 @@ export async function POST(request: Request) {
           payment_status: "paid",
           delivery_status: "processing",
           status: "pending",
-          datamart_response: { status: "pending", source: "paystack_webhook", store_slug: storeSlug },
+          datamart_response: {
+            status: "pending",
+            source: "paystack_webhook",
+            store_slug: storeSlug,
+            ...(resolvedAgent ? { agent_id: resolvedAgent.id, agent_profit: webhookAgentProfit } : {}),
+          },
         });
 
         const deliveryResult = await sendDataMartDelivery({
@@ -142,33 +168,22 @@ export async function POST(request: Request) {
           }
         );
 
-        if (storeSlug) {
+        if (resolvedAgent) {
           try {
-            const agent = await db.getAgentBySlug(storeSlug);
-            if (agent) {
-              const agentProducts = await db.getAgentProducts(agent.id);
-              const matched = agentProducts.find(
-                (p) =>
-                  p.network.toLowerCase() === network.toLowerCase() &&
-                  p.size.toLowerCase() === package_size.toLowerCase()
-              );
-              const baseCost = matched ? matched.base_price : amount;
-              const agentProfit = Math.max(0, Number((amount - baseCost).toFixed(2)));
-              await db.createAgentOrder({
-                agent_id: agent.id,
-                reference,
-                network: network.toLowerCase(),
-                package_size,
-                phone,
-                amount,
-                base_price: baseCost,
-                agent_profit: agentProfit,
-                paystack_ref: paystackRef,
-                payment_status: "paid",
-                delivery_status: finalDelivery,
-                status: finalDelivery,
-              });
-            }
+            await db.createAgentOrder({
+              agent_id: resolvedAgent.id,
+              reference,
+              network: network.toLowerCase(),
+              package_size,
+              phone,
+              amount,
+              base_price: webhookBaseCost,
+              agent_profit: webhookAgentProfit,
+              paystack_ref: paystackRef,
+              payment_status: "paid",
+              delivery_status: finalDelivery,
+              status: finalDelivery,
+            });
           } catch (agentErr) {
             console.error("[Paystack Webhook] Agent order creation error:", agentErr);
           }

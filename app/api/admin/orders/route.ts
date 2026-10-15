@@ -58,6 +58,7 @@ export async function PATCH(request: Request) {
           const synced = await syncOrderWithDataMart(ord);
           if (synced.delivery_status !== ord.delivery_status) {
             updatedCount++;
+            await db.updateAgentOrderStatus(ord.reference, synced.delivery_status).catch(() => {});
           }
         } catch {}
       }
@@ -96,6 +97,7 @@ export async function PATCH(request: Request) {
     // If admin requested live sync from DataMart
     if (sync_datamart) {
       const synced = await syncOrderWithDataMart(order);
+      await db.updateAgentOrderStatus(order.reference, synced.delivery_status).catch(() => {});
       return NextResponse.json({
         success: true,
         message: `Order live synced with DataMart: ${synced.delivery_status}`,
@@ -122,6 +124,7 @@ export async function PATCH(request: Request) {
           delivery_status: finalDelivery,
         }
       );
+      await db.updateAgentOrderStatus(order.reference, finalDelivery, dmResult.raw_response || dmResult).catch(() => {});
 
       return NextResponse.json({
         success: dmResult.success,
@@ -144,6 +147,9 @@ export async function PATCH(request: Request) {
           payment_status: newPaymentStatus,
         }
       )) || order;
+
+    // Explicitly sync agent order status
+    await db.updateAgentOrderStatus(order.reference, newDeliveryStatus).catch(() => {});
 
     // Optional SMS sending
     if (send_sms && updatedOrder.phone) {

@@ -20,12 +20,8 @@ export async function GET() {
         ps === "failed" ||
         ps === "cancelled" ||
         ps === "refunded" ||
-        s === "failed" ||
         s === "cancelled" ||
-        s === "refunded" ||
-        ds === "failed" ||
-        ds === "cancelled" ||
-        ds === "refunded"
+        s === "refunded"
       ) {
         return false;
       }
@@ -36,7 +32,9 @@ export async function GET() {
         s === "delivered" ||
         s === "completed" ||
         ds === "delivered" ||
-        ds === "completed"
+        ds === "completed" ||
+        ds === "processing" ||
+        s === "processing"
       );
     };
 

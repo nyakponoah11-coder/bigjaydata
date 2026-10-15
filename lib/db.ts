@@ -461,10 +461,7 @@ const initialAgents: Agent[] = [
     registration_paid: true,
     cloaked_url: "https://tinyurl.com/265syqzn",
     created_at: "2026-10-10T10:05:54.889Z",
-    custom_prices: {
-      "abp-mtn-1": 1.0,
-      "mtn_1gb": 1.0,
-    },
+    custom_prices: {},
   },
 ];
 
@@ -1303,13 +1300,31 @@ export const db = {
     const normalizedStatus = targetDeliveryStatus || cleaned || "pending";
     const targetPaymentStatus = options?.payment_status;
 
+    // Retrieve existing memory order to preserve datamart_response metadata (agent_id, agent_profit, store_slug)
+    const existingMemoryOrder = (globalStore.__bmgh_orders || []).find(
+      (o) => o.id === orderIdOrRef || o.reference.toLowerCase() === orderIdOrRef.toLowerCase()
+    );
+    const existingDatamart = (existingMemoryOrder?.datamart_response && typeof existingMemoryOrder.datamart_response === "object")
+      ? existingMemoryOrder.datamart_response
+      : {};
+
+    const mergedDatamart = datamartResponse && typeof datamartResponse === "object"
+      ? {
+          ...existingDatamart,
+          ...datamartResponse,
+          ...(existingDatamart.agent_id ? { agent_id: existingDatamart.agent_id } : {}),
+          ...(existingDatamart.agent_profit !== undefined ? { agent_profit: existingDatamart.agent_profit } : {}),
+          ...(existingDatamart.store_slug ? { store_slug: existingDatamart.store_slug } : {}),
+        }
+      : datamartResponse || existingDatamart;
+
     if (isSupabaseConfigured && supabaseAdmin) {
       try {
         const trimmed = (orderIdOrRef || "").trim();
         const isExplicitRef = /^(BMGH|BIGJ)-/i.test(trimmed);
         const updatePayload: any = {
           status: normalizedStatus,
-          ...(datamartResponse ? { datamart_response: datamartResponse } : {}),
+          ...(datamartResponse ? { datamart_response: mergedDatamart } : {}),
           ...(targetDeliveryStatus ? { delivery_status: targetDeliveryStatus } : {}),
           ...(targetPaymentStatus ? { payment_status: targetPaymentStatus } : {}),
         };
@@ -1336,7 +1351,7 @@ export const db = {
         if (error && (error.message?.includes("delivery_status") || error.message?.includes("payment_status"))) {
           const fallbackPayload: any = {
             status: normalizedStatus,
-            ...(datamartResponse ? { datamart_response: datamartResponse } : {}),
+            ...(datamartResponse ? { datamart_response: mergedDatamart } : {}),
           };
           const fallbackQuery = supabaseAdmin.from("orders").update(fallbackPayload);
           const fallbackRes = isExplicitRef
@@ -1358,6 +1373,12 @@ export const db = {
           }
           invalidateDbCache("orders");
           saveToDisk();
+
+          // Automatically sync corresponding agent order status
+          if (ord.reference) {
+            this.updateAgentOrderStatus(ord.reference, ord.delivery_status, ord.datamart_response).catch(() => {});
+          }
+
           return ord;
         }
       } catch (err) {
@@ -1372,9 +1393,15 @@ export const db = {
     order.status = normalizedStatus;
     if (targetDeliveryStatus) order.delivery_status = targetDeliveryStatus;
     if (targetPaymentStatus) order.payment_status = targetPaymentStatus;
-    if (datamartResponse) order.datamart_response = datamartResponse;
+    if (datamartResponse) order.datamart_response = mergedDatamart;
     invalidateDbCache("orders");
     saveToDisk();
+
+    // Automatically sync corresponding agent order status
+    if (order.reference) {
+      this.updateAgentOrderStatus(order.reference, order.delivery_status, order.datamart_response).catch(() => {});
+    }
+
     return normalizeOrder(order);
   },
 
@@ -2155,6 +2182,45 @@ export const db = {
     }
 
     if (isSupabaseConfigured && supabaseAdmin) {
+      // 1. Try dedicated agents table first
+      try {
+        const { data: dbAgents } = await supabaseAdmin.from("agents").select("*");
+        if (Array.isArray(dbAgents) && dbAgents.length > 0) {
+          const list: Agent[] = dbAgents.map((a: any) => ({
+            id: a.id,
+            name: a.name,
+            store_name: a.store_name,
+            store_slug: a.store_slug,
+            email: a.email,
+            phone: a.phone,
+            momo_number: a.momo_number,
+            momo_network: a.momo_network,
+            description: a.description,
+            logo_url: a.logo_url || "/agent-icon.png",
+            password_hash: a.password_hash,
+            theme: a.theme || "emerald",
+            wallet_balance: Number(a.wallet_balance || 0),
+            total_earned: Number(a.total_earned || 0),
+            total_withdrawn: Number(a.total_withdrawn || 0),
+            is_active: a.is_active !== false,
+            registration_paid: a.registration_paid !== false,
+            custom_prices: a.custom_prices || {},
+            cloaked_url: a.cloaked_url,
+            created_at: a.created_at,
+          }));
+
+          initialAgents.forEach((ia) => {
+            if (!list.some((a) => a.id === ia.id || a.store_slug === ia.store_slug)) {
+              list.push(ia);
+            }
+          });
+          globalStore.__bmgh_agents = list;
+          markCacheFresh("agents");
+          return list;
+        }
+      } catch {}
+
+      // 2. Fallback to settings table registry
       try {
         const { data } = await supabaseAdmin
           .from("settings")
@@ -2209,22 +2275,18 @@ export const db = {
             const s = (o.status || "").toLowerCase().trim();
             const ds = (o.delivery_status || "").toLowerCase().trim();
             
-            // Reject failed, cancelled, or refunded
+            // Reject failed, cancelled, or refunded payments
             if (
               ps === "failed" ||
               ps === "cancelled" ||
               ps === "refunded" ||
-              s === "failed" ||
               s === "cancelled" ||
-              s === "refunded" ||
-              ds === "failed" ||
-              ds === "cancelled" ||
-              ds === "refunded"
+              s === "refunded"
             ) {
               return false;
             }
 
-            // Strictly count ONLY confirmed paid or delivered store orders
+            // Confirmed paid or delivered store orders count toward profit
             return (
               ps === "paid" ||
               ps === "completed" ||
@@ -2232,7 +2294,9 @@ export const db = {
               s === "delivered" ||
               s === "completed" ||
               ds === "delivered" ||
-              ds === "completed"
+              ds === "completed" ||
+              ds === "processing" ||
+              s === "processing"
             );
           })
           .reduce((sum, o) => sum + (Number(o.agent_profit) || 0), 0);
@@ -2377,6 +2441,12 @@ export const db = {
     saveToDisk();
 
     if (isSupabaseConfigured && supabaseAdmin) {
+      try {
+        await supabaseAdmin.from("agents").update(updates).eq("id", id);
+      } catch (err) {
+        console.warn("Direct agents table update warning:", err);
+      }
+
       try {
         await supabaseAdmin.from("settings").upsert({
           id: "agents_registry_config",
@@ -2665,7 +2735,7 @@ export const db = {
       }
     });
 
-    // 5. Direct Agent custom_prices override (GUARANTEES agent-set prices always win)
+    // 5. Direct Agent custom_prices override (only fallback for products not yet configured in productMap)
     const current = matchedAgent || initialAgents.find((a) => isTargetAgent(a.id) || isTargetAgent(a.store_slug));
     if (current?.custom_prices) {
       baseProducts.forEach((bp) => {
@@ -2674,8 +2744,18 @@ export const db = {
           current.custom_prices?.[`${bp.network.toLowerCase()}_${bp.size.toLowerCase()}`];
         if (directPrice !== undefined && Number(directPrice) > 0) {
           const matched = productMap.get(bp.id);
-          if (matched) {
-            matched.selling_price = Number(directPrice);
+          if (!matched) {
+            productMap.set(bp.id, {
+              id: "acp-" + crypto.randomUUID().slice(0, 8),
+              agent_id: canonicalId,
+              base_product_id: bp.id,
+              network: bp.network,
+              size: bp.size,
+              base_price: bp.base_price,
+              selling_price: Number(directPrice),
+              is_active: bp.is_active,
+            });
+            hasChanges = true;
           }
         }
       });
@@ -2744,6 +2824,9 @@ export const db = {
     isActive: boolean
   ): Promise<AgentCustomProduct | null> {
     invalidateDbCache(`agent_products:${agentId}`);
+    invalidateDbCache("agent_products");
+    invalidateDbCache("agents");
+
     // 1. Ensure latest catalog for this agent is loaded
     await this.getAgentProducts(agentId);
 
@@ -2794,7 +2877,7 @@ export const db = {
         if (bp) {
           ag.custom_prices[`${bp.network.toLowerCase()}_${bp.size.toLowerCase()}`] = validSellingPrice;
         }
-        this.updateAgent(ag.id, { custom_prices: ag.custom_prices }).catch(() => {});
+        await this.updateAgent(ag.id, { custom_prices: ag.custom_prices });
       }
     } catch {}
 
@@ -2858,12 +2941,7 @@ export const db = {
 
     const isMasterPlatformOrder = (o: any) => {
       const ref = String(o?.reference || "").toUpperCase();
-      const id = String(o?.id || "");
-      const basePrice = Number(o?.base_price || 0);
-      return (
-        (ref.startsWith("BMGH-") && !o.agent_id && !o.datamart_response?.agent_id) ||
-        (id.startsWith("agord-ord-") && basePrice <= 0.02)
-      );
+      return ref.startsWith("BMGH-") && !o.agent_id && !o.datamart_response?.agent_id && !o.datamart_response?.store_slug;
     };
 
     const cacheKey = targetAgentId ? `agent_orders:${targetAgentId}` : "agent_orders_all";
@@ -2875,32 +2953,22 @@ export const db = {
       return cleaned;
     }
 
-    // 1. Memory / Disk store orders (strictly for this agent)
+    // 1. Populate orderMap with ALL existing memory / disk store orders to prevent dropping data
     const memoryOrders = globalStore.__bmgh_agent_orders || [];
     memoryOrders.forEach((o) => {
       if (isMasterPlatformOrder(o)) return;
-      if (targetAgentId && o.agent_id !== targetAgentId && o.agent_id !== targetSlug) return;
       const key = o.reference || o.id;
       if (key) orderMap.set(key, o);
     });
 
     if (isSupabaseConfigured && supabaseAdmin) {
-      // Auto-purge only the fake cloned platform records (id like agord-ord-% with base_price <= 0.02)
-      try {
-        await supabaseAdmin
-          .from("agent_orders")
-          .delete()
-          .like("id", "agord-ord-%")
-          .lte("base_price", 0.02);
-      } catch {}
-
-      // 2. Direct agent_orders table (strictly for this agent)
+      // 2. Direct agent_orders table
       try {
         let query = supabaseAdmin
           .from("agent_orders")
           .select("*")
           .order("created_at", { ascending: false })
-          .limit(100);
+          .limit(200);
         if (targetAgentId) {
           query = query.or(`agent_id.eq.${targetAgentId}${targetSlug ? `,agent_id.eq.${targetSlug}` : ""}`);
         }
@@ -2925,12 +2993,13 @@ export const db = {
               datamart_response: o.datamart_response,
               created_at: o.created_at,
             };
-            orderMap.set(mapped.reference || mapped.id, mapped);
+            const key = mapped.reference || mapped.id;
+            if (key) orderMap.set(key, mapped);
           });
         }
       } catch {}
 
-      // 3. Settings table registry (strictly for this agent)
+      // 3. Settings table registry
       try {
         const { data } = await supabaseAdmin
           .from("settings")
@@ -2941,19 +3010,11 @@ export const db = {
           try {
             const list = JSON.parse(data.announcement_text);
             if (Array.isArray(list)) {
-              const cleanedList = list.filter((o: any) => !isMasterPlatformOrder(o));
-              cleanedList.forEach((o: any) => {
-                if (targetAgentId && o.agent_id !== targetAgentId && o.agent_id !== targetSlug) return;
+              list.forEach((o: any) => {
+                if (isMasterPlatformOrder(o)) return;
                 const key = o.reference || o.id;
                 if (key && !orderMap.has(key)) orderMap.set(key, o);
               });
-              if (cleanedList.length !== list.length) {
-                supabaseAdmin
-                  .from("settings")
-                  .update({ announcement_text: JSON.stringify(cleanedList) })
-                  .eq("id", "agent_orders_registry_config")
-                  .then(() => {});
-              }
             }
           } catch {}
         }
@@ -2961,55 +3022,103 @@ export const db = {
 
       // 4. Also retrieve any orders placed through this agent's store from the master orders table
       try {
+        let storeQuery = supabaseAdmin
+          .from("orders")
+          .select("*")
+          .order("created_at", { ascending: false })
+          .limit(200);
         if (targetAgentId) {
-          const { data: storeOrders } = await supabaseAdmin
-            .from("orders")
-            .select("*")
-            .or(`datamart_response->>agent_id.eq.${targetAgentId}${targetSlug ? `,datamart_response->>agent_id.eq.${targetSlug}` : ""}`);
-          if (Array.isArray(storeOrders)) {
-            storeOrders.forEach((so: any) => {
-              const profit = Number(so.datamart_response?.agent_profit) || 0;
-              const mapped: AgentOrder = {
-                id: "agord-" + (so.id || so.reference),
-                agent_id: targetAgentId,
-                reference: so.reference,
-                network: so.network,
-                package_size: so.package_size,
-                phone: so.phone,
-                amount: Number(so.amount),
-                base_price: Math.max(0, Number(so.amount) - profit),
-                agent_profit: profit,
-                paystack_ref: so.paystack_ref,
-                payment_status: so.payment_status || "paid",
-                delivery_status: so.delivery_status || "delivered",
-                status: so.status || "delivered",
-                datamart_response: so.datamart_response,
-                created_at: so.created_at,
-              };
-              if (!orderMap.has(mapped.reference)) {
-                orderMap.set(mapped.reference, mapped);
+          storeQuery = storeQuery.or(
+            `datamart_response->>agent_id.eq.${targetAgentId},datamart_response->>store_slug.eq.${targetSlug || targetAgentId}${targetSlug ? `,datamart_response->>agent_id.eq.${targetSlug}` : ""}`
+          );
+        }
+        const { data: storeOrders } = await storeQuery;
+        if (Array.isArray(storeOrders)) {
+          storeOrders.forEach((so: any) => {
+            const respAgentId = so.datamart_response?.agent_id || (so.datamart_response?.store_slug === targetSlug ? targetAgentId : "");
+            if (!respAgentId && targetAgentId) return;
+
+            const profit = Number(so.datamart_response?.agent_profit) || 0;
+            const mapped: AgentOrder = {
+              id: "agord-" + (so.id || so.reference),
+              agent_id: respAgentId || targetAgentId,
+              reference: so.reference,
+              network: so.network,
+              package_size: so.package_size,
+              phone: so.phone,
+              amount: Number(so.amount),
+              base_price: Math.max(0, Number(so.amount) - profit),
+              agent_profit: profit,
+              paystack_ref: so.paystack_ref,
+              payment_status: so.payment_status || "paid",
+              delivery_status: so.delivery_status || "delivered",
+              status: so.status || "delivered",
+              datamart_response: so.datamart_response,
+              created_at: so.created_at,
+            };
+            const existingInMap = orderMap.get(mapped.reference);
+            if (existingInMap) {
+              // Master order in orders table has latest delivery_status from Admin / DataMart
+              existingInMap.delivery_status = so.delivery_status || existingInMap.delivery_status;
+              existingInMap.status = so.status || existingInMap.status;
+              existingInMap.payment_status = so.payment_status || existingInMap.payment_status;
+              if (so.datamart_response) {
+                existingInMap.datamart_response = {
+                  ...(existingInMap.datamart_response || {}),
+                  ...so.datamart_response,
+                };
               }
-            });
-          }
+            } else {
+              orderMap.set(mapped.reference, mapped);
+            }
+          });
         }
       } catch {}
     }
+
+    // Cross-sync status from master orders in memory so admin status changes are instantly reflected
+    const masterMemoryOrders = globalStore.__bmgh_orders || [];
+    masterMemoryOrders.forEach((mo) => {
+      if (!mo?.reference) return;
+      const match = orderMap.get(mo.reference);
+      if (match) {
+        match.delivery_status = mo.delivery_status || match.delivery_status;
+        match.status = mo.status || match.status;
+        match.payment_status = mo.payment_status || match.payment_status;
+      }
+    });
 
     const allMerged = Array.from(orderMap.values())
       .filter((o) => !isMasterPlatformOrder(o))
       .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
-    globalStore.__bmgh_agent_orders = allMerged;
+    // Never wipe out orders from other agents in globalStore or disk
+    const existingGlobal = globalStore.__bmgh_agent_orders || [];
+    const combinedMap = new Map<string, AgentOrder>();
+    existingGlobal.forEach((o) => {
+      const k = o.reference || o.id;
+      if (k) combinedMap.set(k, o);
+    });
+    allMerged.forEach((o) => {
+      const k = o.reference || o.id;
+      if (k) combinedMap.set(k, o);
+    });
+
+    const finalFullList = Array.from(combinedMap.values()).sort(
+      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    );
+
+    globalStore.__bmgh_agent_orders = finalFullList;
     markCacheFresh(cacheKey);
     saveToDisk();
 
     if (targetAgentId) {
-      return allMerged.filter(
+      return finalFullList.filter(
         (o) => o.agent_id === targetAgentId || o.agent_id === targetSlug
       );
     }
 
-    return allMerged;
+    return finalFullList;
   },
 
   async createAgentOrder(orderData: Omit<AgentOrder, "id" | "created_at">): Promise<AgentOrder> {
@@ -3117,12 +3226,37 @@ export const db = {
 
   async updateAgentOrderStatus(orderId: string, deliveryStatus: string, response?: any): Promise<AgentOrder | null> {
     const orders = await this.getAgentOrders();
-    const o = orders.find((x) => x.id === orderId || x.reference === orderId);
+    const cleanTarget = (orderId || "").trim().toLowerCase();
+    const o = orders.find((x) => x.id?.toLowerCase() === cleanTarget || x.reference?.toLowerCase() === cleanTarget);
     if (o) {
       o.delivery_status = deliveryStatus;
       o.status = deliveryStatus;
-      if (response) o.datamart_response = response;
+      if (response) {
+        o.datamart_response = {
+          ...(typeof o.datamart_response === "object" ? o.datamart_response : {}),
+          ...(typeof response === "object" ? response : { response }),
+        };
+      }
     }
+
+    if (globalStore.__bmgh_agent_orders) {
+      const match = globalStore.__bmgh_agent_orders.find(
+        (x) => x.id?.toLowerCase() === cleanTarget || x.reference?.toLowerCase() === cleanTarget
+      );
+      if (match) {
+        match.delivery_status = deliveryStatus;
+        match.status = deliveryStatus;
+        if (response) {
+          match.datamart_response = {
+            ...(typeof match.datamart_response === "object" ? match.datamart_response : {}),
+            ...(typeof response === "object" ? response : { response }),
+          };
+        }
+      }
+    }
+
+    invalidateDbCache("agent_orders");
+    invalidateDbCache("agents");
     saveToDisk();
 
     if (isSupabaseConfigured && supabaseAdmin) {
@@ -3132,9 +3266,9 @@ export const db = {
           .update({
             delivery_status: deliveryStatus,
             status: deliveryStatus,
-            datamart_response: response || {},
+            ...(o?.datamart_response ? { datamart_response: o.datamart_response } : {}),
           })
-          .or(`id.eq.${orderId},reference.eq.${orderId}`);
+          .or(`id.ilike.${orderId},reference.ilike.${orderId}`);
       } catch {}
 
       try {
@@ -3177,10 +3311,9 @@ export const db = {
       return globalStore.__bmgh_agent_withdrawals;
     }
 
-    // 1. In-memory / disk withdrawals
+    // 1. Populate listMap with ALL existing in-memory / disk withdrawals first
     const memoryList = globalStore.__bmgh_agent_withdrawals || [];
     memoryList.forEach((w) => {
-      if (targetAgentId && w.agent_id !== targetAgentId && w.agent_id !== targetSlug) return;
       if (w.id) listMap.set(w.id, w);
     });
 
@@ -3226,7 +3359,6 @@ export const db = {
             const list = JSON.parse(data.announcement_text);
             if (Array.isArray(list)) {
               list.forEach((w: any) => {
-                if (targetAgentId && w.agent_id !== targetAgentId && w.agent_id !== targetSlug) return;
                 if (w.id && !listMap.has(w.id)) listMap.set(w.id, w);
               });
             }
@@ -3239,17 +3371,31 @@ export const db = {
       (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
     );
 
-    globalStore.__bmgh_agent_withdrawals = allMerged;
+    // Merge into globalStore without dropping existing records for other agents
+    const existingGlobal = globalStore.__bmgh_agent_withdrawals || [];
+    const combinedMap = new Map<string, AgentWithdrawal>();
+    existingGlobal.forEach((w) => {
+      if (w.id) combinedMap.set(w.id, w);
+    });
+    allMerged.forEach((w) => {
+      if (w.id) combinedMap.set(w.id, w);
+    });
+
+    const finalFullList = Array.from(combinedMap.values()).sort(
+      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    );
+
+    globalStore.__bmgh_agent_withdrawals = finalFullList;
     markCacheFresh(cacheKey);
     saveToDisk();
 
     if (targetAgentId) {
-      return allMerged.filter(
+      return finalFullList.filter(
         (w) => w.agent_id === targetAgentId || w.agent_id === targetSlug
       );
     }
 
-    return allMerged;
+    return finalFullList;
   },
 
   async createAgentWithdrawal(w: Omit<AgentWithdrawal, "id" | "status" | "verified" | "created_at">): Promise<AgentWithdrawal> {

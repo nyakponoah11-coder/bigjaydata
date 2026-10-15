@@ -37,6 +37,7 @@ import {
   Globe,
 } from "lucide-react";
 import { encodeAgentToken } from "@/lib/agent-link";
+import { invalidateCache } from "@/lib/localCache";
 
 function parsePackageSize(sizeStr: string): number {
   if (!sizeStr) return 0;
@@ -232,12 +233,8 @@ export default function AgentDashboardPage() {
             ps === "failed" ||
             ps === "cancelled" ||
             ps === "refunded" ||
-            s === "failed" ||
             s === "cancelled" ||
-            s === "refunded" ||
-            ds === "failed" ||
-            ds === "cancelled" ||
-            ds === "refunded"
+            s === "refunded"
           ) {
             return false;
           }
@@ -248,12 +245,14 @@ export default function AgentDashboardPage() {
             s === "delivered" ||
             s === "completed" ||
             ds === "delivered" ||
-            ds === "completed"
+            ds === "completed" ||
+            ds === "processing" ||
+            s === "processing"
           );
         };
 
-        const currentOrderList = loadedOrders || orders;
-        const currentWithList = loadedWithdrawals || withdrawals;
+        const currentOrderList = (loadedOrders && loadedOrders.length > 0) ? loadedOrders : (orders.length > 0 ? orders : (loadedOrders || []));
+        const currentWithList = (loadedWithdrawals && loadedWithdrawals.length > 0) ? loadedWithdrawals : (withdrawals.length > 0 ? withdrawals : (loadedWithdrawals || []));
 
         const totalProfitFromOrders = currentOrderList
           .filter(isPaidOrder)
@@ -442,13 +441,22 @@ export default function AgentDashboardPage() {
       if (data.success) {
         setNotice("Retail price updated successfully!");
         setRecentlySavedId(p.base_product_id);
-        setProducts((prev) =>
-          sortProductList(
+        setProducts((prev) => {
+          const updated = sortProductList(
             prev.map((item) =>
               item.base_product_id === p.base_product_id ? { ...item, selling_price: newPrice } : item
             )
-          )
-        );
+          );
+          try {
+            localStorage.setItem(`bmgh_agent_prods_${agent.id}`, JSON.stringify(updated));
+            invalidateCache(`store_products_${agent.id}`);
+          } catch {}
+          return updated;
+        });
+        setEditPrices((prev) => ({
+          ...prev,
+          [p.base_product_id]: String(newPrice),
+        }));
         setTimeout(() => {
           setNotice("");
           setRecentlySavedId(null);
@@ -487,6 +495,25 @@ export default function AgentDashboardPage() {
           }
         }
       }
+      setProducts((prev) => {
+        const updated = sortProductList(
+          prev.map((item) => {
+            const customVal = editPrices[item.base_product_id];
+            if (customVal !== undefined && customVal !== "") {
+              const numPrice = parseFloat(customVal);
+              if (!isNaN(numPrice) && numPrice >= item.base_price) {
+                return { ...item, selling_price: numPrice };
+              }
+            }
+            return item;
+          })
+        );
+        try {
+          localStorage.setItem(`bmgh_agent_prods_${agent.id}`, JSON.stringify(updated));
+          invalidateCache(`store_products_${agent.id}`);
+        } catch {}
+        return updated;
+      });
       setNotice("All product retail prices updated successfully!");
       await loadDashboardData(agent.id, true);
       setTimeout(() => setNotice(""), 3500);
@@ -512,13 +539,18 @@ export default function AgentDashboardPage() {
       });
       const data = await res.json();
       if (data.success) {
-        setProducts((prev) =>
-          sortProductList(
+        setProducts((prev) => {
+          const updated = sortProductList(
             prev.map((item) =>
               item.base_product_id === p.base_product_id ? { ...item, is_active: nextState } : item
             )
-          )
-        );
+          );
+          try {
+            localStorage.setItem(`bmgh_agent_prods_${agent.id}`, JSON.stringify(updated));
+            invalidateCache(`store_products_${agent.id}`);
+          } catch {}
+          return updated;
+        });
       }
     } catch (err) {
       setError("Failed to toggle product");
