@@ -52,7 +52,10 @@ export default function AdminOrdersPage() {
       if (paymentFilter !== "all") params.set("payment_status", paymentFilter);
       if (dateFilter) params.set("date", dateFilter);
 
-      const res = await fetch(`/api/admin/orders?${params.toString()}`);
+      const res = await fetch(`/api/admin/orders?${params.toString()}`, {
+        cache: "no-store",
+        headers: { "Cache-Control": "no-cache", "Pragma": "no-cache" },
+      });
       const data = await res.json();
       if (data.success) {
         setOrders(data.orders || []);

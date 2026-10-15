@@ -334,50 +334,7 @@ let initialSettings: Settings = {
   updated_at: new Date().toISOString(),
 };
 
-let initialOrders: Order[] = [
-  {
-    id: "ord-1",
-    reference: "BMGH-98234120",
-    network: "mtn",
-    package_size: "5GB",
-    phone: "0554128901",
-    amount: 28.5,
-    paystack_ref: "pst_98234120",
-    payment_status: "paid",
-    delivery_status: "delivered",
-    status: "delivered",
-    datamart_response: { status: "success", datamart_id: "DM-10923", message: "Transaction successful" },
-    created_at: new Date(Date.now() - 1000 * 60 * 15).toISOString(),
-  },
-  {
-    id: "ord-2",
-    reference: "BMGH-77123984",
-    network: "telecel",
-    package_size: "10GB",
-    phone: "0208192384",
-    amount: 50.0,
-    paystack_ref: "pst_77123984",
-    payment_status: "paid",
-    delivery_status: "delivered",
-    status: "delivered",
-    datamart_response: { status: "success", datamart_id: "DM-10924", message: "Transaction successful" },
-    created_at: new Date(Date.now() - 1000 * 60 * 42).toISOString(),
-  },
-  {
-    id: "ord-3",
-    reference: "BMGH-55102941",
-    network: "at",
-    package_size: "2GB",
-    phone: "0271109923",
-    amount: 10.0,
-    paystack_ref: "pst_55102941",
-    payment_status: "paid",
-    delivery_status: "delivered",
-    status: "delivered",
-    datamart_response: { status: "success", datamart_id: "DM-10925", message: "Transaction successful" },
-    created_at: new Date(Date.now() - 1000 * 60 * 95).toISOString(),
-  },
-];
+let initialOrders: Order[] = [];
 
 let initialMessages: Message[] = [
   {
@@ -1006,9 +963,9 @@ export const db = {
     delivery_status?: string;
     payment_status?: string;
     search?: string;
-  }): Promise<Order[]> {
+  }, forceFresh = false): Promise<Order[]> {
     // Egress Protection: Serve from in-memory cache if no search and cache is fresh
-    if (!filter?.search && isCacheFresh("orders", CACHE_TTLS.orders) && globalStore.__bmgh_orders && globalStore.__bmgh_orders.length > 0) {
+    if (!forceFresh && !filter?.search && isCacheFresh("orders", CACHE_TTLS.orders) && globalStore.__bmgh_orders && globalStore.__bmgh_orders.length > 0) {
       let results = [...globalStore.__bmgh_orders].map(normalizeOrder).sort(
         (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
       );
@@ -1037,7 +994,7 @@ export const db = {
           .select("*")
           .order("created_at", { ascending: false });
         if (!filter?.search) {
-          query = query.limit(100);
+          query = query.limit(200);
         }
         if (filter?.network && filter.network !== "all") {
           query = query.eq("network", filter.network.toLowerCase());
@@ -1052,9 +1009,9 @@ export const db = {
           query = query.eq("payment_status", filter.payment_status);
         }
         const { data, error } = await query;
-        if (!error && data) {
+        if (!error && Array.isArray(data)) {
           const normalizedData = (data as Order[]).map(normalizeOrder);
-          if (!filter?.search && (!filter || Object.keys(filter).length === 0)) {
+          if (!filter?.search) {
             globalStore.__bmgh_orders = normalizedData;
             markCacheFresh("orders");
             saveToDisk();

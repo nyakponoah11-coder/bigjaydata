@@ -3,6 +3,9 @@ import { db } from "@/lib/db";
 import { sendCustomerSMS } from "@/lib/sms";
 import { sendDataMartDelivery, syncOrderWithDataMart } from "@/lib/datamart";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
@@ -20,8 +23,14 @@ export async function GET(request: Request) {
       delivery_status,
       payment_status,
       search,
+    }, true);
+    return NextResponse.json({ success: true, orders }, {
+      headers: {
+        "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+        "Pragma": "no-cache",
+        "Expires": "0",
+      },
     });
-    return NextResponse.json({ success: true, orders });
   } catch (error: any) {
     return NextResponse.json(
       { success: false, message: error?.message || "Failed to fetch orders" },
