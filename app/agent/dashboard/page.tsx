@@ -146,35 +146,84 @@ export default function AgentDashboardPage() {
       setSupportEmail(parsed.support_email || parsed.email || "");
       setWithdrawMomo(parsed.momo_number || parsed.phone || "");
       setWithdrawNetwork(parsed.momo_network || "MTN");
-      loadDashboardData(parsed.id);
+
+      // Load cached products immediately from local storage so dashboard never renders empty
+      try {
+        const cachedProdsRaw = localStorage.getItem(`bmgh_agent_prods_${parsed.id}`);
+        if (cachedProdsRaw) {
+          const cachedProds = JSON.parse(cachedProdsRaw);
+          if (Array.isArray(cachedProds) && cachedProds.length > 0) {
+            setProducts(cachedProds);
+            const pricesMap: Record<string, string> = {};
+            cachedProds.forEach((p: any) => {
+              pricesMap[p.base_product_id] = String(p.selling_price);
+            });
+            setEditPrices(pricesMap);
+            setLoading(false);
+          }
+        }
+      } catch {}
+
+      // Fetch fresh data in background
+      loadDashboardData(parsed.id, false);
     } catch {
       router.push("/agent/login");
     }
   }, []);
 
-  const loadDashboardData = async (agentId: string) => {
+  // Periodic background refresh every 45s without flashing or unmounting dashboard
+  useEffect(() => {
+    if (!agent?.id) return;
+    const interval = setInterval(() => {
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
+      loadDashboardData(agent.id, true);
+    }, 45000);
+    return () => clearInterval(interval);
+  }, [agent?.id]);
+
+  const loadDashboardData = async (agentId: string, isSilent = false) => {
     try {
-      setLoading(true);
-      const [profRes, prodRes, ordRes, withRes] = await Promise.all([
-        fetch(`/api/agent/profile?agent_id=${agentId}`, { cache: "no-store" }),
-        fetch(`/api/agent/products?agent_id=${agentId}`, { cache: "no-store" }),
-        fetch(`/api/agent/orders?agent_id=${agentId}`, { cache: "no-store" }),
-        fetch(`/api/agent/withdrawals?agent_id=${agentId}`, { cache: "no-store" }),
+      if (!isSilent && !products.length) {
+        setLoading(true);
+      }
+      
+      const fetchWithTimeout = (url: string) =>
+        fetch(url, {
+          cache: "no-store",
+          signal: AbortSignal.timeout(10000),
+        });
+
+      const [profRes, prodRes, ordRes, withRes] = await Promise.allSettled([
+        fetchWithTimeout(`/api/agent/profile?agent_id=${agentId}`),
+        fetchWithTimeout(`/api/agent/products?agent_id=${agentId}`),
+        fetchWithTimeout(`/api/agent/orders?agent_id=${agentId}`),
+        fetchWithTimeout(`/api/agent/withdrawals?agent_id=${agentId}`),
       ]);
 
-      const [profData, prodData, ordData, withData] = await Promise.all([
-        profRes.json(),
-        prodRes.json(),
-        ordRes.json(),
-        withRes.json(),
-      ]);
+      let profData: any = null;
+      let prodData: any = null;
+      let ordData: any = null;
+      let withData: any = null;
 
-      const loadedOrders = ordData.success ? (ordData.orders || []) : [];
-      const loadedWithdrawals = withData.success ? (withData.withdrawals || []) : [];
-      if (ordData.success) setOrders(loadedOrders);
-      if (withData.success) setWithdrawals(loadedWithdrawals);
+      if (profRes.status === "fulfilled" && profRes.value.ok) {
+        try { profData = await profRes.value.json(); } catch {}
+      }
+      if (prodRes.status === "fulfilled" && prodRes.value.ok) {
+        try { prodData = await prodRes.value.json(); } catch {}
+      }
+      if (ordRes.status === "fulfilled" && ordRes.value.ok) {
+        try { ordData = await ordRes.value.json(); } catch {}
+      }
+      if (withRes.status === "fulfilled" && withRes.value.ok) {
+        try { withData = await withRes.value.json(); } catch {}
+      }
 
-      if (profData.success && profData.agent) {
+      const loadedOrders = ordData?.success ? (ordData.orders || []) : null;
+      const loadedWithdrawals = withData?.success ? (withData.withdrawals || []) : null;
+      if (loadedOrders) setOrders(loadedOrders);
+      if (loadedWithdrawals) setWithdrawals(loadedWithdrawals);
+
+      if (profData?.success && profData?.agent) {
         const isPaidOrder = (o: any) => {
           const ps = (o.payment_status || "").toLowerCase().trim();
           const s = (o.status || "").toLowerCase().trim();
@@ -203,13 +252,16 @@ export default function AgentDashboardPage() {
           );
         };
 
-        const totalProfitFromOrders = loadedOrders
+        const currentOrderList = loadedOrders || orders;
+        const currentWithList = loadedWithdrawals || withdrawals;
+
+        const totalProfitFromOrders = currentOrderList
           .filter(isPaidOrder)
           .reduce(
             (sum: number, o: any) => sum + (Number(o.agent_profit) || 0),
             0
           );
-        const totalWithdrawnFromList = loadedWithdrawals
+        const totalWithdrawnFromList = currentWithList
           .filter((w: any) => w.status === "completed" || w.status === "pending")
           .reduce((sum: number, w: any) => sum + (Number(w.amount) || 0), 0);
 
@@ -239,9 +291,13 @@ export default function AgentDashboardPage() {
         }
         localStorage.setItem("bmgh_agent_session", JSON.stringify(mergedAgent));
       }
-      if (prodData.success) {
-        const sorted = sortProductList(prodData.products || []);
+
+      if (prodData?.success && Array.isArray(prodData.products) && prodData.products.length > 0) {
+        const sorted = sortProductList(prodData.products);
         setProducts(sorted);
+        try {
+          localStorage.setItem(`bmgh_agent_prods_${agentId}`, JSON.stringify(sorted));
+        } catch {}
         const pricesMap: Record<string, string> = {};
         sorted.forEach((p: any) => {
           pricesMap[p.base_product_id] = String(p.selling_price);
@@ -249,7 +305,7 @@ export default function AgentDashboardPage() {
         setEditPrices(pricesMap);
       }
     } catch (err: any) {
-      setError("Failed to fetch dashboard data");
+      console.warn("Dashboard refresh warning:", err);
     } finally {
       setLoading(false);
     }
@@ -432,7 +488,7 @@ export default function AgentDashboardPage() {
         }
       }
       setNotice("All product retail prices updated successfully!");
-      await loadDashboardData(agent.id);
+      await loadDashboardData(agent.id, true);
       setTimeout(() => setNotice(""), 3500);
     } catch (err: any) {
       setError("Failed to save some prices. Please retry.");

@@ -538,7 +538,9 @@ if (!globalStore.__bmgh_agent_config) {
 if (!globalStore.__bmgh_agent_base_products) {
   globalStore.__bmgh_agent_base_products = diskData?.agent_base_products || initialAgentBaseProducts;
 }
-if (!globalStore.__bmgh_agents) globalStore.__bmgh_agents = diskData?.agents || [];
+if (!globalStore.__bmgh_agents || globalStore.__bmgh_agents.length === 0) {
+  globalStore.__bmgh_agents = (diskData?.agents && diskData.agents.length > 0) ? diskData.agents : [...initialAgents];
+}
 if (!globalStore.__bmgh_agent_products) globalStore.__bmgh_agent_products = diskData?.agent_products || [];
 if (!globalStore.__bmgh_agent_orders) globalStore.__bmgh_agent_orders = diskData?.agent_orders || [];
 if (!globalStore.__bmgh_agent_withdrawals) globalStore.__bmgh_agent_withdrawals = diskData?.agent_withdrawals || [];
@@ -2195,19 +2197,10 @@ export const db = {
     if (!cleanId) return null;
     const all = await this.getAgents();
     let found = all.find((a) => a.id === cleanId || a.store_slug.toLowerCase() === cleanId.toLowerCase()) || null;
-    if (!found && cleanId.toLowerCase() === "stony") {
-      found = initialAgents[0];
+    if (!found) {
+      found = initialAgents.find((a) => a.id === cleanId || a.store_slug.toLowerCase() === cleanId.toLowerCase()) || null;
     }
     if (found) {
-      // One-time automatic reset for Stony to permanently clear development test orders and test withdrawals
-      if (found.id === "agent-82d9c8eb" || found.store_slug.toLowerCase() === "stony") {
-        const resetKey = "__bmgh_stony_test_data_cleared_v1";
-        if (!(globalStore as any)[resetKey]) {
-          (globalStore as any)[resetKey] = true;
-          await this.resetAgentFinances(found.id);
-        }
-      }
-
       try {
         const orders = await this.getAgentOrders(found.id);
         const earnedFromOrders = orders
@@ -2551,10 +2544,23 @@ export const db = {
     const baseProducts = await this.getAgentBaseProducts();
     const baseProductIds = new Set(baseProducts.map((bp) => bp.id));
 
-    const cacheKey = `agent_products:${agentId}`;
+    const cleanId = (agentId || "").trim();
+    let canonicalId = cleanId;
+    let canonicalSlug = cleanId.toLowerCase();
+    const matchedAgent = (globalStore.__bmgh_agents || initialAgents).find(
+      (a) => a.id === cleanId || a.store_slug.toLowerCase() === cleanId.toLowerCase()
+    );
+    if (matchedAgent) {
+      canonicalId = matchedAgent.id;
+      canonicalSlug = matchedAgent.store_slug.toLowerCase();
+    }
+    const isTargetAgent = (pAgentId: string) =>
+      pAgentId === canonicalId || pAgentId?.toLowerCase() === canonicalSlug || pAgentId === cleanId;
+
+    const cacheKey = `agent_products:${canonicalId}`;
     if (isCacheFresh(cacheKey, CACHE_TTLS.agent_products) && globalStore.__bmgh_agent_products) {
       const filtered = globalStore.__bmgh_agent_products.filter(
-        (p) => p.agent_id === agentId && baseProductIds.has(p.base_product_id)
+        (p) => isTargetAgent(p.agent_id) && baseProductIds.has(p.base_product_id)
       );
       if (filtered.length > 0) {
         return filtered;
@@ -2569,14 +2575,14 @@ export const db = {
         const { data: directProds, error: dpErr } = await supabaseAdmin
           .from("agent_products")
           .select("*")
-          .eq("agent_id", agentId);
+          .or(`agent_id.eq.${canonicalId},agent_id.eq.${canonicalSlug}`);
         if (!dpErr && Array.isArray(directProds) && directProds.length > 0) {
           directProds.forEach((dp: any) => {
             // STRICT FILTER: Only load if base product actually exists!
             if (baseProductIds.has(dp.base_product_id)) {
               productMap.set(dp.base_product_id, {
                 id: dp.id,
-                agent_id: dp.agent_id,
+                agent_id: canonicalId,
                 base_product_id: dp.base_product_id,
                 network: dp.network,
                 size: dp.size,
@@ -2604,11 +2610,11 @@ export const db = {
               // Sanitize globalStore to strip any deleted base products
               globalStore.__bmgh_agent_products = list.filter((p: any) => baseProductIds.has(p.base_product_id));
               list
-                .filter((p: any) => p.agent_id === agentId && baseProductIds.has(p.base_product_id))
+                .filter((p: any) => isTargetAgent(p.agent_id) && baseProductIds.has(p.base_product_id))
                 .forEach((p: any) => {
                   productMap.set(p.base_product_id, {
                     id: p.id,
-                    agent_id: p.agent_id,
+                    agent_id: canonicalId,
                     base_product_id: p.base_product_id,
                     network: p.network,
                     size: p.size,
@@ -2626,10 +2632,10 @@ export const db = {
     // 3. Fallback to memory store if productMap is missing entries
     if (globalStore.__bmgh_agent_products) {
       globalStore.__bmgh_agent_products
-        .filter((p) => p.agent_id === agentId && baseProductIds.has(p.base_product_id))
+        .filter((p) => isTargetAgent(p.agent_id) && baseProductIds.has(p.base_product_id))
         .forEach((p) => {
           if (!productMap.has(p.base_product_id)) {
-            productMap.set(p.base_product_id, p);
+            productMap.set(p.base_product_id, { ...p, agent_id: canonicalId });
           }
         });
     }
@@ -2641,7 +2647,7 @@ export const db = {
       if (!existing) {
         const added: AgentCustomProduct = {
           id: "acp-" + crypto.randomUUID().slice(0, 8),
-          agent_id: agentId,
+          agent_id: canonicalId,
           base_product_id: bp.id,
           network: bp.network,
           size: bp.size,
@@ -2660,12 +2666,7 @@ export const db = {
     });
 
     // 5. Direct Agent custom_prices override (GUARANTEES agent-set prices always win)
-    const allAgents = (globalStore.__bmgh_agents && globalStore.__bmgh_agents.length > 0)
-      ? globalStore.__bmgh_agents
-      : await this.getAgents();
-    const current = (allAgents || initialAgents).find(
-      (a) => a.id === agentId || a.store_slug === agentId
-    );
+    const current = matchedAgent || initialAgents.find((a) => isTargetAgent(a.id) || isTargetAgent(a.store_slug));
     if (current?.custom_prices) {
       baseProducts.forEach((bp) => {
         const directPrice =
@@ -2681,7 +2682,22 @@ export const db = {
     }
 
     // CRITICAL: Filter result strictly so orphaned/deleted base products can NEVER be returned!
-    const result = Array.from(productMap.values()).filter((p) => baseProductIds.has(p.base_product_id));
+    let result = Array.from(productMap.values()).filter((p) => baseProductIds.has(p.base_product_id));
+
+    // Absolute fallback: If result is somehow empty, generate directly from baseProducts
+    if (result.length === 0 && baseProducts.length > 0) {
+      result = baseProducts.map((bp) => ({
+        id: "acp-" + crypto.randomUUID().slice(0, 8),
+        agent_id: canonicalId,
+        base_product_id: bp.id,
+        network: bp.network,
+        size: bp.size,
+        base_price: bp.base_price,
+        selling_price: bp.suggested_price || bp.base_price + 1.0,
+        is_active: bp.is_active,
+      }));
+      hasChanges = true;
+    }
 
     // Sort strictly by network and package size (1GB, 2GB, 3GB, 5GB, 10GB) so items never jump to the bottom
     result.sort((a, b) => {
@@ -2697,7 +2713,7 @@ export const db = {
     // Update globalStore cache (strictly keeping only active base products)
     if (!globalStore.__bmgh_agent_products) globalStore.__bmgh_agent_products = [];
     globalStore.__bmgh_agent_products = [
-      ...globalStore.__bmgh_agent_products.filter((p) => p.agent_id !== agentId && baseProductIds.has(p.base_product_id)),
+      ...globalStore.__bmgh_agent_products.filter((p) => !isTargetAgent(p.agent_id) && baseProductIds.has(p.base_product_id)),
       ...result,
     ];
 
