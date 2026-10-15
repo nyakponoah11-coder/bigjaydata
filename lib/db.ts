@@ -561,19 +561,19 @@ if (!globalStore.__bmgh_developer_accounts) {
 
 // ================= HIGH-PERFORMANCE EGRESS PROTECTION & SERVER TTL CACHE =================
 const CACHE_TTLS = {
-  settings: 10 * 60 * 1000,              // 10 minutes (changes rarely via admin)
-  products: 10 * 60 * 1000,              // 10 minutes
-  agent_config: 10 * 60 * 1000,          // 10 minutes
-  agent_base_products: 10 * 60 * 1000,   // 10 minutes
-  agents: 10 * 60 * 1000,                // 10 minutes
-  agent_products: 10 * 60 * 1000,        // 10 minutes
-  active_voucher: 3 * 60 * 1000,         // 3 minutes
-  developer_api_config: 10 * 60 * 1000,  // 10 minutes
-  developer_api_products: 10 * 60 * 1000,// 10 minutes
-  orders: 30 * 1000,                     // 30 seconds
-  agent_orders: 30 * 1000,               // 30 seconds (local cache reduces egress)
-  agent_withdrawals: 30 * 1000,          // 30 seconds
-  messages: 30 * 1000,                   // 30 seconds
+  settings: 30 * 60 * 1000,              // 30 minutes (invalidated on admin save)
+  products: 30 * 60 * 1000,              // 30 minutes
+  agent_config: 30 * 60 * 1000,          // 30 minutes
+  agent_base_products: 30 * 60 * 1000,   // 30 minutes
+  agents: 30 * 60 * 1000,                // 30 minutes
+  agent_products: 30 * 60 * 1000,        // 30 minutes
+  active_voucher: 15 * 60 * 1000,        // 15 minutes
+  developer_api_config: 30 * 60 * 1000,  // 30 minutes
+  developer_api_products: 30 * 60 * 1000,// 30 minutes
+  orders: 60 * 1000,                     // 60 seconds
+  agent_orders: 60 * 1000,               // 60 seconds
+  agent_withdrawals: 60 * 1000,          // 60 seconds
+  messages: 60 * 1000,                   // 60 seconds
 };
 
 const memCacheTimestamps: Record<string, number> = ((globalThis as any).__bmgh_cache_ts =

@@ -29,10 +29,10 @@ export default function DeliveryTrackerCard({
       const data = await cachedAsync(
         "delivery_tracker_metrics",
         async () => {
-          const res = await fetch("/api/delivery-tracker", { cache: "no-store" });
+          const res = await fetch("/api/delivery-tracker");
           return await res.json();
         },
-        30000,
+        5 * 60 * 1000, // 5 minutes cache
         forceFresh
       );
       if (data && (data.status === "success" || data.data)) {
@@ -49,11 +49,17 @@ export default function DeliveryTrackerCard({
     if (cached) {
       setTracker(cached);
     } else {
-      fetchTrackerData();
+      fetchTrackerData(false);
     }
 
-    const cleanup = createSmartInterval(() => fetchTrackerData(true), 45000);
-    return cleanup;
+    // Refresh every 5 minutes only when active
+    const interval = setInterval(() => {
+      if (typeof document !== "undefined" && document.visibilityState === "visible") {
+        fetchTrackerData(false);
+      }
+    }, 5 * 60 * 1000);
+
+    return () => clearInterval(interval);
   }, []);
 
   const dataObj = (tracker?.data || tracker || {}) as any;

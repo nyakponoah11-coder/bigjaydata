@@ -92,23 +92,21 @@ export default function StorefrontClientView({
     }
   }, [agent?.store_slug]);
 
-  // Auto-refresh product prices with client cache and tab-visibility aware smart interval (prevents egress exhaustion)
+  // Refresh product prices with client cache only if missing or on 15m idle refresh (stops egress drain)
   useEffect(() => {
     let isMounted = true;
-    const fetchFreshProducts = async (forceFresh = false) => {
+    const fetchFreshProducts = async () => {
       try {
         const data = await cachedAsync(
           `store_products_${agent.id}`,
           async () => {
-            const res = await fetch(`/api/agent/products?agent_id=${agent.id}`, {
-              cache: "no-store",
-            });
+            const res = await fetch(`/api/agent/products?agent_id=${agent.id}`);
             return await res.json();
           },
-          30000,
-          forceFresh
+          15 * 60 * 1000, // 15 minutes cache
+          false
         );
-        if (data?.success && Array.isArray(data.products) && isMounted) {
+        if (data?.success && Array.isArray(data.products) && isMounted && data.products.length > 0) {
           const mapped: ProductItem[] = data.products
             .filter((p: any) => p.is_active !== false)
             .map((p: any) => ({
@@ -123,12 +121,21 @@ export default function StorefrontClientView({
       } catch (err) {}
     };
 
-    fetchFreshProducts(true);
+    // Only fetch if initial SSR product list was empty
+    if (!productList || productList.length === 0) {
+      fetchFreshProducts();
+    }
 
-    const cleanup = createSmartInterval(() => fetchFreshProducts(true), 30000);
+    // Gentle 15-minute background refresh (only when tab is actively visible)
+    const interval = setInterval(() => {
+      if (typeof document !== "undefined" && document.visibilityState === "visible") {
+        fetchFreshProducts();
+      }
+    }, 15 * 60 * 1000);
+
     return () => {
       isMounted = false;
-      cleanup();
+      clearInterval(interval);
     };
   }, [agent.id, agent.store_slug]);
 

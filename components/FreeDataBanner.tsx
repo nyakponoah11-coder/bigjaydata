@@ -55,19 +55,11 @@ export default function FreeDataBanner() {
       setVoucher(cached);
       setLoading(false);
     } else {
-      fetchActive();
+      fetchActive(false);
     }
-
-    let cleanupSmart: (() => void) | null = null;
-    import("@/lib/localCache").then(({ createSmartInterval }) => {
-      if (isMounted) {
-        cleanupSmart = createSmartInterval(() => fetchActive(true), 60000);
-      }
-    });
 
     return () => {
       isMounted = false;
-      if (cleanupSmart) cleanupSmart();
     };
   }, []);
 

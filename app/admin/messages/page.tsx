@@ -62,7 +62,7 @@ export default function AdminMessagesPage() {
     fetchMessages();
     let cleanupSmart: (() => void) | null = null;
     import("@/lib/localCache").then(({ createSmartInterval }) => {
-      cleanupSmart = createSmartInterval(fetchMessages, 25000);
+      cleanupSmart = createSmartInterval(fetchMessages, 60000);
     });
     return () => {
       if (cleanupSmart) cleanupSmart();

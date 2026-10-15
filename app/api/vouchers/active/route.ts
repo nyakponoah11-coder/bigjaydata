@@ -1,13 +1,17 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 300; // 5 minutes Edge CDN cache
 
 export async function GET() {
   try {
     const voucher = await db.getActiveVoucher();
     if (!voucher) {
-      return NextResponse.json({ active: false, voucher: null });
+      return NextResponse.json({ active: false, voucher: null }, {
+        headers: {
+          "Cache-Control": "public, max-age=120, s-maxage=300, stale-while-revalidate=600",
+        },
+      });
     }
 
     // Return active voucher public info without exposing internal sensitive details if any
@@ -23,7 +27,7 @@ export async function GET() {
       },
     }, {
       headers: {
-        "Cache-Control": "public, max-age=60, s-maxage=120, stale-while-revalidate=180",
+        "Cache-Control": "public, max-age=120, s-maxage=300, stale-while-revalidate=600",
       },
     });
   } catch (error: any) {

@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 
+export const revalidate = 300; // 5 minutes Edge CDN cache
+
 export async function GET() {
   try {
     const settings = await db.getSettings();
@@ -16,7 +18,7 @@ export async function GET() {
       agent_store_enabled: config.is_enabled,
     }, {
       headers: {
-        "Cache-Control": "public, max-age=60, s-maxage=120, stale-while-revalidate=300",
+        "Cache-Control": "public, max-age=120, s-maxage=300, stale-while-revalidate=600",
       },
     });
   } catch (error: any) {

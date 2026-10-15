@@ -253,12 +253,14 @@ export default function HelpClientView({
     }
   };
 
-  // Poll for admin replies every 6 seconds
+  // Poll for admin replies every 30 seconds when tab is active
   useEffect(() => {
     if (!sessionId) return;
     const interval = setInterval(() => {
-      fetchExistingMessages(sessionId, false);
-    }, 6000);
+      if (typeof document !== "undefined" && document.visibilityState === "visible") {
+        fetchExistingMessages(sessionId, false);
+      }
+    }, 30000);
     return () => clearInterval(interval);
   }, [sessionId]);
 

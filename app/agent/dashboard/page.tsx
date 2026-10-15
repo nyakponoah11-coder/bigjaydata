@@ -171,13 +171,13 @@ export default function AgentDashboardPage() {
     }
   }, []);
 
-  // Periodic background refresh every 45s without flashing or unmounting dashboard
+  // Periodic background refresh every 5 minutes without flashing or unmounting dashboard
   useEffect(() => {
     if (!agent?.id) return;
     const interval = setInterval(() => {
       if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
       loadDashboardData(agent.id, true);
-    }, 45000);
+    }, 5 * 60 * 1000); // 5 minutes
     return () => clearInterval(interval);
   }, [agent?.id]);
 
@@ -752,6 +752,15 @@ export default function AgentDashboardPage() {
 
             {/* Quick Actions */}
             <div className="flex items-center gap-2 sm:gap-3">
+              <button
+                onClick={() => agent?.id && loadDashboardData(agent.id, true)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-300 hover:text-white border border-slate-700 transition-colors cursor-pointer"
+                title="Refresh dashboard metrics"
+              >
+                <RefreshCw className="w-3.5 h-3.5 text-slate-400" />
+                <span className="hidden sm:inline">Refresh</span>
+              </button>
+
               <a
                 href={activeDisplayUrl || directShortUrl}
                 target="_blank"
