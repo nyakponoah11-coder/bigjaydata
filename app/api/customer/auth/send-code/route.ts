@@ -57,11 +57,10 @@ export async function POST(req: Request) {
 
     return NextResponse.json({
       success: true,
-      message: customer.email && hasRealEmail
-        ? `A 6-digit verification code was sent to ${customer.email}.`
-        : `Verification code generated for ${customer.phone}.`,
+      message: customer.email
+        ? `A 6-digit verification code was sent to your email (${customer.email}).`
+        : `Verification code generated for your account.`,
       has_real_email: hasRealEmail,
-      dev_code: code, // Provided for instant seamless localhost testing
     });
   } catch (error: any) {
     console.error("Send verification code error:", error);

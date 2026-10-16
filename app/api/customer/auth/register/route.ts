@@ -6,17 +6,24 @@ export async function POST(req: Request) {
     const body = await req.json();
     const { name, phone, email, password } = body;
 
-    if (!name || !phone || !password) {
+    if (!name || !phone || !email || !password) {
       return NextResponse.json(
-        { success: false, message: "Full name, phone number, and password/PIN are required." },
+        { success: false, message: "Full name, phone number, email address, and password/PIN are required." },
         { status: 400 }
       );
     }
 
     const cleanName = String(name).trim();
     const cleanPhone = String(phone).replace(/[^0-9]/g, "");
-    const cleanEmail = email ? String(email).trim().toLowerCase() : undefined;
+    const cleanEmail = String(email).trim().toLowerCase();
     const cleanPass = String(password).trim();
+
+    if (!cleanEmail || !cleanEmail.includes("@") || !cleanEmail.includes(".")) {
+      return NextResponse.json(
+        { success: false, message: "Please provide a valid email address. Your verification code will be sent to this email." },
+        { status: 400 }
+      );
+    }
 
     if (cleanPhone.length < 9) {
       return NextResponse.json(
@@ -91,10 +98,7 @@ export async function POST(req: Request) {
       phone: newCustomer.phone,
       email: newCustomer.email,
       name: newCustomer.name,
-      message: cleanEmail
-        ? `Account created! We've sent a 6-digit verification code to ${cleanEmail}.`
-        : `Account created! Enter the 6-digit verification code for ${cleanPhone}.`,
-      dev_code: verificationCode, // Returned for instant testing on localhost
+      message: `Account created! We've sent a 6-digit verification code to your email (${cleanEmail}). Please check your inbox or spam folder.`,
     });
   } catch (error: any) {
     console.error("Customer register error:", error);

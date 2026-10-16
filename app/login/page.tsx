@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   Phone,
+  Mail,
   Lock,
   ArrowRight,
   Sparkles,
@@ -56,7 +57,6 @@ export default function CustomerLoginPage() {
   // Verification Code State
   const [customerId, setCustomerId] = useState("");
   const [verificationCode, setVerificationCode] = useState("");
-  const [devCode, setDevCode] = useState<string | null>(null);
   const [resendCooldown, setResendCooldown] = useState(0);
 
   const [loading, setLoading] = useState(false);
@@ -107,11 +107,7 @@ export default function CustomerLoginPage() {
       // If account requires 6-digit verification code
       if (data.requires_verification) {
         setCustomerId(data.customer_id);
-        if (data.dev_code) {
-          setDevCode(data.dev_code);
-          setVerificationCode(data.dev_code);
-        }
-        setInfoNotice(data.message || "Please enter the 6-digit verification code to complete sign in.");
+        setInfoNotice(data.message || "Please enter the 6-digit verification code sent to your email.");
         setResendCooldown(30);
         setMode("verify");
         return;
@@ -153,11 +149,7 @@ export default function CustomerLoginPage() {
         throw new Error(data.message || "Could not find an account with that number or email.");
       }
 
-      if (data.dev_code) {
-        setDevCode(data.dev_code);
-        setVerificationCode(data.dev_code);
-      }
-      setInfoNotice(data.message || "Verification code sent to your phone/email.");
+      setInfoNotice(data.message || "Verification code sent to your email.");
       setResendCooldown(30);
       setMode("verify");
     } catch (err: any) {
@@ -419,23 +411,16 @@ export default function CustomerLoginPage() {
           {/* MODE 2: VERIFICATION CODE ENTRY */}
           {mode === "verify" && (
             <div className="space-y-5">
-              {devCode && (
-                <div className="p-3.5 rounded-2xl bg-amber-400/15 border border-amber-400/40 text-amber-300 text-xs flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
-                    <span>
-                      Dev Code: <strong className="font-mono text-sm tracking-widest">{devCode}</strong>
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setVerificationCode(devCode)}
-                    className="px-2.5 py-1 rounded-lg bg-amber-400 text-slate-950 font-black text-[11px] shadow-sm hover:bg-amber-300 transition-colors"
-                  >
-                    Auto Fill
-                  </button>
+              {/* Email Sent Notice */}
+              <div className="p-3.5 rounded-2xl bg-amber-400/10 border border-amber-400/30 text-amber-200 text-xs flex items-center gap-3">
+                <Mail className="w-5 h-5 text-amber-400 shrink-0" />
+                <div>
+                  <p className="font-semibold text-white">Verification Code Sent via Email</p>
+                  <p className="text-[11px] text-slate-300">
+                    We sent a 6-digit verification code to your email. Please check your inbox or spam folder.
+                  </p>
                 </div>
-              )}
+              </div>
 
               <form onSubmit={handleVerifyLogin} className="space-y-4">
                 <div>

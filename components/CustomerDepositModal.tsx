@@ -38,18 +38,17 @@ interface Props {
 }
 
 interface PresetOption {
-  gig: string;
   amount: number;
   label: string;
   tag?: string;
 }
 
 const PRESET_OPTIONS: PresetOption[] = [
-  { gig: "5GB", amount: 25, label: "5 Gig", tag: "Min: 5GB" },
-  { gig: "10GB", amount: 50, label: "10 Gig", tag: "Popular" },
-  { gig: "20GB", amount: 100, label: "20 Gig" },
-  { gig: "50GB", amount: 250, label: "50 Gig" },
-  { gig: "100GB", amount: 500, label: "100 Gig" },
+  { amount: 5, label: "₵5", tag: "Min: ₵5" },
+  { amount: 10, label: "₵10" },
+  { amount: 20, label: "₵20", tag: "Popular" },
+  { amount: 50, label: "₵50" },
+  { amount: 100, label: "₵100" },
 ];
 
 export default function CustomerDepositModal({
@@ -59,7 +58,7 @@ export default function CustomerDepositModal({
   onSuccess,
   paystackPublicKey = "",
 }: Props) {
-  const [amount, setAmount] = useState<number | string>(25);
+  const [amount, setAmount] = useState<number | string>(5);
   const [customInput, setCustomInput] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -112,8 +111,8 @@ export default function CustomerDepositModal({
     setSuccessMsg("");
 
     const finalAmount = currentDepositAmount;
-    if (isNaN(finalAmount) || finalAmount < 20) {
-      setError("Deposits start from 5 Gig (minimum GHS 20.00). Please select or enter at least GHS 20.00");
+    if (isNaN(finalAmount) || finalAmount < 5) {
+      setError("The minimum deposit amount is GHS 5.00. Please select or enter at least GHS 5.00.");
       return;
     }
 
@@ -262,22 +261,22 @@ export default function CustomerDepositModal({
             </div>
           )}
 
-          {/* Quick Select Presets - Starting with 5 Gig */}
+          {/* Quick Select Presets - Starting with GHS 5.00 */}
           <div>
             <div className="flex items-center justify-between mb-2">
               <label className="text-xs font-bold text-slate-300">
-                Deposit Package (Starts from 5 Gig)
+                Quick Select Deposit Amount
               </label>
               <span className="text-[10px] text-amber-400 font-bold uppercase tracking-wider">
-                Min: 5GB
+                Min: ₵5.00
               </span>
             </div>
             <div className="grid grid-cols-5 gap-1.5 sm:gap-2">
               {PRESET_OPTIONS.map((item) => {
-                const isSelected = !customInput && amount === item.amount;
+                const isSelected = !customInput && Number(amount) === item.amount;
                 return (
                   <button
-                    key={item.gig}
+                    key={item.amount}
                     type="button"
                     onClick={() => handleSelectPreset(item.amount)}
                     className={`py-2.5 px-1 rounded-xl text-center transition-all border cursor-pointer relative overflow-hidden flex flex-col items-center justify-center ${
@@ -297,10 +296,7 @@ export default function CustomerDepositModal({
                         {item.tag}
                       </span>
                     )}
-                    <span className="text-xs font-black block leading-tight">{item.label}</span>
-                    <span className="text-[11px] font-bold font-mono opacity-90 block">
-                      ₵{item.amount}
-                    </span>
+                    <span className="text-sm font-black block leading-tight">{item.label}</span>
                   </button>
                 );
               })}
@@ -310,7 +306,7 @@ export default function CustomerDepositModal({
           {/* Custom Amount Input */}
           <div>
             <label className="block text-xs font-bold text-slate-300 mb-1.5">
-              Or Enter Custom Amount (Minimum GHS 20.00 / 5 Gig)
+              Or Enter Custom Amount (Minimum GHS 5.00)
             </label>
             <div className="relative">
               <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm font-bold font-mono">
@@ -320,7 +316,7 @@ export default function CustomerDepositModal({
                 type="text"
                 value={customInput}
                 onChange={handleCustomChange}
-                placeholder="Minimum 20.00 (5 Gig)"
+                placeholder="Enter amount (e.g. 5.00)"
                 className="w-full pl-8 pr-4 py-3 rounded-xl bg-slate-950/80 border border-slate-800 text-white placeholder-slate-500 text-sm focus:outline-hidden focus:border-amber-400 focus:ring-1 focus:ring-amber-400 transition-all font-mono font-bold"
               />
             </div>

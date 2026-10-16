@@ -65,8 +65,9 @@ export async function POST(req: Request) {
         customer_id: customer.id,
         phone: customer.phone,
         email: customer.email,
-        message: "Please enter the 6-digit verification code to complete sign in.",
-        dev_code: code,
+        message: customer.email
+          ? `Please enter the 6-digit verification code sent to your email (${customer.email}).`
+          : "Please enter the 6-digit verification code sent to your email to complete sign in.",
       });
     }
 

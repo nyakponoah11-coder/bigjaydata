@@ -60,7 +60,6 @@ export default function CustomerSignUpPage() {
   // Verification Code State
   const [customerId, setCustomerId] = useState("");
   const [verificationCode, setVerificationCode] = useState("");
-  const [devCode, setDevCode] = useState<string | null>(null);
   const [resendCooldown, setResendCooldown] = useState(0);
 
   // UI status
@@ -90,13 +89,22 @@ export default function CustomerSignUpPage() {
     setError("");
     setInfoNotice("");
 
+    const cleanName = name.trim();
     const cleanPhone = phone.trim().replace(/[^0-9]/g, "");
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanPass = password.trim();
+
+    if (!cleanEmail || !cleanEmail.includes("@") || !cleanEmail.includes(".")) {
+      setError("Please enter a valid email address. Your verification code will be sent to this email.");
+      return;
+    }
+
     if (cleanPhone.length < 9) {
       setError("Please enter a valid Ghanaian mobile number (e.g. 0551234567)");
       return;
     }
 
-    if (password.trim().length < 4) {
+    if (cleanPass.length < 4) {
       setError("Please choose a password or 4-digit PIN with at least 4 characters.");
       return;
     }
@@ -108,10 +116,10 @@ export default function CustomerSignUpPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name: name.trim(),
+          name: cleanName,
           phone: cleanPhone,
-          email: email.trim() || undefined,
-          password: password.trim(),
+          email: cleanEmail,
+          password: cleanPass,
         }),
       });
 
@@ -121,11 +129,8 @@ export default function CustomerSignUpPage() {
       }
 
       setCustomerId(data.customer_id);
-      if (data.dev_code) {
-        setDevCode(data.dev_code);
-        setVerificationCode(data.dev_code); // Pre-fill for instant local testing!
-      }
-      setInfoNotice(data.message || "Enter the 6-digit verification code to complete sign up.");
+      setVerificationCode(""); // User must enter code from their email
+      setInfoNotice(data.message || `We sent a 6-digit verification code to ${cleanEmail}. Please check your inbox or spam folder.`);
       setResendCooldown(30);
       setStep("verify");
     } catch (err: any) {
@@ -198,11 +203,7 @@ export default function CustomerSignUpPage() {
         throw new Error(data.message || "Failed to resend code.");
       }
 
-      if (data.dev_code) {
-        setDevCode(data.dev_code);
-        setVerificationCode(data.dev_code);
-      }
-      setInfoNotice(data.message || "A new 6-digit code has been generated.");
+      setInfoNotice(data.message || "A new 6-digit code has been sent to your email.");
       setResendCooldown(30);
     } catch (err: any) {
       setError(err?.message || "Failed to resend verification code.");
@@ -486,24 +487,16 @@ export default function CustomerSignUpPage() {
           {/* STEP 2: VERIFICATION CODE ENTRY */}
           {step === "verify" && (
             <div className="space-y-5">
-              {/* Dev Code Banner for 1-Click Localhost Testing */}
-              {devCode && (
-                <div className="p-3.5 rounded-2xl bg-amber-400/15 border border-amber-400/40 text-amber-300 text-xs flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
-                    <span>
-                      Dev Code: <strong className="font-mono text-sm tracking-widest">{devCode}</strong>
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setVerificationCode(devCode)}
-                    className="px-2.5 py-1 rounded-lg bg-amber-400 text-slate-950 font-black text-[11px] shadow-sm hover:bg-amber-300 transition-colors"
-                  >
-                    Auto Fill
-                  </button>
+              {/* Email Sent Notice */}
+              <div className="p-3.5 rounded-2xl bg-amber-400/10 border border-amber-400/30 text-amber-200 text-xs flex items-center gap-3">
+                <Mail className="w-5 h-5 text-amber-400 shrink-0" />
+                <div>
+                  <p className="font-semibold text-white">Verification Code Sent via Email</p>
+                  <p className="text-[11px] text-slate-300">
+                    We sent a 6-digit verification code to <span className="font-bold text-amber-300">{email}</span>. Please check your inbox or spam folder.
+                  </p>
                 </div>
-              )}
+              </div>
 
               <form onSubmit={handleVerifyCode} className="space-y-4">
                 <div>
@@ -523,7 +516,7 @@ export default function CustomerSignUpPage() {
                     />
                   </div>
                   <p className="text-[11px] text-slate-400 text-center mt-2">
-                    Check your SMS or email inbox for your 6-digit authorization code.
+                    Enter the 6-digit authorization code sent to your email.
                   </p>
                 </div>
 

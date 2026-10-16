@@ -42,9 +42,9 @@ export async function POST(req: Request) {
     // Amount in GHS returned by Paystack
     const depositedAmount = verification.amount > 0 ? verification.amount : Number(amount || 0);
 
-    if (depositedAmount < 20) {
+    if (depositedAmount < 5) {
       return NextResponse.json(
-        { success: false, message: "Minimum deposit is GHS 20.00 (5 Gig equivalent)." },
+        { success: false, message: "Minimum deposit is GHS 5.00." },
         { status: 400 }
       );
     }
