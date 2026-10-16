@@ -790,37 +790,6 @@ export default function AdminAgentStorePage() {
                 <h3 className="text-base font-bold text-white">Registered Agents</h3>
                 <p className="text-xs text-slate-400">Manage agent accounts, credentials, suspension, and permissions.</p>
               </div>
-              <button
-                onClick={async () => {
-                  if (
-                    confirm(
-                      "Reset ALL agent accounts, test orders, and withdrawals to GHS 0.00 across the entire system?"
-                    )
-                  ) {
-                    try {
-                      const res = await fetch("/api/admin/agent-store", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ action: "reset_all_finances" }),
-                      });
-                      const d = await res.json();
-                      if (d.success) {
-                        alert(d.message);
-                        fetchData();
-                      } else {
-                        alert(d.message || "Failed to reset finances");
-                      }
-                    } catch (e: any) {
-                      alert(e.message);
-                    }
-                  }
-                }}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-cyan-950/60 hover:bg-cyan-900/60 text-cyan-300 text-xs font-bold border border-cyan-800/60 transition-colors cursor-pointer self-start sm:self-auto"
-                title="Reset all agent accounts, test orders, and withdrawals to GHS 0.00"
-              >
-                <RotateCcw className="w-3.5 h-3.5 text-cyan-400" />
-                <span>Reset All Accounts to 0.00</span>
-              </button>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs">
