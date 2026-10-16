@@ -378,3 +378,14 @@ CREATE POLICY "Allow all on agent_orders" ON public.agent_orders FOR ALL USING (
 CREATE POLICY "Allow all on agent_withdrawals" ON public.agent_withdrawals FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all on customers" ON public.customers FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all on customer_transactions" ON public.customer_transactions FOR ALL USING (true) WITH CHECK (true);
+
+-- ========================================================================
+-- 14. SCHEMA MIGRATIONS (Run on existing databases to add new features)
+-- ========================================================================
+ALTER TABLE public.vouchers ADD COLUMN IF NOT EXISTS min_orders_required INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE public.voucher_claims ADD COLUMN IF NOT EXISTS customer_name TEXT;
+ALTER TABLE public.voucher_claims ADD COLUMN IF NOT EXISTS customer_orders_count INTEGER DEFAULT 0;
+ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS avatar_url TEXT;
+ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS pending_new_email TEXT;
+ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS email_change_code TEXT;
+ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS email_change_expires_at BIGINT;
