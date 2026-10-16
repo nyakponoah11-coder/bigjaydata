@@ -3212,6 +3212,9 @@ export const db = {
       updatedItems.push(item);
 
       if (targetAgent) {
+        if (!targetAgent.custom_prices) {
+          targetAgent.custom_prices = {};
+        }
         targetAgent.custom_prices[base_product_id] = validSellingPrice;
         if (bp) {
           const key1 = `${bp.network.toLowerCase()}_${bp.size.toLowerCase()}`;

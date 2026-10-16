@@ -210,6 +210,8 @@ export default function AdminCustomersPage() {
             </p>
           </div>
 
+          {/* Quick Header Actions */}
+          <div className="flex flex-wrap items-center gap-2.5">
             <Link
               href="/admin/registered-accounts"
               className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 text-xs font-black shadow-lg shadow-amber-500/20 transition-all hover:scale-105 cursor-pointer"
