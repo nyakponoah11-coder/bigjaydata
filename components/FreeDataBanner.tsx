@@ -1,9 +1,9 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { Gift, Clock, Sparkles } from "lucide-react";
+import { usePathname } from "next/navigation";
 import FreeDataClaimModal from "./FreeDataClaimModal";
-import { getCachedActiveVoucher, saveActiveVoucherSession } from "@/lib/device-session";
 
 interface VoucherInfo {
   id: string;
@@ -15,53 +15,58 @@ interface VoucherInfo {
 }
 
 export default function FreeDataBanner() {
-  const [voucher, setVoucher] = useState<VoucherInfo | null>(() => {
-    return getCachedActiveVoucher();
-  });
+  const pathname = usePathname();
+  const [voucher, setVoucher] = useState<VoucherInfo | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [loading, setLoading] = useState(() => !getCachedActiveVoucher());
+  const [loading, setLoading] = useState(true);
   const [timeLeft, setTimeLeft] = useState<string | null>(null);
 
-  useEffect(() => {
-    let isMounted = true;
-    const fetchActive = async (forceFresh = false) => {
-      try {
-        const { cachedAsync } = await import("@/lib/localCache");
-        const data = await cachedAsync(
-          "active_voucher_banner",
-          async () => {
-            const res = await fetch("/api/vouchers/active");
-            return await res.json();
-          },
-          45000,
-          forceFresh
-        );
-        if (isMounted && data?.active && data?.voucher) {
+  const fetchActive = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/vouchers/active?t=${Date.now()}`, {
+        cache: "no-store",
+        headers: {
+          "Cache-Control": "no-cache, no-store, must-revalidate",
+          Pragma: "no-cache",
+        },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.active && data?.voucher) {
           setVoucher(data.voucher);
-          saveActiveVoucherSession(data.voucher);
-        } else if (isMounted) {
+        } else {
           setVoucher(null);
-          saveActiveVoucherSession(null);
         }
-      } catch (err) {
-        console.error("Failed to load active voucher:", err);
-      } finally {
-        if (isMounted) setLoading(false);
       }
-    };
-
-    const cached = getCachedActiveVoucher();
-    if (cached) {
-      setVoucher(cached);
+    } catch (err) {
+      console.error("Failed to load active voucher:", err);
+    } finally {
       setLoading(false);
-    } else {
-      fetchActive(false);
     }
+  }, []);
+
+  useEffect(() => {
+    fetchActive();
+
+    // Check periodically so the storefront automatically updates when admin turns promo on/off
+    const pollInterval = setInterval(() => {
+      if (typeof document !== "undefined" && !document.hidden) {
+        fetchActive();
+      }
+    }, 15000);
+
+    const handleEvent = () => fetchActive();
+    window.addEventListener("voucher_updated", handleEvent);
+    window.addEventListener("storage", handleEvent);
+    window.addEventListener("focus", handleEvent);
 
     return () => {
-      isMounted = false;
+      clearInterval(pollInterval);
+      window.removeEventListener("voucher_updated", handleEvent);
+      window.removeEventListener("storage", handleEvent);
+      window.removeEventListener("focus", handleEvent);
     };
-  }, []);
+  }, [fetchActive]);
 
   // Countdown Timer Logic
   useEffect(() => {
@@ -96,15 +101,20 @@ export default function FreeDataBanner() {
     return () => clearInterval(timerInterval);
   }, [voucher?.expires_at]);
 
+  // Hide on admin routes and agent backoffice
+  if (pathname && (pathname.startsWith("/admin") || pathname.startsWith("/agent/dashboard"))) {
+    return null;
+  }
+
   if (loading || !voucher) return null;
 
   return (
     <>
       {/* Middle of Left Side Floating Docked Badge with Vibrant Animations */}
-      <div className="fixed top-1/2 -translate-y-1/2 left-0 z-40 pointer-events-auto">
+      <div className="fixed top-1/2 -translate-y-1/2 left-0 z-[60] pointer-events-auto">
         <button
           onClick={() => setIsModalOpen(true)}
-          className="group relative overflow-hidden flex flex-col sm:flex-row items-center gap-1.5 sm:gap-2.5 pl-3 pr-4 py-3.5 rounded-r-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-indigo-700 text-white font-extrabold shadow-2xl shadow-emerald-500/50 hover:scale-110 active:scale-95 transition-all duration-300 border-y-2 border-r-2 border-emerald-300/60 hover:border-amber-300 animate-pulse hover:animate-none"
+          className="group relative overflow-hidden flex flex-col sm:flex-row items-center gap-1.5 sm:gap-2.5 pl-3 pr-4 py-3.5 rounded-r-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-indigo-700 text-white font-extrabold shadow-2xl shadow-emerald-500/50 hover:scale-110 active:scale-95 transition-all duration-300 border-y-2 border-r-2 border-emerald-300/60 hover:border-amber-300 animate-pulse hover:animate-none cursor-pointer"
           title={voucher.tagline || "Claim Free Data Voucher"}
           style={{
             boxShadow: "0 0 20px rgba(16, 185, 129, 0.45), 0 0 40px rgba(99, 102, 241, 0.25)",
@@ -144,7 +154,10 @@ export default function FreeDataBanner() {
       {/* Claim Modal */}
       <FreeDataClaimModal
         isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
+        onClose={() => {
+          setIsModalOpen(false);
+          fetchActive(); // Refresh count after modal interaction
+        }}
         tagline={voucher.tagline}
         defaultNetwork={voucher.network}
         defaultPackageSize={voucher.package_size}

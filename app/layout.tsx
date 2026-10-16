@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import FreeDataBanner from "@/components/FreeDataBanner";
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://fastdata-gh.vercel.app"),
@@ -28,6 +29,7 @@ export default function RootLayout({
   return (
     <html lang="en" className="h-full antialiased scroll-smooth">
       <body className="min-h-full flex flex-col bg-slate-50 text-slate-900 selection:bg-emerald-500 selection:text-white">
+        <FreeDataBanner />
         {children}
       </body>
     </html>

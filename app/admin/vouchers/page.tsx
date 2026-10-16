@@ -147,6 +147,12 @@ export default function AdminVouchersPage() {
       });
       if (res.ok) {
         setVouchers((prev) => prev.map((v) => ({ ...v, is_active: nextState })));
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new Event("voucher_updated"));
+          try {
+            localStorage.setItem("bmgh_voucher_trigger", Date.now().toString());
+          } catch {}
+        }
         setMsg({
           type: "success",
           text: nextState
@@ -223,6 +229,12 @@ export default function AdminVouchersPage() {
             ? `Successfully generated batch of ${countNum} single-use voucher codes (FREE-XXXXXXXX)! See the batch copy section below.`
             : `Voucher ${data.voucher?.code || code.toUpperCase()} created successfully!`,
       });
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new Event("voucher_updated"));
+        try {
+          localStorage.setItem("bmgh_voucher_trigger", Date.now().toString());
+        } catch {}
+      }
       generateRandomCode();
       setMinOrdersRequired("0");
       setTimerPreset("none");
@@ -246,6 +258,12 @@ export default function AdminVouchersPage() {
         setVouchers((prev) =>
           prev.map((v) => (v.id === id ? { ...v, is_active: !currentStatus } : v))
         );
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new Event("voucher_updated"));
+          try {
+            localStorage.setItem("bmgh_voucher_trigger", Date.now().toString());
+          } catch {}
+        }
       }
     } catch (err) {
       console.error("Failed to toggle voucher:", err);
@@ -260,6 +278,12 @@ export default function AdminVouchersPage() {
       });
       if (res.ok) {
         setVouchers((prev) => prev.filter((v) => v.id !== id));
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new Event("voucher_updated"));
+          try {
+            localStorage.setItem("bmgh_voucher_trigger", Date.now().toString());
+          } catch {}
+        }
       }
     } catch (err) {
       console.error("Failed to delete voucher:", err);

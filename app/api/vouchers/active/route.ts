@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 
-export const revalidate = 300; // 5 minutes Edge CDN cache
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 export async function GET() {
   try {
@@ -14,11 +15,15 @@ export async function GET() {
     });
 
     if (activeVouchers.length === 0) {
-      return NextResponse.json({ active: false, voucher: null }, {
-        headers: {
-          "Cache-Control": "public, max-age=60, s-maxage=120, stale-while-revalidate=300",
-        },
-      });
+      return NextResponse.json(
+        { active: false, voucher: null },
+        {
+          headers: {
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            Pragma: "no-cache",
+          },
+        }
+      );
     }
 
     const first = activeVouchers[0];
@@ -27,22 +32,26 @@ export async function GET() {
       0
     );
 
-    return NextResponse.json({
-      active: true,
-      voucher: {
-        id: first.id,
-        tagline: first.tagline || "Free Data Giveaway!",
-        network: first.network,
-        package_size: first.package_size,
-        remaining_claims: totalRemaining,
-        active_codes_count: activeVouchers.length,
-        expires_at: first.expires_at || null,
+    return NextResponse.json(
+      {
+        active: true,
+        voucher: {
+          id: first.id,
+          tagline: first.tagline || "Free Data Giveaway!",
+          network: first.network,
+          package_size: first.package_size,
+          remaining_claims: totalRemaining,
+          active_codes_count: activeVouchers.length,
+          expires_at: first.expires_at || null,
+        },
       },
-    }, {
-      headers: {
-        "Cache-Control": "public, max-age=60, s-maxage=120, stale-while-revalidate=300",
-      },
-    });
+      {
+        headers: {
+          "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+          Pragma: "no-cache",
+        },
+      }
+    );
   } catch (error: any) {
     console.error("Voucher Active GET error:", error);
     return NextResponse.json({ active: false, voucher: null });
