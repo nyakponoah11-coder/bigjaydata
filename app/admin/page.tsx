@@ -251,6 +251,28 @@ export default function AdminDashboardPage() {
           </Link>
         </div>
 
+        {/* Customer Registered Accounts & Wallets Bar */}
+        <div className="bg-gradient-to-r from-amber-950/40 via-slate-900 to-slate-900 border border-amber-900/40 rounded-3xl p-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-amber-400 to-yellow-500 text-slate-950 font-black flex items-center justify-center shadow-lg shadow-amber-500/20">
+              <Users className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="font-bold text-white text-sm">Customer Registered Accounts & Wallets</h3>
+              <p className="text-xs text-slate-400">
+                Manage registered user accounts, deposit transactions, and customer wallet balances.
+              </p>
+            </div>
+          </div>
+          <Link
+            href="/admin/registered-accounts"
+            className="py-2.5 px-4 bg-amber-400 hover:bg-amber-300 text-slate-950 font-black rounded-xl text-xs flex items-center gap-2 transition-all hover:scale-105 shrink-0"
+          >
+            Manage Accounts
+            <ArrowRight className="w-4 h-4" />
+          </Link>
+        </div>
+
         {/* Recent 5 Orders Table */}
         <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-lg space-y-4">
           <div className="flex items-center justify-between">

@@ -16,6 +16,11 @@ import {
   Smartphone,
   Store,
   Code,
+  Wallet,
+  User,
+  UserPlus,
+  LogOut,
+  PlusCircle,
 } from "lucide-react";
 import FreeDataBanner from "./FreeDataBanner";
 
@@ -38,6 +43,36 @@ export default function Navbar({
   const [channelUrl, setChannelUrl] = useState(whatsappChannelUrl || "");
   const [agentStoreLive, setAgentStoreLive] = useState<boolean>(isAgentStoreEnabled ?? true);
   const pathname = usePathname();
+
+  // Customer Account Session
+  const [customer, setCustomer] = useState<{
+    id: string;
+    name: string;
+    phone: string;
+    wallet_balance: number;
+  } | null>(null);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("bmgh_customer_session");
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        setCustomer(parsed);
+        // Refresh balance in background
+        fetch(`/api/customer/me?id=${encodeURIComponent(parsed.id)}`)
+          .then((r) => r.json())
+          .then((d) => {
+            if (d?.success && d.customer) {
+              setCustomer(d.customer);
+              localStorage.setItem("bmgh_customer_session", JSON.stringify(d.customer));
+            }
+          })
+          .catch(() => {});
+      } else {
+        setCustomer(null);
+      }
+    } catch {}
+  }, [pathname]);
 
   // Load WhatsApp channel URL and agent store status from prop, localStorage cache, and avoid redundant fetches
   useEffect(() => {
@@ -195,17 +230,56 @@ export default function Navbar({
               </span>
             </Link>
 
-            {/* Right Side: Menu Toggle Button */}
-            <div className="flex items-center gap-2.5">
+            {/* Right Side: Account / Wallet & Menu Toggle Button */}
+            <div className="flex items-center gap-2 sm:gap-2.5">
+              {customer ? (
+                <>
+                  <Link
+                    href="/account"
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-amber-400/15 hover:bg-amber-400/25 border border-amber-400/40 text-amber-400 transition-all shadow-xs"
+                    title="Wallet Balance - Click to manage"
+                  >
+                    <Wallet className="w-3.5 h-3.5" />
+                    <span className="text-xs font-black font-mono">
+                      ₵{Number(customer.wallet_balance || 0).toFixed(2)}
+                    </span>
+                  </Link>
+
+                  <Link
+                    href="/account"
+                    className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-slate-900 hover:bg-slate-800 text-white dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-800 dark:border-slate-700 text-xs font-bold transition-colors"
+                  >
+                    <User className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>{customer.name ? customer.name.split(" ")[0] : "Account"}</span>
+                  </Link>
+                </>
+              ) : (
+                <>
+                  <Link
+                    href="/login"
+                    className="hidden sm:inline-block px-3 py-1.5 text-xs font-bold text-slate-700 dark:text-slate-300 hover:text-amber-400 transition-colors"
+                  >
+                    Sign In
+                  </Link>
+                  <Link
+                    href="/signup"
+                    className="flex items-center gap-1 px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-2xl bg-gradient-to-r from-amber-400 to-yellow-500 hover:from-amber-500 hover:to-yellow-600 text-slate-950 font-black text-xs shadow-md shadow-amber-500/20 transition-all transform active:scale-95"
+                  >
+                    <UserPlus className="w-3.5 h-3.5 text-slate-950" />
+                    <span>Account</span>
+                  </Link>
+                </>
+              )}
+
               <button
                 onClick={() => setIsOpen(!isOpen)}
-                className="flex items-center gap-2 px-3.5 py-2 rounded-2xl bg-slate-900 hover:bg-slate-800 text-white dark:bg-slate-800 dark:hover:bg-slate-700 transition-all shadow-md group border border-slate-800 dark:border-slate-700"
+                className="flex items-center gap-2 px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-2xl bg-slate-900 hover:bg-slate-800 text-white dark:bg-slate-800 dark:hover:bg-slate-700 transition-all shadow-md group border border-slate-800 dark:border-slate-700"
                 aria-label="Toggle menu"
               >
                 {isOpen ? (
-                  <X className="w-5 h-5 text-emerald-400" />
+                  <X className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-400" />
                 ) : (
-                  <Menu className="w-5 h-5 text-emerald-400 group-hover:rotate-90 transition-transform duration-200" />
+                  <Menu className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-400 group-hover:rotate-90 transition-transform duration-200" />
                 )}
                 <span className="text-xs font-black tracking-wider uppercase">
                   {isOpen ? "Close" : "Menu"}
@@ -253,8 +327,89 @@ export default function Navbar({
                 </button>
               </div>
 
+              {/* Customer Account Drawer Card */}
+              <div className="pt-4 pb-1">
+                {customer ? (
+                  <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-9 h-9 rounded-xl bg-amber-400 text-slate-950 font-black flex items-center justify-center text-sm shadow-xs">
+                          {customer.name ? customer.name.charAt(0).toUpperCase() : "U"}
+                        </div>
+                        <div>
+                          <p className="text-sm font-bold text-white leading-tight">{customer.name}</p>
+                          <p className="text-[10px] text-slate-400 font-mono">{customer.phone}</p>
+                        </div>
+                      </div>
+                      <Link
+                        href="/account"
+                        onClick={() => setIsOpen(false)}
+                        className="text-[11px] font-black text-amber-400 hover:text-amber-300"
+                      >
+                        Manage →
+                      </Link>
+                    </div>
+
+                    <div className="p-2.5 rounded-xl bg-slate-950 flex items-center justify-between">
+                      <span className="text-xs text-slate-400 font-medium">Wallet Balance:</span>
+                      <span className="text-sm font-black text-emerald-400 font-mono">
+                        GHS {Number(customer.wallet_balance || 0).toFixed(2)}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 pt-1">
+                      <Link
+                        href="/account"
+                        onClick={() => setIsOpen(false)}
+                        className="py-2 px-3 rounded-xl bg-amber-400 hover:bg-amber-500 text-slate-950 font-black text-xs text-center transition-colors shadow-xs"
+                      >
+                        Deposit Funds
+                      </Link>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          localStorage.removeItem("bmgh_customer_session");
+                          document.cookie = "bmgh_customer_session=; Path=/; Expires=Thu, 01 Jan 1970 00:00:01 GMT;";
+                          setCustomer(null);
+                          setIsOpen(false);
+                        }}
+                        className="py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-rose-300 font-bold text-xs text-center transition-colors"
+                      >
+                        Sign Out
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="p-4 rounded-2xl bg-gradient-to-br from-amber-500/15 via-yellow-500/10 to-slate-900 border border-amber-400/30 space-y-2.5">
+                    <div className="flex items-center gap-2 text-amber-400 font-bold text-xs">
+                      <Sparkles className="w-3.5 h-3.5" />
+                      <span>Customer Deposit Account</span>
+                    </div>
+                    <p className="text-[11px] text-slate-300 leading-relaxed">
+                      Create an account to deposit funds with Paystack and buy bundles in 1-click. Or skip and buy directly!
+                    </p>
+                    <div className="grid grid-cols-2 gap-2 pt-1">
+                      <Link
+                        href="/signup"
+                        onClick={() => setIsOpen(false)}
+                        className="py-2 px-3 rounded-xl bg-amber-400 hover:bg-amber-500 text-slate-950 font-black text-xs text-center transition-all shadow-xs"
+                      >
+                        Sign Up
+                      </Link>
+                      <Link
+                        href="/login"
+                        onClick={() => setIsOpen(false)}
+                        className="py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs text-center transition-all"
+                      >
+                        Sign In
+                      </Link>
+                    </div>
+                  </div>
+                )}
+              </div>
+
               {/* Navigation Links */}
-              <div className="py-6 space-y-2">
+              <div className="py-4 space-y-1.5">
                 {navLinks.map((item) => {
                   const Icon = item.icon;
                   const isActive = pathname === item.href;

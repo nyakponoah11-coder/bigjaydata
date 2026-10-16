@@ -8,6 +8,7 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 const RESERVED_SLUGS = new Set([
+  "account",
   "admin",
   "agent",
   "agent-store",
@@ -17,8 +18,10 @@ const RESERVED_SLUGS = new Set([
   "developer",
   "help",
   "install",
+  "login",
   "receipt",
   "s",
+  "signup",
   "store",
   "track",
   "favicon.ico",

@@ -29,11 +29,24 @@ export async function GET(req: Request) {
 export async function PUT(req: Request) {
   try {
     const body = await req.json();
-    const { agent_id, base_product_id, selling_price, is_active } = body;
+    const { agent_id, base_product_id, selling_price, is_active, products } = body;
 
-    if (!agent_id || !base_product_id) {
+    if (!agent_id) {
       return NextResponse.json(
-        { success: false, message: "Agent ID and base product ID are required" },
+        { success: false, message: "Agent ID is required" },
+        { status: 400 }
+      );
+    }
+
+    // Support batch update
+    if (Array.isArray(products) && products.length > 0) {
+      const updatedList = await db.updateAgentProductsBatch(agent_id, products);
+      return NextResponse.json({ success: true, products: updatedList });
+    }
+
+    if (!base_product_id) {
+      return NextResponse.json(
+        { success: false, message: "Base product ID or products array is required" },
         { status: 400 }
       );
     }

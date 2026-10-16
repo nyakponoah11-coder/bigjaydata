@@ -16,7 +16,14 @@ import {
   Sparkles,
   Info,
   Check,
+  Wallet,
+  PlusCircle,
+  LogIn,
+  User,
+  Zap,
 } from "lucide-react";
+import Link from "next/link";
+import CustomerDepositModal from "./CustomerDepositModal";
 
 declare global {
   interface Window {
@@ -35,8 +42,51 @@ export default function CheckoutModal({ product, isOpen, onClose, settings }: Pr
   const router = useRouter();
   const [phone, setPhone] = useState("");
   const [loading, setLoading] = useState(false);
+  const [walletLoading, setWalletLoading] = useState(false);
   const [error, setError] = useState("");
   const [detectedTelco, setDetectedTelco] = useState<string | null>(null);
+
+  // Customer Account & Wallet State
+  const [customer, setCustomer] = useState<{
+    id: string;
+    name: string;
+    phone: string;
+    wallet_balance: number;
+  } | null>(null);
+  const [paymentMethod, setPaymentMethod] = useState<"wallet" | "momo">("momo");
+  const [showDepositModal, setShowDepositModal] = useState(false);
+
+  // Load customer session from localStorage when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      try {
+        const raw = localStorage.getItem("bmgh_customer_session");
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          setCustomer(parsed);
+          if (!phone && parsed.phone) {
+            setPhone(parsed.phone);
+          }
+          // Fetch fresh wallet balance
+          fetch(`/api/customer/me?id=${encodeURIComponent(parsed.id)}`)
+            .then((r) => r.json())
+            .then((d) => {
+              if (d?.success && d.customer) {
+                setCustomer(d.customer);
+                localStorage.setItem("bmgh_customer_session", JSON.stringify(d.customer));
+                if (Number(d.customer.wallet_balance) >= (product?.price || 0)) {
+                  setPaymentMethod("wallet");
+                }
+              }
+            })
+            .catch(() => {});
+        } else {
+          setCustomer(null);
+          setPaymentMethod("momo");
+        }
+      } catch {}
+    }
+  }, [isOpen, product?.price]);
 
   // Number Verification State (Optional)
   const [verifying, setVerifying] = useState(false);
@@ -135,6 +185,60 @@ export default function CheckoutModal({ product, isOpen, onClose, settings }: Pr
     product.network.toLowerCase() !== detectedTelco &&
     ["mtn", "telecel", "at"].includes(product.network.toLowerCase());
 
+  const handleWalletPayment = async () => {
+    setError("");
+    const cleanPhone = phone.trim().replace(/[^0-9]/g, "");
+    if (cleanPhone.length < 9) {
+      setError("Please enter a valid recipient Ghanaian mobile number (e.g. 0551234567)");
+      return;
+    }
+
+    if (!customer) {
+      setError("Please sign in to your account to pay using your wallet balance.");
+      return;
+    }
+
+    if ((customer.wallet_balance || 0) < product.price) {
+      setError(
+        `Insufficient wallet balance. You need GHS ${product.price.toFixed(2)}, but only have GHS ${Number(customer.wallet_balance || 0).toFixed(2)}. Please top up or pay with Momo directly.`
+      );
+      return;
+    }
+
+    setWalletLoading(true);
+
+    try {
+      const res = await fetch("/api/customer/orders/pay-wallet", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          customer_id: customer.id,
+          network: product.network,
+          package_size: product.size,
+          phone: cleanPhone,
+          amount: product.price,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.message || "Failed to process wallet payment.");
+      }
+
+      if (data.new_balance !== undefined) {
+        const updated = { ...customer, wallet_balance: data.new_balance };
+        setCustomer(updated);
+        localStorage.setItem("bmgh_customer_session", JSON.stringify(updated));
+      }
+
+      router.push(`/receipt/${data.reference}`);
+    } catch (err: any) {
+      console.error("Wallet checkout error:", err);
+      setError(err?.message || "Failed to complete order with wallet balance.");
+      setWalletLoading(false);
+    }
+  };
+
   // Proceed directly to Paystack payment (verification is optional!)
   const handleCheckout = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -166,6 +270,7 @@ export default function CheckoutModal({ product, isOpen, onClose, settings }: Pr
             phone: cleanPhone,
             amount: product.price,
             paystack_ref: paystackRef,
+            customer_id: customer?.id || undefined,
           }),
         });
 
@@ -280,6 +385,79 @@ export default function CheckoutModal({ product, isOpen, onClose, settings }: Pr
             <div className="p-3 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 text-xs rounded-xl flex items-start gap-2">
               <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
               <span>{error}</span>
+            </div>
+          )}
+
+          {/* Customer Account & Wallet Header */}
+          {customer ? (
+            <div className="p-3.5 rounded-2xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/80 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-amber-400 text-slate-950 font-black text-xs flex items-center justify-center shadow-xs">
+                    {customer.name ? customer.name.charAt(0).toUpperCase() : "U"}
+                  </div>
+                  <div>
+                    <span className="text-xs font-bold text-slate-900 dark:text-white block leading-tight">
+                      {customer.name}
+                    </span>
+                    <span className="text-[11px] text-slate-500 dark:text-slate-400 font-mono">
+                      Wallet: <strong className="text-emerald-500 dark:text-emerald-400 font-bold">GHS {Number(customer.wallet_balance || 0).toFixed(2)}</strong>
+                    </span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowDepositModal(true)}
+                  className="px-2.5 py-1 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 text-[11px] font-black flex items-center gap-1 transition-colors cursor-pointer"
+                >
+                  <PlusCircle className="w-3.5 h-3.5" />
+                  <span>Deposit</span>
+                </button>
+              </div>
+
+              {/* Payment Choice Selector */}
+              <div className="grid grid-cols-2 gap-2 pt-1 border-t border-slate-200 dark:border-slate-700/60">
+                <button
+                  type="button"
+                  onClick={() => setPaymentMethod("wallet")}
+                  className={`py-2 px-2 rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5 transition-all border cursor-pointer ${
+                    paymentMethod === "wallet"
+                      ? "bg-amber-400 text-slate-950 border-amber-400 shadow-xs"
+                      : "bg-slate-200/60 dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-transparent hover:border-slate-300 dark:hover:border-slate-700"
+                  }`}
+                >
+                  <Wallet className="w-3.5 h-3.5" />
+                  <span>Pay with Wallet</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setPaymentMethod("momo")}
+                  className={`py-2 px-2 rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5 transition-all border cursor-pointer ${
+                    paymentMethod === "momo"
+                      ? "bg-amber-400 text-slate-950 border-amber-400 shadow-xs"
+                      : "bg-slate-200/60 dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-transparent hover:border-slate-300 dark:hover:border-slate-700"
+                  }`}
+                >
+                  <Lock className="w-3.5 h-3.5" />
+                  <span>Pay Direct Momo</span>
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="p-3 rounded-2xl bg-amber-500/10 border border-amber-500/25 flex items-center justify-between gap-2 text-xs">
+              <div className="flex items-center gap-2">
+                <Zap className="w-4 h-4 text-amber-500 shrink-0 fill-current" />
+                <span className="text-slate-700 dark:text-slate-300 font-medium">
+                  Buying as Guest. No account needed!
+                </span>
+              </div>
+              <Link
+                href="/signup"
+                className="text-[11px] font-black text-amber-600 dark:text-amber-400 hover:underline shrink-0"
+              >
+                Sign Up / Wallet →
+              </Link>
             </div>
           )}
 
@@ -412,28 +590,82 @@ export default function CheckoutModal({ product, isOpen, onClose, settings }: Pr
               )}
             </div>
 
-            {/* Total Due & Pay Button (Instant Payment - Never Blocked!) */}
+            {/* Total Due & Pay Button */}
             <div className="pt-2">
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full py-3.5 px-5 bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black rounded-2xl text-sm sm:text-base shadow-lg shadow-emerald-600/30 flex items-center justify-center gap-2 transition-all transform hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-50 tracking-wide"
-              >
-                {loading ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    Opening Paystack...
-                  </>
+              {customer && paymentMethod === "wallet" ? (
+                Number(customer.wallet_balance || 0) >= product.price ? (
+                  <button
+                    type="button"
+                    onClick={handleWalletPayment}
+                    disabled={walletLoading}
+                    className="w-full py-3.5 px-5 bg-gradient-to-r from-amber-400 via-yellow-400 to-amber-500 hover:from-amber-500 hover:to-yellow-600 text-slate-950 font-black rounded-2xl text-sm sm:text-base shadow-lg shadow-amber-500/25 flex items-center justify-center gap-2 transition-all transform hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-50 tracking-wide cursor-pointer"
+                  >
+                    {walletLoading ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin text-slate-950" />
+                        <span>Fulfilling Order from Wallet...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Zap className="w-4 h-4 fill-current text-slate-950" />
+                        <span>Pay GHS {product.price.toFixed(2)} with Wallet (1-Click)</span>
+                        <ArrowRight className="w-4 h-4 ml-0.5" />
+                      </>
+                    )}
+                  </button>
                 ) : (
-                  <>
-                    <Lock className="w-4 h-4 text-emerald-200" />
-                    {verificationResult?.checked && verificationResult.isExistingLine
-                      ? `Proceed & Pay GHS ${product.price.toFixed(2)}`
-                      : `Pay GHS ${product.price.toFixed(2)} with Paystack`}
-                    <ArrowRight className="w-4 h-4 ml-0.5" />
-                  </>
-                )}
-              </button>
+                  <div className="space-y-2.5">
+                    <div className="p-3 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-800 dark:text-amber-300 text-xs flex items-start gap-2">
+                      <AlertCircle className="w-4 h-4 shrink-0 text-amber-600 mt-0.5" />
+                      <div>
+                        <span className="font-bold">Insufficient Wallet Balance</span>
+                        <p className="text-[11px] mt-0.5">
+                          You need GHS {product.price.toFixed(2)}, but have GHS {Number(customer.wallet_balance || 0).toFixed(2)}. Deposit funds or switch to Direct Momo below.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setShowDepositModal(true)}
+                        className="py-3 px-3 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white font-extrabold text-xs flex items-center justify-center gap-1.5 shadow-md shadow-emerald-500/20 cursor-pointer"
+                      >
+                        <PlusCircle className="w-3.5 h-3.5" />
+                        <span>Deposit Funds</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPaymentMethod("momo")}
+                        className="py-3 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-extrabold text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        <Lock className="w-3.5 h-3.5" />
+                        <span>Pay Direct Momo</span>
+                      </button>
+                    </div>
+                  </div>
+                )
+              ) : (
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full py-3.5 px-5 bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black rounded-2xl text-sm sm:text-base shadow-lg shadow-emerald-600/30 flex items-center justify-center gap-2 transition-all transform hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-50 tracking-wide cursor-pointer"
+                >
+                  {loading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Opening Paystack...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Lock className="w-4 h-4 text-emerald-200" />
+                      {verificationResult?.checked && verificationResult.isExistingLine
+                        ? `Proceed & Pay GHS ${product.price.toFixed(2)}`
+                        : `Pay GHS ${product.price.toFixed(2)} with Paystack`}
+                      <ArrowRight className="w-4 h-4 ml-0.5" />
+                    </>
+                  )}
+                </button>
+              )}
             </div>
           </form>
 
@@ -444,6 +676,24 @@ export default function CheckoutModal({ product, isOpen, onClose, settings }: Pr
           </div>
         </div>
       </div>
+
+      {/* Customer Deposit Modal */}
+      {showDepositModal && customer && (
+        <CustomerDepositModal
+          isOpen={showDepositModal}
+          onClose={() => setShowDepositModal(false)}
+          customer={customer}
+          paystackPublicKey={settings.paystack_public_key}
+          onSuccess={(newBal) => {
+            const updated = { ...customer, wallet_balance: newBal };
+            setCustomer(updated);
+            localStorage.setItem("bmgh_customer_session", JSON.stringify(updated));
+            if (newBal >= product.price) {
+              setPaymentMethod("wallet");
+            }
+          }}
+        />
+      )}
     </div>
   );
 }

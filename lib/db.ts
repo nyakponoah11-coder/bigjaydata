@@ -34,7 +34,9 @@ export interface Order {
   delivery_status: DeliveryStatus | string;
   status: "pending" | "waiting" | "processing" | "completed" | "delivered" | "failed" | "refunded" | "cancelled" | string;
   datamart_response?: any;
-  source?: "web" | "agent" | "api" | string;
+  source?: "web" | "agent" | "api" | "customer_wallet" | string;
+  customer_id?: string;
+  payment_method?: "paystack" | "momo" | "wallet" | string;
   api_key_id?: string;
   developer_name?: string;
   created_at: string;
@@ -158,6 +160,7 @@ export interface Voucher {
   tagline: string;
   max_claims: number;
   claimed_count: number;
+  min_orders_required?: number; // Minimum orders required to be eligible (0 = everyone)
   is_active: boolean;
   expires_at?: string | null;
   created_at: string;
@@ -168,6 +171,8 @@ export interface VoucherClaim {
   voucher_id: string;
   voucher_code: string;
   phone: string;
+  customer_name?: string;
+  customer_orders_count?: number;
   network: string;
   package_size: string;
   order_reference: string;
@@ -301,6 +306,39 @@ export interface DeveloperAccount {
   otp_expires?: number;
   created_at: string;
   last_used_at?: string;
+}
+
+export interface Customer {
+  id: string;
+  name: string;
+  phone: string;
+  email?: string;
+  password_hash: string;
+  wallet_balance: number;
+  is_active: boolean;
+  is_verified?: boolean;
+  provider?: "local" | "google";
+  google_id?: string;
+  avatar_url?: string;
+  verification_code?: string | null;
+  verification_code_expires_at?: number | null;
+  pending_new_email?: string | null;
+  email_change_code?: string | null;
+  email_change_expires_at?: number | null;
+  created_at: string;
+  updated_at?: string;
+}
+
+export interface CustomerTransaction {
+  id: string;
+  customer_id: string;
+  amount: number;
+  type: "deposit" | "purchase" | "refund";
+  reference: string;
+  paystack_ref?: string;
+  status: "success" | "pending" | "failed";
+  description: string;
+  created_at: string;
 }
 
 // Products start empty - added and managed purely via /admin/products
@@ -438,6 +476,8 @@ const globalStore = globalThis as unknown as {
   __bmgh_developer_api_config?: DeveloperApiConfig;
   __bmgh_developer_api_products?: DeveloperApiProduct[];
   __bmgh_developer_accounts?: DeveloperAccount[];
+  __bmgh_customers?: Customer[];
+  __bmgh_customer_transactions?: CustomerTransaction[];
   __bmgh_cache_timestamps?: Record<string, number>;
   __bmgh_agents_zeroed_migrated?: boolean;
 };
@@ -448,22 +488,38 @@ function saveToDisk() {
       if (!fs.existsSync(DATA_DIR)) {
         fs.mkdirSync(DATA_DIR, { recursive: true });
       }
+      const existingDisk = loadFromDisk() || {};
+      const baseProdsToSave =
+        Array.isArray(globalStore.__bmgh_agent_base_products) && globalStore.__bmgh_agent_base_products.length > 0
+          ? globalStore.__bmgh_agent_base_products
+          : existingDisk.agent_base_products || initialAgentBaseProducts;
+      const agentProdsToSave =
+        Array.isArray(globalStore.__bmgh_agent_products) && globalStore.__bmgh_agent_products.length > 0
+          ? globalStore.__bmgh_agent_products
+          : existingDisk.agent_products || [];
+      const agentsToSave =
+        Array.isArray(globalStore.__bmgh_agents) && globalStore.__bmgh_agents.length > 0
+          ? globalStore.__bmgh_agents
+          : existingDisk.agents || initialAgents;
+
       const dataToSave = {
-        settings: globalStore.__bmgh_settings,
-        products: globalStore.__bmgh_products,
-        orders: globalStore.__bmgh_orders,
-        messages: globalStore.__bmgh_messages,
-        vouchers: globalStore.__bmgh_vouchers,
-        voucher_claims: globalStore.__bmgh_voucher_claims,
-        agent_config: globalStore.__bmgh_agent_config,
-        agent_base_products: globalStore.__bmgh_agent_base_products,
-        agents: globalStore.__bmgh_agents,
-        agent_products: globalStore.__bmgh_agent_products,
-        agent_orders: globalStore.__bmgh_agent_orders,
-        agent_withdrawals: globalStore.__bmgh_agent_withdrawals,
-        developer_api_config: globalStore.__bmgh_developer_api_config,
-        developer_api_products: globalStore.__bmgh_developer_api_products,
-        developer_accounts: globalStore.__bmgh_developer_accounts,
+        settings: globalStore.__bmgh_settings || existingDisk.settings,
+        products: globalStore.__bmgh_products || existingDisk.products,
+        orders: globalStore.__bmgh_orders || existingDisk.orders,
+        messages: globalStore.__bmgh_messages || existingDisk.messages,
+        vouchers: globalStore.__bmgh_vouchers || existingDisk.vouchers,
+        voucher_claims: globalStore.__bmgh_voucher_claims || existingDisk.voucher_claims,
+        agent_config: globalStore.__bmgh_agent_config || existingDisk.agent_config,
+        agent_base_products: baseProdsToSave,
+        agents: agentsToSave,
+        agent_products: agentProdsToSave,
+        agent_orders: globalStore.__bmgh_agent_orders || existingDisk.agent_orders,
+        agent_withdrawals: globalStore.__bmgh_agent_withdrawals || existingDisk.agent_withdrawals,
+        developer_api_config: globalStore.__bmgh_developer_api_config || existingDisk.developer_api_config,
+        developer_api_products: globalStore.__bmgh_developer_api_products || existingDisk.developer_api_products,
+        developer_accounts: globalStore.__bmgh_developer_accounts || existingDisk.developer_accounts,
+        customers: globalStore.__bmgh_customers || existingDisk.customers,
+        customer_transactions: globalStore.__bmgh_customer_transactions || existingDisk.customer_transactions,
       };
       fs.writeFileSync(STORE_FILE, JSON.stringify(dataToSave, null, 2), "utf-8");
     }
@@ -490,13 +546,21 @@ if (!globalStore.__bmgh_agent_config) {
     registration_fee: 0 
   };
 }
-if (!globalStore.__bmgh_agent_base_products) {
-  globalStore.__bmgh_agent_base_products = diskData?.agent_base_products || initialAgentBaseProducts;
+if (!globalStore.__bmgh_agent_base_products || globalStore.__bmgh_agent_base_products.length === 0) {
+  globalStore.__bmgh_agent_base_products =
+    diskData?.agent_base_products && diskData.agent_base_products.length > 0
+      ? diskData.agent_base_products
+      : initialAgentBaseProducts;
 }
 if (!globalStore.__bmgh_agents || globalStore.__bmgh_agents.length === 0) {
   globalStore.__bmgh_agents = (diskData?.agents && diskData.agents.length > 0) ? diskData.agents : [...initialAgents];
 }
-if (!globalStore.__bmgh_agent_products) globalStore.__bmgh_agent_products = diskData?.agent_products || [];
+if (!globalStore.__bmgh_agent_products || globalStore.__bmgh_agent_products.length === 0) {
+  globalStore.__bmgh_agent_products =
+    diskData?.agent_products && diskData.agent_products.length > 0
+      ? diskData.agent_products
+      : [];
+}
 if (!globalStore.__bmgh_agent_orders) globalStore.__bmgh_agent_orders = diskData?.agent_orders || [];
 if (!globalStore.__bmgh_agent_withdrawals) globalStore.__bmgh_agent_withdrawals = diskData?.agent_withdrawals || [];
 if (!globalStore.__bmgh_developer_api_config) {
@@ -512,6 +576,12 @@ if (!globalStore.__bmgh_developer_api_products) {
 }
 if (!globalStore.__bmgh_developer_accounts) {
   globalStore.__bmgh_developer_accounts = diskData?.developer_accounts || [];
+}
+if (!globalStore.__bmgh_customers) {
+  globalStore.__bmgh_customers = diskData?.customers || [];
+}
+if (!globalStore.__bmgh_customer_transactions) {
+  globalStore.__bmgh_customer_transactions = diskData?.customer_transactions || [];
 }
 
 // ================= HIGH-PERFORMANCE EGRESS PROTECTION & SERVER TTL CACHE =================
@@ -529,6 +599,8 @@ const CACHE_TTLS = {
   agent_orders: 60 * 1000,               // 60 seconds
   agent_withdrawals: 60 * 1000,          // 60 seconds
   messages: 60 * 1000,                   // 60 seconds
+  customers: 30 * 1000,                  // 30 seconds
+  customer_transactions: 30 * 1000,      // 30 seconds
 };
 
 const memCacheTimestamps: Record<string, number> = ((globalThis as any).__bmgh_cache_ts =
@@ -1879,9 +1951,32 @@ export const db = {
   },
 
   async getAgentBaseProducts(): Promise<AgentBaseProduct[]> {
-    if (isCacheFresh("agent_base_products", CACHE_TTLS.agent_base_products) && globalStore.__bmgh_agent_base_products && globalStore.__bmgh_agent_base_products.length > 0) {
+    if (
+      isCacheFresh("agent_base_products", CACHE_TTLS.agent_base_products) &&
+      Array.isArray(globalStore.__bmgh_agent_base_products) &&
+      globalStore.__bmgh_agent_base_products.length > 0
+    ) {
       return globalStore.__bmgh_agent_base_products;
     }
+
+    let mergedList: AgentBaseProduct[] = [];
+    if (Array.isArray(globalStore.__bmgh_agent_base_products) && globalStore.__bmgh_agent_base_products.length > 0) {
+      mergedList = [...globalStore.__bmgh_agent_base_products];
+    } else {
+      const disk = loadFromDisk();
+      if (Array.isArray(disk?.agent_base_products) && disk.agent_base_products.length > 0) {
+        mergedList = [...disk.agent_base_products];
+      } else {
+        mergedList = [...initialAgentBaseProducts];
+      }
+    }
+
+    const baseMap = new Map<string, AgentBaseProduct>();
+    mergedList.forEach((bp) => {
+      const compKey = `${(bp.network || "").toLowerCase().trim()}_${(bp.size || "").toLowerCase().trim().replace(/\s+/g, "")}`;
+      baseMap.set(bp.id, bp);
+      baseMap.set(compKey, bp);
+    });
 
     if (isSupabaseConfigured && supabaseAdmin) {
       // 1. Try direct agent_base_products table
@@ -1890,20 +1985,31 @@ export const db = {
           .from("agent_base_products")
           .select("*");
         if (!dbErr && Array.isArray(directBase) && directBase.length > 0) {
-          const mapped: AgentBaseProduct[] = directBase.map((b: any) => ({
-            id: b.id,
-            network: b.network,
-            size: b.size,
-            base_price: Number(b.base_price),
-            suggested_price: b.suggested_price ? Number(b.suggested_price) : Number(b.base_price) + 1.0,
-            is_active: b.is_active !== false,
-            created_at: b.created_at || new Date().toISOString(),
-          }));
-          globalStore.__bmgh_agent_base_products = mapped;
-          markCacheFresh("agent_base_products");
-          return mapped;
+          directBase.forEach((b: any) => {
+            const compKey = `${(b.network || "").toLowerCase().trim()}_${(b.size || "").toLowerCase().trim().replace(/\s+/g, "")}`;
+            const existing = baseMap.get(b.id) || baseMap.get(compKey);
+            if (existing) {
+              existing.base_price = Number(b.base_price);
+              if (b.suggested_price) existing.suggested_price = Number(b.suggested_price);
+              if (b.is_active !== undefined) existing.is_active = b.is_active !== false;
+            } else {
+              const item: AgentBaseProduct = {
+                id: b.id,
+                network: b.network,
+                size: b.size,
+                base_price: Number(b.base_price),
+                suggested_price: b.suggested_price ? Number(b.suggested_price) : Number(b.base_price) + 1.0,
+                is_active: b.is_active !== false,
+                created_at: b.created_at || new Date().toISOString(),
+              };
+              baseMap.set(b.id, item);
+              baseMap.set(compKey, item);
+            }
+          });
         }
-      } catch {}
+      } catch (err) {
+        console.warn("Base products Supabase fetch error:", err);
+      }
 
       // 2. Try settings row
       try {
@@ -1916,39 +2022,107 @@ export const db = {
           try {
             const list = JSON.parse(data.announcement_text);
             if (Array.isArray(list) && list.length > 0) {
-              globalStore.__bmgh_agent_base_products = list;
-              markCacheFresh("agent_base_products");
-              return list;
+              list.forEach((b: any) => {
+                const compKey = `${(b.network || "").toLowerCase().trim()}_${(b.size || "").toLowerCase().trim().replace(/\s+/g, "")}`;
+                const existing = baseMap.get(b.id) || baseMap.get(compKey);
+                if (existing) {
+                  existing.base_price = Number(b.base_price);
+                  if (b.suggested_price) existing.suggested_price = Number(b.suggested_price);
+                  if (b.is_active !== undefined) existing.is_active = b.is_active !== false;
+                } else {
+                  const item: AgentBaseProduct = {
+                    id: b.id,
+                    network: b.network,
+                    size: b.size,
+                    base_price: Number(b.base_price),
+                    suggested_price: b.suggested_price ? Number(b.suggested_price) : Number(b.base_price) + 1.0,
+                    is_active: b.is_active !== false,
+                    created_at: b.created_at || new Date().toISOString(),
+                  };
+                  baseMap.set(b.id, item);
+                  baseMap.set(compKey, item);
+                }
+              });
             }
           } catch {}
         }
       } catch (err) {
-        console.warn("Base products Supabase fetch error:", err);
+        console.warn("Base products Supabase settings fetch error:", err);
       }
     }
 
+    const uniqueMap = new Map<string, AgentBaseProduct>();
+    Array.from(baseMap.values()).forEach((p) => {
+      uniqueMap.set(p.id, p);
+    });
+    const finalResult = Array.from(uniqueMap.values());
+
+    globalStore.__bmgh_agent_base_products = finalResult;
     markCacheFresh("agent_base_products");
-    const current =
-      globalStore.__bmgh_agent_base_products && globalStore.__bmgh_agent_base_products.length > 0
-        ? globalStore.__bmgh_agent_base_products
-        : initialAgentBaseProducts;
-    globalStore.__bmgh_agent_base_products = current;
-    markCacheFresh("agent_base_products");
-    return current;
+    saveToDisk();
+    return finalResult;
   },
 
   async createAgentBaseProduct(p: Omit<AgentBaseProduct, "id" | "created_at">): Promise<AgentBaseProduct> {
     invalidateDbCache("agent_base_products");
     invalidateDbCache("agent_products");
     const list = await this.getAgentBaseProducts();
-    const newProduct: AgentBaseProduct = {
-      ...p,
-      id: "abp-" + crypto.randomUUID().slice(0, 8),
-      created_at: new Date().toISOString(),
-    };
-    list.push(newProduct);
+    const cleanNetwork = p.network.toLowerCase().trim();
+    const cleanSize = p.size.trim();
+    const compKey = `${cleanNetwork}_${cleanSize.toLowerCase().replace(/\s+/g, "")}`;
+
+    const existing = list.find((bp) => {
+      const k = `${(bp.network || "").toLowerCase().trim()}_${(bp.size || "").toLowerCase().trim().replace(/\s+/g, "")}`;
+      return k === compKey;
+    });
+
+    let newProduct: AgentBaseProduct;
+    if (existing) {
+      existing.base_price = Number(p.base_price);
+      existing.suggested_price = p.suggested_price ? Number(p.suggested_price) : Number(p.base_price) + 1.0;
+      existing.is_active = p.is_active !== false;
+      newProduct = existing;
+    } else {
+      newProduct = {
+        ...p,
+        network: cleanNetwork,
+        size: cleanSize,
+        id: "abp-" + crypto.randomUUID().slice(0, 8),
+        created_at: new Date().toISOString(),
+      };
+      list.push(newProduct);
+    }
+
     globalStore.__bmgh_agent_base_products = list;
     invalidateDbCache("agent_base_products");
+
+    // Immediately register this base product in all agents' catalogs
+    try {
+      const agents = await this.getAgents();
+      if (!globalStore.__bmgh_agent_products) globalStore.__bmgh_agent_products = [];
+      agents.forEach((ag) => {
+        const hasProd = globalStore.__bmgh_agent_products!.find(
+          (ap) => (ap.agent_id === ag.id || ap.agent_id === ag.store_slug) && ap.base_product_id === newProduct.id
+        );
+        if (!hasProd) {
+          globalStore.__bmgh_agent_products!.push({
+            id: "acp-" + crypto.randomUUID().slice(0, 8),
+            agent_id: ag.id,
+            base_product_id: newProduct.id,
+            network: newProduct.network,
+            size: newProduct.size,
+            base_price: newProduct.base_price,
+            selling_price: newProduct.suggested_price || newProduct.base_price + 1.0,
+            is_active: newProduct.is_active,
+          });
+        } else {
+          hasProd.base_price = newProduct.base_price;
+          hasProd.network = newProduct.network;
+          hasProd.size = newProduct.size;
+        }
+      });
+    } catch {}
+
     saveToDisk();
 
     if (isSupabaseConfigured && supabaseAdmin) {
@@ -1975,6 +2149,17 @@ export const db = {
       } catch (err) {
         console.warn("Agent base products Supabase save error:", err);
       }
+
+      try {
+        await supabaseAdmin.from("settings").upsert({
+          id: "agent_products_registry_config",
+          store_name: "AgentProductsRegistry",
+          support_phone: "+233551234567",
+          whatsapp_number: "233551234567",
+          email: "support@bundlemartgh.com",
+          announcement_text: JSON.stringify(globalStore.__bmgh_agent_products || []),
+        });
+      } catch {}
     }
 
     return newProduct;
@@ -2737,7 +2922,8 @@ export const db = {
     const cleanId = (agentId || "").trim();
     let canonicalId = cleanId;
     let canonicalSlug = cleanId.toLowerCase();
-    const matchedAgent = (globalStore.__bmgh_agents || initialAgents).find(
+    const allAgents = await this.getAgents();
+    const matchedAgent = allAgents.find(
       (a) => a.id === cleanId || a.store_slug.toLowerCase() === cleanId.toLowerCase()
     );
     if (matchedAgent) {
@@ -2752,15 +2938,32 @@ export const db = {
       const filtered = globalStore.__bmgh_agent_products.filter(
         (p) => isTargetAgent(p.agent_id) && baseProductIds.has(p.base_product_id)
       );
-      if (filtered.length > 0) {
+      if (filtered.length >= baseProducts.length && filtered.length > 0) {
         return filtered;
       }
     }
 
     const productMap = new Map<string, AgentCustomProduct>();
 
+    // 1. Load from disk & memory as persistent base layer
+    const disk = loadFromDisk();
+    const diskAgentProducts: AgentCustomProduct[] = Array.isArray(disk?.agent_products) ? disk.agent_products : [];
+    const memoryAgentProducts: AgentCustomProduct[] = Array.isArray(globalStore.__bmgh_agent_products) ? globalStore.__bmgh_agent_products : [];
+
+    [...diskAgentProducts, ...memoryAgentProducts]
+      .filter((p) => isTargetAgent(p.agent_id) && baseProductIds.has(p.base_product_id))
+      .forEach((p) => {
+        productMap.set(p.base_product_id, {
+          ...p,
+          agent_id: canonicalId,
+          base_price: Number(p.base_price),
+          selling_price: Number(p.selling_price),
+          is_active: p.is_active !== false,
+        });
+      });
+
+    // 2. Overlay from Supabase if configured
     if (isSupabaseConfigured && supabaseAdmin) {
-      // 1. First, read direct agent_products table as the base layer
       try {
         const { data: directProds, error: dpErr } = await supabaseAdmin
           .from("agent_products")
@@ -2768,7 +2971,6 @@ export const db = {
           .or(`agent_id.eq.${canonicalId},agent_id.eq.${canonicalSlug}`);
         if (!dpErr && Array.isArray(directProds) && directProds.length > 0) {
           directProds.forEach((dp: any) => {
-            // STRICT FILTER: Only load if base product actually exists!
             if (baseProductIds.has(dp.base_product_id)) {
               productMap.set(dp.base_product_id, {
                 id: dp.id,
@@ -2785,8 +2987,6 @@ export const db = {
         }
       } catch {}
 
-      // 2. OVERLAY with settings config row
-      // This MUST run after agent_products table so custom retail prices saved by the agent in their dashboard always win and are never clobbered by older rows!
       try {
         const { data } = await supabaseAdmin
           .from("settings")
@@ -2797,8 +2997,6 @@ export const db = {
           try {
             const list = JSON.parse(data.announcement_text);
             if (Array.isArray(list)) {
-              // Sanitize globalStore to strip any deleted base products
-              globalStore.__bmgh_agent_products = list.filter((p: any) => baseProductIds.has(p.base_product_id));
               list
                 .filter((p: any) => isTargetAgent(p.agent_id) && baseProductIds.has(p.base_product_id))
                 .forEach((p: any) => {
@@ -2819,18 +3017,7 @@ export const db = {
       } catch (err) {}
     }
 
-    // 3. Fallback to memory store if productMap is missing entries
-    if (globalStore.__bmgh_agent_products) {
-      globalStore.__bmgh_agent_products
-        .filter((p) => isTargetAgent(p.agent_id) && baseProductIds.has(p.base_product_id))
-        .forEach((p) => {
-          if (!productMap.has(p.base_product_id)) {
-            productMap.set(p.base_product_id, { ...p, agent_id: canonicalId });
-          }
-        });
-    }
-
-    // 4. Ensure ALL base products exist in the catalog
+    // 3. Ensure ALL base products exist in the catalog
     let hasChanges = false;
     baseProducts.forEach((bp) => {
       const existing = productMap.get(bp.id);
@@ -2852,19 +3039,31 @@ export const db = {
           existing.base_price = bp.base_price;
           hasChanges = true;
         }
+        if (existing.network !== bp.network) {
+          existing.network = bp.network;
+        }
+        if (existing.size !== bp.size) {
+          existing.size = bp.size;
+        }
       }
     });
 
-    // 5. Direct Agent custom_prices override (only fallback for products not yet configured in productMap)
-    const current = matchedAgent || initialAgents.find((a) => isTargetAgent(a.id) || isTargetAgent(a.store_slug));
+    // 4. CRITICAL FIX: Direct Agent custom_prices override ALWAYS WINS!
+    const current = matchedAgent || allAgents.find((a) => isTargetAgent(a.id) || isTargetAgent(a.store_slug));
     if (current?.custom_prices) {
       baseProducts.forEach((bp) => {
         const directPrice =
           current.custom_prices?.[bp.id] ??
-          current.custom_prices?.[`${bp.network.toLowerCase()}_${bp.size.toLowerCase()}`];
+          current.custom_prices?.[`${bp.network.toLowerCase()}_${bp.size.toLowerCase()}`] ??
+          current.custom_prices?.[`${bp.network.toLowerCase()}_${bp.size.toLowerCase().replace(/\s+/g, "")}`];
         if (directPrice !== undefined && Number(directPrice) > 0) {
-          const matched = productMap.get(bp.id);
-          if (!matched) {
+          const item = productMap.get(bp.id);
+          if (item) {
+            if (item.selling_price !== Number(directPrice)) {
+              item.selling_price = Number(directPrice);
+              hasChanges = true;
+            }
+          } else {
             productMap.set(bp.id, {
               id: "acp-" + crypto.randomUUID().slice(0, 8),
               agent_id: canonicalId,
@@ -2881,25 +3080,9 @@ export const db = {
       });
     }
 
-    // CRITICAL: Filter result strictly so orphaned/deleted base products can NEVER be returned!
     let result = Array.from(productMap.values()).filter((p) => baseProductIds.has(p.base_product_id));
 
-    // Absolute fallback: If result is somehow empty, generate directly from baseProducts
-    if (result.length === 0 && baseProducts.length > 0) {
-      result = baseProducts.map((bp) => ({
-        id: "acp-" + crypto.randomUUID().slice(0, 8),
-        agent_id: canonicalId,
-        base_product_id: bp.id,
-        network: bp.network,
-        size: bp.size,
-        base_price: bp.base_price,
-        selling_price: bp.suggested_price || bp.base_price + 1.0,
-        is_active: bp.is_active,
-      }));
-      hasChanges = true;
-    }
-
-    // Sort strictly by network and package size (1GB, 2GB, 3GB, 5GB, 10GB) so items never jump to the bottom
+    // Sort strictly by network and package size (1GB, 2GB, 3GB, 5GB, 10GB, etc.)
     result.sort((a, b) => {
       const na = (a.network || "").toLowerCase();
       const nb = (b.network || "").toLowerCase();
@@ -2910,27 +3093,26 @@ export const db = {
       return (Number(a.base_price) || 0) - (Number(b.base_price) || 0);
     });
 
-    // Update globalStore cache (strictly keeping only active base products)
+    // Safely update globalStore without clobbering other agents' custom products
     if (!globalStore.__bmgh_agent_products) globalStore.__bmgh_agent_products = [];
     globalStore.__bmgh_agent_products = [
       ...globalStore.__bmgh_agent_products.filter((p) => !isTargetAgent(p.agent_id) && baseProductIds.has(p.base_product_id)),
       ...result,
     ];
 
-    if (hasChanges) {
-      saveToDisk();
-      if (isSupabaseConfigured && supabaseAdmin) {
-        try {
-          await supabaseAdmin.from("settings").upsert({
-            id: "agent_products_registry_config",
-            store_name: "AgentProductsRegistry",
-            support_phone: "+233551234567",
-            whatsapp_number: "233551234567",
-            email: "support@bundlemartgh.com",
-            announcement_text: JSON.stringify(globalStore.__bmgh_agent_products),
-          });
-        } catch {}
-      }
+    saveToDisk();
+
+    if (hasChanges && isSupabaseConfigured && supabaseAdmin) {
+      try {
+        await supabaseAdmin.from("settings").upsert({
+          id: "agent_products_registry_config",
+          store_name: "AgentProductsRegistry",
+          support_phone: "+233551234567",
+          whatsapp_number: "233551234567",
+          email: "support@bundlemartgh.com",
+          announcement_text: JSON.stringify(globalStore.__bmgh_agent_products),
+        });
+      } catch {}
     }
 
     markCacheFresh(cacheKey);
@@ -2943,66 +3125,113 @@ export const db = {
     sellingPrice: number,
     isActive: boolean
   ): Promise<AgentCustomProduct | null> {
-    invalidateDbCache(`agent_products:${agentId}`);
+    const list = await this.updateAgentProductsBatch(agentId, [
+      { base_product_id: baseProductId, selling_price: sellingPrice, is_active: isActive },
+    ]);
+    return list[0] || null;
+  },
+
+  async updateAgentProductsBatch(
+    agentId: string,
+    productsToUpdate: Array<{ base_product_id: string; selling_price: number; is_active?: boolean }>
+  ): Promise<AgentCustomProduct[]> {
+    const cleanId = (agentId || "").trim();
+    let canonicalId = cleanId;
+    let canonicalSlug = cleanId.toLowerCase();
+    const allAgents = await this.getAgents();
+    const matchedAgent = allAgents.find(
+      (a) => a.id === cleanId || a.store_slug.toLowerCase() === cleanId.toLowerCase()
+    );
+    if (matchedAgent) {
+      canonicalId = matchedAgent.id;
+      canonicalSlug = matchedAgent.store_slug.toLowerCase();
+    }
+    const isTargetAgent = (pAgentId: string) =>
+      pAgentId === canonicalId || pAgentId?.toLowerCase() === canonicalSlug || pAgentId === cleanId;
+
+    invalidateDbCache(`agent_products:${canonicalId}`);
+    invalidateDbCache(`agent_products:${canonicalSlug}`);
+    invalidateDbCache(`agent_products:${cleanId}`);
     invalidateDbCache("agent_products");
     invalidateDbCache("agents");
 
     // 1. Ensure latest catalog for this agent is loaded
-    await this.getAgentProducts(agentId);
+    await this.getAgentProducts(canonicalId);
 
     const baseProducts = await this.getAgentBaseProducts();
-    const bp = baseProducts.find((b) => b.id === baseProductId);
+    const baseMap = new Map(baseProducts.map((b) => [b.id, b]));
 
-    const list = globalStore.__bmgh_agent_products || [];
-    let item = list.find((p) => p.agent_id === agentId && p.base_product_id === baseProductId);
-    const numPrice = Number(sellingPrice);
-    const validSellingPrice =
-      !isNaN(numPrice) && numPrice > 0
-        ? numPrice
-        : bp
-        ? bp.suggested_price || bp.base_price + 1.0
-        : 5.0;
+    if (!globalStore.__bmgh_agent_products) globalStore.__bmgh_agent_products = [];
+    const list = globalStore.__bmgh_agent_products;
 
-    if (!item) {
-      if (!bp) return null;
-      item = {
-        id: "acp-" + crypto.randomUUID().slice(0, 8),
-        agent_id: agentId,
-        base_product_id: bp.id,
-        network: bp.network,
-        size: bp.size,
-        base_price: bp.base_price,
-        selling_price: validSellingPrice,
-        is_active: isActive,
-      };
-      list.push(item);
-    } else {
-      if (bp) {
-        item.base_price = bp.base_price;
+    const updatedItems: AgentCustomProduct[] = [];
+
+    // Ensure agent custom_prices map is initialized
+    const targetAgent = matchedAgent || allAgents.find((a) => isTargetAgent(a.id) || isTargetAgent(a.store_slug));
+    if (targetAgent && !targetAgent.custom_prices) {
+      targetAgent.custom_prices = {};
+    }
+
+    for (const update of productsToUpdate) {
+      const { base_product_id, selling_price, is_active } = update;
+      const bp = baseMap.get(base_product_id);
+
+      let item = list.find((p) => isTargetAgent(p.agent_id) && p.base_product_id === base_product_id);
+      const numPrice = Number(selling_price);
+      const validSellingPrice =
+        !isNaN(numPrice) && numPrice > 0
+          ? numPrice
+          : bp
+          ? bp.suggested_price || bp.base_price + 1.0
+          : 5.0;
+      const validActive = is_active !== undefined ? is_active : (item?.is_active !== false);
+
+      if (!item) {
+        if (!bp) continue;
+        item = {
+          id: "acp-" + crypto.randomUUID().slice(0, 8),
+          agent_id: canonicalId,
+          base_product_id: bp.id,
+          network: bp.network,
+          size: bp.size,
+          base_price: bp.base_price,
+          selling_price: validSellingPrice,
+          is_active: validActive,
+        };
+        list.push(item);
+      } else {
+        item.agent_id = canonicalId;
+        if (bp) {
+          item.base_price = bp.base_price;
+          item.network = bp.network;
+          item.size = bp.size;
+        }
+        item.selling_price = validSellingPrice;
+        item.is_active = validActive;
       }
-      item.selling_price = validSellingPrice;
-      item.is_active = isActive;
+      updatedItems.push(item);
+
+      if (targetAgent) {
+        targetAgent.custom_prices[base_product_id] = validSellingPrice;
+        if (bp) {
+          const key1 = `${bp.network.toLowerCase()}_${bp.size.toLowerCase()}`;
+          const key2 = `${bp.network.toLowerCase()}_${bp.size.toLowerCase().replace(/\s+/g, "")}`;
+          targetAgent.custom_prices[key1] = validSellingPrice;
+          targetAgent.custom_prices[key2] = validSellingPrice;
+        }
+      }
     }
 
     globalStore.__bmgh_agent_products = list;
+
+    if (targetAgent) {
+      await this.updateAgent(targetAgent.id, { custom_prices: targetAgent.custom_prices });
+    }
+
     saveToDisk();
 
-    // Synchronize agent's custom_prices dictionary
-    try {
-      const allAgents = await this.getAgents();
-      const ag = allAgents.find((a) => a.id === agentId || a.store_slug === agentId);
-      if (ag) {
-        if (!ag.custom_prices) ag.custom_prices = {};
-        ag.custom_prices[baseProductId] = validSellingPrice;
-        if (bp) {
-          ag.custom_prices[`${bp.network.toLowerCase()}_${bp.size.toLowerCase()}`] = validSellingPrice;
-        }
-        await this.updateAgent(ag.id, { custom_prices: ag.custom_prices });
-      }
-    } catch {}
-
+    // Sync to Supabase if configured
     if (isSupabaseConfigured && supabaseAdmin) {
-      // 1. Save to settings config row first (guaranteed single source of truth across Vercel serverless)
       try {
         await supabaseAdmin.from("settings").upsert({
           id: "agent_products_registry_config",
@@ -3016,30 +3245,35 @@ export const db = {
         console.warn("Agent custom products Supabase settings update error:", err);
       }
 
-      // 2. Cleanly synchronize direct agent_products table: delete any stale rows for this item, then re-insert
-      try {
-        await supabaseAdmin
-          .from("agent_products")
-          .delete()
-          .eq("agent_id", agentId)
-          .eq("base_product_id", baseProductId);
+      for (const item of updatedItems) {
+        try {
+          await supabaseAdmin
+            .from("agent_products")
+            .delete()
+            .or(`agent_id.eq.${canonicalId},agent_id.eq.${canonicalSlug}`)
+            .eq("base_product_id", item.base_product_id);
 
-        await supabaseAdmin.from("agent_products").insert({
-          id: item.id,
-          agent_id: agentId,
-          base_product_id: baseProductId,
-          network: item.network,
-          size: item.size,
-          base_price: item.base_price,
-          selling_price: item.selling_price,
-          is_active: item.is_active,
-        });
-      } catch (directErr) {
-        console.warn("Direct agent_products table sync warning:", directErr);
+          await supabaseAdmin.from("agent_products").insert({
+            id: item.id,
+            agent_id: canonicalId,
+            base_product_id: item.base_product_id,
+            network: item.network,
+            size: item.size,
+            base_price: item.base_price,
+            selling_price: item.selling_price,
+            is_active: item.is_active,
+          });
+        } catch (directErr) {
+          console.warn("Direct agent_products table sync warning:", directErr);
+        }
       }
     }
 
-    return item;
+    invalidateDbCache(`agent_products:${canonicalId}`);
+    invalidateDbCache(`agent_products:${canonicalSlug}`);
+    invalidateDbCache(`agent_products:${cleanId}`);
+
+    return updatedItems;
   },
 
   // AGENT ORDERS
@@ -3902,6 +4136,286 @@ export const db = {
       new_balance: acc.balance,
       message: `Developer wallet successfully ${num >= 0 ? "credited" : "debited"} by GHS ${Math.abs(num).toFixed(2)}.`,
     };
+  },
+
+  // ================= CUSTOMERS & WALLET SYSTEM =================
+  async getCustomers(): Promise<Customer[]> {
+    if (isCacheFresh("customers", CACHE_TTLS.customers) && globalStore.__bmgh_customers) {
+      return globalStore.__bmgh_customers;
+    }
+
+    if (isSupabaseConfigured && supabaseAdmin) {
+      try {
+        const { data, error } = await supabaseAdmin
+          .from("customers")
+          .select("*")
+          .order("created_at", { ascending: false });
+        if (!error && Array.isArray(data)) {
+          globalStore.__bmgh_customers = data.map((c: any) => ({
+            ...c,
+            wallet_balance: Number(c.wallet_balance || 0),
+          }));
+          markCacheFresh("customers");
+          saveToDisk();
+          return globalStore.__bmgh_customers;
+        }
+      } catch (err) {
+        console.warn("Supabase customers fetch error:", err);
+      }
+    }
+
+    if (!globalStore.__bmgh_customers) globalStore.__bmgh_customers = [];
+    markCacheFresh("customers");
+    return globalStore.__bmgh_customers;
+  },
+
+  async getCustomerById(id: string): Promise<Customer | null> {
+    const cleanId = String(id).trim();
+    if (isSupabaseConfigured && supabaseAdmin) {
+      try {
+        const { data, error } = await supabaseAdmin
+          .from("customers")
+          .select("*")
+          .eq("id", cleanId)
+          .maybeSingle();
+        if (!error && data) {
+          const cust: Customer = { ...data, wallet_balance: Number(data.wallet_balance || 0) };
+          const all = await this.getCustomers();
+          const idx = all.findIndex((c) => c.id === cleanId);
+          if (idx !== -1) all[idx] = cust;
+          else all.unshift(cust);
+          return cust;
+        }
+      } catch {}
+    }
+    const all = await this.getCustomers();
+    return all.find((c) => c.id === cleanId) || null;
+  },
+
+  async getCustomerByPhone(phone: string): Promise<Customer | null> {
+    const clean = phone.replace(/[^0-9]/g, "");
+    if (!clean) return null;
+    const all = await this.getCustomers();
+    return (
+      all.find((c) => {
+        const cPhone = c.phone.replace(/[^0-9]/g, "");
+        return cPhone === clean || (clean.length >= 9 && cPhone.endsWith(clean.slice(-9)));
+      }) || null
+    );
+  },
+
+  async getCustomerByEmail(email: string): Promise<Customer | null> {
+    const clean = email.toLowerCase().trim();
+    if (!clean) return null;
+    const all = await this.getCustomers();
+    return all.find((c) => c.email && c.email.toLowerCase().trim() === clean) || null;
+  },
+
+  async getCustomerByGoogleId(googleId: string): Promise<Customer | null> {
+    const clean = String(googleId).trim();
+    if (!clean) return null;
+    const all = await this.getCustomers();
+    return all.find((c) => c.google_id && c.google_id === clean) || null;
+  },
+
+  async createCustomer(
+    data: Omit<Customer, "id" | "wallet_balance" | "is_active" | "created_at"> & {
+      wallet_balance?: number;
+      is_active?: boolean;
+      is_verified?: boolean;
+    }
+  ): Promise<Customer> {
+    const newCustomer: Customer = {
+      ...data,
+      id: "cust-" + crypto.randomUUID().slice(0, 8),
+      phone: (data.phone || "").replace(/[^0-9]/g, ""),
+      wallet_balance: data.wallet_balance !== undefined ? data.wallet_balance : 0,
+      is_active: data.is_active !== undefined ? data.is_active : true,
+      is_verified: data.is_verified !== undefined ? data.is_verified : false,
+      provider: data.provider || "local",
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    if (!globalStore.__bmgh_customers) globalStore.__bmgh_customers = [];
+    globalStore.__bmgh_customers.unshift(newCustomer);
+    invalidateServerCache("customers");
+    saveToDisk();
+
+    if (isSupabaseConfigured && supabaseAdmin) {
+      try {
+        await supabaseAdmin.from("customers").insert([newCustomer]);
+      } catch (err) {
+        console.warn("Supabase customer create error:", err);
+      }
+    }
+
+    return newCustomer;
+  },
+
+  async updateCustomer(id: string, updates: Partial<Customer>): Promise<Customer | null> {
+    invalidateServerCache("customers");
+    const all = await this.getCustomers();
+    const idx = all.findIndex((c) => c.id === id);
+    if (idx === -1) return null;
+
+    all[idx] = { ...all[idx], ...updates, updated_at: new Date().toISOString() };
+    saveToDisk();
+
+    if (isSupabaseConfigured && supabaseAdmin) {
+      try {
+        await supabaseAdmin
+          .from("customers")
+          .update({ ...updates, updated_at: new Date().toISOString() })
+          .eq("id", id);
+      } catch (err) {
+        console.warn("Supabase customer update error:", err);
+      }
+    }
+    return all[idx];
+  },
+
+  async creditCustomerWallet(
+    customerId: string,
+    amount: number,
+    reference: string,
+    paystackRef?: string,
+    description: string = "Wallet Deposit via Paystack"
+  ): Promise<{ success: boolean; customer: Customer; new_balance: number }> {
+    const cust = await this.getCustomerById(customerId);
+    if (!cust) throw new Error("Customer account not found");
+
+    const creditAmount = Number(amount);
+    if (isNaN(creditAmount) || creditAmount <= 0) throw new Error("Invalid deposit amount");
+
+    // Check duplicate reference in transactions
+    const txs = await this.getCustomerTransactions(customerId);
+    const existing = txs.find(
+      (t) => t.reference === reference || (paystackRef && t.paystack_ref === paystackRef)
+    );
+    if (existing) {
+      return { success: true, customer: cust, new_balance: cust.wallet_balance };
+    }
+
+    const newBalance = Number(((cust.wallet_balance || 0) + creditAmount).toFixed(2));
+    cust.wallet_balance = newBalance;
+    await this.updateCustomer(customerId, { wallet_balance: newBalance });
+
+    await this.createCustomerTransaction({
+      customer_id: customerId,
+      amount: creditAmount,
+      type: "deposit",
+      reference,
+      paystack_ref: paystackRef || reference,
+      status: "success",
+      description,
+    });
+
+    return { success: true, customer: cust, new_balance: newBalance };
+  },
+
+  async debitCustomerWallet(
+    customerId: string,
+    amount: number,
+    reference: string,
+    description: string = "Data Bundle Purchase"
+  ): Promise<{ success: boolean; customer: Customer; new_balance: number }> {
+    const cust = await this.getCustomerById(customerId);
+    if (!cust) throw new Error("Customer account not found");
+
+    const debitAmount = Number(amount);
+    if (isNaN(debitAmount) || debitAmount <= 0) throw new Error("Invalid debit amount");
+
+    if ((cust.wallet_balance || 0) < debitAmount) {
+      throw new Error(
+        `Insufficient wallet balance. You have GHS ${Number(cust.wallet_balance || 0).toFixed(2)}.`
+      );
+    }
+
+    const newBalance = Number(((cust.wallet_balance || 0) - debitAmount).toFixed(2));
+    cust.wallet_balance = newBalance;
+    await this.updateCustomer(customerId, { wallet_balance: newBalance });
+
+    await this.createCustomerTransaction({
+      customer_id: customerId,
+      amount: -debitAmount,
+      type: "purchase",
+      reference,
+      paystack_ref: "WALLET_BAL",
+      status: "success",
+      description,
+    });
+
+    return { success: true, customer: cust, new_balance: newBalance };
+  },
+
+  async getCustomerTransactions(customerId?: string): Promise<CustomerTransaction[]> {
+    if (
+      isCacheFresh("customer_transactions", CACHE_TTLS.customer_transactions) &&
+      globalStore.__bmgh_customer_transactions
+    ) {
+      if (customerId) {
+        return globalStore.__bmgh_customer_transactions.filter((t) => t.customer_id === customerId);
+      }
+      return globalStore.__bmgh_customer_transactions;
+    }
+
+    if (isSupabaseConfigured && supabaseAdmin) {
+      try {
+        let query = supabaseAdmin
+          .from("customer_transactions")
+          .select("*")
+          .order("created_at", { ascending: false });
+        if (customerId) {
+          query = query.eq("customer_id", customerId);
+        }
+        const { data, error } = await query;
+        if (!error && Array.isArray(data)) {
+          const list = data.map((t: any) => ({ ...t, amount: Number(t.amount || 0) }));
+          if (!customerId) {
+            globalStore.__bmgh_customer_transactions = list;
+            markCacheFresh("customer_transactions");
+            saveToDisk();
+          }
+          return list;
+        }
+      } catch (err) {
+        console.warn("Supabase customer_transactions fetch error:", err);
+      }
+    }
+
+    if (!globalStore.__bmgh_customer_transactions) globalStore.__bmgh_customer_transactions = [];
+    markCacheFresh("customer_transactions");
+    if (customerId) {
+      return globalStore.__bmgh_customer_transactions.filter((t) => t.customer_id === customerId);
+    }
+    return globalStore.__bmgh_customer_transactions;
+  },
+
+  async createCustomerTransaction(
+    data: Omit<CustomerTransaction, "id" | "created_at">
+  ): Promise<CustomerTransaction> {
+    const newTx: CustomerTransaction = {
+      ...data,
+      id: "ctx-" + crypto.randomUUID().slice(0, 8),
+      amount: Number(data.amount),
+      created_at: new Date().toISOString(),
+    };
+
+    if (!globalStore.__bmgh_customer_transactions) globalStore.__bmgh_customer_transactions = [];
+    globalStore.__bmgh_customer_transactions.unshift(newTx);
+    invalidateServerCache("customer_transactions");
+    saveToDisk();
+
+    if (isSupabaseConfigured && supabaseAdmin) {
+      try {
+        await supabaseAdmin.from("customer_transactions").insert([newTx]);
+      } catch (err) {
+        console.warn("Supabase customer transaction create error:", err);
+      }
+    }
+
+    return newTx;
   },
 };
 

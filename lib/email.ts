@@ -357,3 +357,106 @@ export async function sendDeveloperVerificationOtpEmail(
 
   return sendAgentEmail({ to: developerEmail, subject, html });
 }
+
+/**
+ * Send Customer Account Verification Code (Sign Up & Login)
+ */
+export async function sendCustomerVerificationEmail(
+  customerEmail: string,
+  customerName: string,
+  code: string,
+  purpose: "signup" | "login" = "signup"
+): Promise<EmailResult> {
+  const isSignup = purpose === "signup";
+  const subject = `[BundleMartGh] Your 6-Digit ${isSignup ? "Sign Up" : "Login"} Verification Code: ${code}`;
+
+  const html = `
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 540px; margin: 0 auto; padding: 28px; border: 1px solid #1e293b; border-radius: 20px; background-color: #0b1120; color: #f8fafc;">
+      <div style="text-align: center; margin-bottom: 24px;">
+        <div style="display: inline-block; padding: 6px 14px; background: rgba(245, 158, 11, 0.15); border: 1px solid rgba(245, 158, 11, 0.4); border-radius: 999px; margin-bottom: 12px;">
+          <span style="font-size: 11px; font-weight: 800; color: #fbbf24; text-transform: uppercase; letter-spacing: 1px;">BundleMartGh Security</span>
+        </div>
+        <h2 style="color: #ffffff; margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -0.5px;">Account Verification</h2>
+        <p style="color: #94a3b8; font-size: 13px; margin-top: 6px;">One-Time Verification Code</p>
+      </div>
+
+      <p style="color: #cbd5e1; font-size: 14px; line-height: 1.6;">Hello <strong>${customerName || "Customer"}</strong>,</p>
+      <p style="color: #cbd5e1; font-size: 14px; line-height: 1.6;">
+        ${
+          isSignup
+            ? "Thank you for creating an account on BundleMartGh! Please use the 6-digit verification code below to verify your account and activate your automated data wallet:"
+            : "You requested a verification code to sign into your BundleMartGh account. Use the code below to complete your login:"
+        }
+      </p>
+
+      <div style="background-color: #0f172a; border: 2px dashed #f59e0b; border-radius: 14px; padding: 20px; text-align: center; margin: 26px 0;">
+        <span style="font-family: 'SF Mono', Monaco, Consolas, monospace; font-size: 34px; font-weight: 900; letter-spacing: 8px; color: #fbbf24;">
+          ${code}
+        </span>
+        <p style="font-size: 11px; color: #94a3b8; margin: 8px 0 0;">Expires in 10 minutes • Valid for one-time use</p>
+      </div>
+
+      <div style="background-color: rgba(16, 185, 129, 0.1); border-left: 3px solid #10b981; border-radius: 8px; padding: 12px; margin-bottom: 20px;">
+        <p style="color: #6ee7b7; font-size: 12px; margin: 0; line-height: 1.5;">
+          <strong>Security Tip:</strong> Never share this code with anyone. BundleMartGh staff will never ask for your verification code.
+        </p>
+      </div>
+
+      <div style="border-top: 1px solid #1e293b; margin-top: 26px; padding-top: 18px; font-size: 11px; color: #64748b; text-align: center;">
+        BundleMartGh • Instant Automated MTN, Telecel & AT Data Bundles in Ghana
+      </div>
+    </div>
+  `;
+
+  return sendAgentEmail({ to: customerEmail, subject, html });
+}
+
+/**
+ * Send Customer Email Change Verification Code to OLD Email
+ */
+export async function sendEmailChangeOtpEmail(
+  oldEmail: string,
+  customerName: string,
+  newEmail: string,
+  code: string
+): Promise<EmailResult> {
+  const subject = `[BundleMartGh] Confirm Email Address Change: ${code}`;
+
+  const html = `
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 540px; margin: 0 auto; padding: 28px; border: 1px solid #1e293b; border-radius: 20px; background-color: #0b1120; color: #f8fafc;">
+      <div style="text-align: center; margin-bottom: 24px;">
+        <div style="display: inline-block; padding: 6px 14px; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.4); border-radius: 999px; margin-bottom: 12px;">
+          <span style="font-size: 11px; font-weight: 800; color: #f87171; text-transform: uppercase; letter-spacing: 1px;">Security Alert • Email Update</span>
+        </div>
+        <h2 style="color: #ffffff; margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -0.5px;">Confirm Email Change</h2>
+        <p style="color: #94a3b8; font-size: 13px; margin-top: 6px;">Authorization Required From Your Current Email</p>
+      </div>
+
+      <p style="color: #cbd5e1; font-size: 14px; line-height: 1.6;">Hello <strong>${customerName || "Customer"}</strong>,</p>
+      <p style="color: #cbd5e1; font-size: 14px; line-height: 1.6;">
+        A request was made to change the email address on your BundleMartGh account to:
+      </p>
+
+      <div style="background-color: #0f172a; border: 1px solid #334155; border-radius: 12px; padding: 12px 16px; margin: 16px 0; text-align: center;">
+        <span style="color: #38bdf8; font-weight: 800; font-size: 15px; font-family: monospace;">${newEmail}</span>
+      </div>
+
+      <p style="color: #cbd5e1; font-size: 14px; line-height: 1.6;">
+        To authorize this change, please enter the following 6-digit confirmation code in your account settings:
+      </p>
+
+      <div style="background-color: #0f172a; border: 2px dashed #f59e0b; border-radius: 14px; padding: 20px; text-align: center; margin: 24px 0;">
+        <span style="font-family: 'SF Mono', Monaco, Consolas, monospace; font-size: 34px; font-weight: 900; letter-spacing: 8px; color: #fbbf24;">
+          ${code}
+        </span>
+        <p style="font-size: 11px; color: #94a3b8; margin: 8px 0 0;">Expires in 10 minutes • If you did not request this, please change your password immediately.</p>
+      </div>
+
+      <div style="border-top: 1px solid #1e293b; margin-top: 26px; padding-top: 18px; font-size: 11px; color: #64748b; text-align: center;">
+        BundleMartGh • Instant Automated MTN, Telecel & AT Data Bundles in Ghana
+      </div>
+    </div>
+  `;
+
+  return sendAgentEmail({ to: oldEmail, subject, html });
+}

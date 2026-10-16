@@ -100,30 +100,40 @@ export default function FreeDataBanner() {
 
   return (
     <>
-      {/* Middle of Left Side Floating Docked Badge */}
+      {/* Middle of Left Side Floating Docked Badge with Vibrant Animations */}
       <div className="fixed top-1/2 -translate-y-1/2 left-0 z-40 pointer-events-auto">
         <button
           onClick={() => setIsModalOpen(true)}
-          className="group flex flex-col sm:flex-row items-center gap-1.5 sm:gap-2 pl-2.5 pr-3.5 py-3 rounded-r-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-indigo-700 text-white font-extrabold shadow-2xl shadow-emerald-950/60 hover:scale-105 active:scale-95 transition-all border-y border-r border-emerald-400/40 hover:border-emerald-300"
+          className="group relative overflow-hidden flex flex-col sm:flex-row items-center gap-1.5 sm:gap-2.5 pl-3 pr-4 py-3.5 rounded-r-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-indigo-700 text-white font-extrabold shadow-2xl shadow-emerald-500/50 hover:scale-110 active:scale-95 transition-all duration-300 border-y-2 border-r-2 border-emerald-300/60 hover:border-amber-300 animate-pulse hover:animate-none"
           title={voucher.tagline || "Claim Free Data Voucher"}
+          style={{
+            boxShadow: "0 0 20px rgba(16, 185, 129, 0.45), 0 0 40px rgba(99, 102, 241, 0.25)",
+          }}
         >
+          {/* Shimmer sweep animation overlay */}
+          <div className="absolute inset-0 -translate-x-full group-hover:translate-x-full transition-transform duration-1000 bg-gradient-to-r from-transparent via-white/30 to-transparent pointer-events-none" />
+
+          {/* Icon with bounce & glow */}
           <div className="relative flex items-center justify-center">
-            <Gift className="w-5 h-5 text-amber-300 group-hover:rotate-12 transition-transform drop-shadow" />
-            <span className="absolute -top-1 -right-1 flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-300"></span>
+            <Gift className="w-6 h-6 text-amber-300 animate-bounce drop-shadow-[0_2px_8px_rgba(251,191,36,0.8)]" />
+            <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-90"></span>
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-300 shadow-sm"></span>
             </span>
           </div>
 
           <div className="flex flex-col items-start leading-tight">
-            <span className="text-xs sm:text-sm font-black tracking-tight text-white uppercase drop-shadow-sm">
-              Free Data
-            </span>
+            <div className="flex items-center gap-1">
+              <span className="text-xs sm:text-sm font-black tracking-wider text-white uppercase drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">
+                Free Data
+              </span>
+              <Sparkles className="w-3.5 h-3.5 text-amber-300 animate-spin" style={{ animationDuration: "4s" }} />
+            </div>
 
             {/* Countdown Timer Display (if set) */}
             {timeLeft && (
-              <div className="flex items-center gap-1 text-[10px] font-mono font-bold text-amber-200 mt-0.5">
-                <Clock className="w-2.5 h-2.5 animate-pulse" />
+              <div className="flex items-center gap-1 text-[10px] font-mono font-bold text-amber-200 mt-0.5 bg-black/30 px-1.5 py-0.5 rounded-full border border-amber-300/30">
+                <Clock className="w-2.5 h-2.5 text-amber-300 animate-pulse" />
                 <span>{timeLeft}</span>
               </div>
             )}

@@ -6,7 +6,7 @@ import { verifyPaystackTransaction } from "@/lib/paystack";
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { reference, network, package_size, phone, amount, paystack_ref } = body;
+    const { reference, network, package_size, phone, amount, paystack_ref, customer_id } = body;
 
     if (!reference || !network || !package_size || !phone || amount === undefined) {
       return NextResponse.json(
@@ -59,8 +59,28 @@ export async function POST(request: Request) {
           payment_status: "paid",
           delivery_status: "processing",
           status: "pending",
+          source: customer_id ? "customer_momo" : "web",
+          customer_id: customer_id || undefined,
+          payment_method: "momo",
           datamart_response: { status: "pending", initiated_at: new Date().toISOString() },
         });
+
+        // If customer is logged in, record purchase in transaction history
+        if (customer_id) {
+          try {
+            await db.createCustomerTransaction({
+              customer_id,
+              amount: -Number(amount),
+              type: "purchase",
+              reference,
+              paystack_ref: verification.reference || paystack_ref,
+              status: "success",
+              description: `${network.toUpperCase()} ${package_size} Data Bundle (Direct Momo)`,
+            });
+          } catch (txErr) {
+            console.warn("Failed to log customer transaction for direct order:", txErr);
+          }
+        }
       } catch (insertErr: any) {
         // If race condition where webhook inserted it simultaneously
         order = await db.getOrderByReference(reference);

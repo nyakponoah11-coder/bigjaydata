@@ -29,6 +29,7 @@ interface Voucher {
   tagline: string;
   max_claims: number;
   claimed_count: number;
+  min_orders_required?: number;
   is_active: boolean;
   expires_at?: string | null;
   created_at: string;
@@ -39,6 +40,8 @@ interface VoucherClaim {
   voucher_id: string;
   voucher_code: string;
   phone: string;
+  customer_name?: string;
+  customer_orders_count?: number;
   network: string;
   package_size: string;
   order_reference: string;
@@ -58,6 +61,7 @@ export default function AdminVouchersPage() {
   const [packageSize, setPackageSize] = useState("1GB");
   const [tagline, setTagline] = useState("🎁 Special Free Data Drop! Enter code to receive data.");
   const [maxClaims, setMaxClaims] = useState("10");
+  const [minOrdersRequired, setMinOrdersRequired] = useState("0");
 
   // Timer State
   const [timerPreset, setTimerPreset] = useState<string>("none"); // 'none' | '30m' | '1h' | '2h' | '6h' | '24h' | 'custom'
@@ -155,6 +159,7 @@ export default function AdminVouchersPage() {
           package_size: packageSize.trim().toUpperCase(),
           tagline: tagline.trim(),
           max_claims: Number(maxClaims) || 10,
+          min_orders_required: Number(minOrdersRequired) || 0,
           expires_at: expiresAtIso,
         }),
       });
@@ -166,9 +171,10 @@ export default function AdminVouchersPage() {
 
       setMsg({
         type: "success",
-        text: `Voucher ${code.toUpperCase()} created successfully and activated with promo timer!`,
+        text: `Voucher ${code.toUpperCase()} created successfully with eligibility requirements!`,
       });
       generateRandomCode();
+      setMinOrdersRequired("0");
       setTimerPreset("none");
       setCustomExpiresAt("");
       loadData();
@@ -403,6 +409,70 @@ export default function AdminVouchersPage() {
                 />
               </div>
 
+              {/* ACCOUNT ORDER ELIGIBILITY SELECTOR */}
+              <div className="p-4 rounded-2xl bg-indigo-950/40 border border-indigo-500/30 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-indigo-300">
+                    <ShieldCheck className="w-4 h-4 text-indigo-400" />
+                    Account Order Eligibility Range
+                  </div>
+                  <span className="text-[11px] font-bold text-indigo-300 px-2 py-0.5 rounded-full bg-indigo-900/60 border border-indigo-500/40">
+                    {Number(minOrdersRequired) === 0 ? "Open to All Accounts" : `Must have ≥ ${minOrdersRequired} completed orders`}
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  Specify the minimum completed orders an account must have to claim this voucher (e.g. 3, 4, 5+ orders). Set to 0 to make it available to all accounts.
+                </p>
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                  {[
+                    { val: "0", label: "0 (All Users)" },
+                    { val: "3", label: "≥ 3 Orders" },
+                    { val: "4", label: "≥ 4 Orders" },
+                    { val: "5", label: "≥ 5 Orders" },
+                    { val: "custom", label: "Custom" },
+                  ].map((opt) => {
+                    const isSelected =
+                      opt.val === "custom"
+                        ? !["0", "3", "4", "5"].includes(minOrdersRequired)
+                        : minOrdersRequired === opt.val;
+                    return (
+                      <button
+                        key={opt.val}
+                        type="button"
+                        onClick={() => {
+                          if (opt.val !== "custom") {
+                            setMinOrdersRequired(opt.val);
+                          } else if (["0", "3", "4", "5"].includes(minOrdersRequired)) {
+                            setMinOrdersRequired("6");
+                          }
+                        }}
+                        className={`py-2 px-3 rounded-xl text-xs font-bold transition-all border ${
+                          isSelected
+                            ? "bg-indigo-600 text-white border-indigo-400 shadow-md font-black"
+                            : "bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700"
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                {(!["0", "3", "4", "5"].includes(minOrdersRequired) || Number(minOrdersRequired) > 5) && (
+                  <div className="pt-1 flex items-center gap-3">
+                    <label className="text-xs text-slate-300 font-semibold">Custom Minimum Orders:</label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="1000"
+                      value={minOrdersRequired}
+                      onChange={(e) => setMinOrdersRequired(e.target.value)}
+                      className="w-24 px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-white font-bold text-xs focus:ring-2 focus:ring-indigo-500"
+                      placeholder="e.g. 6"
+                    />
+                  </div>
+                )}
+              </div>
+
               {/* TIMER / EXPIRATION CONTROLS */}
               <div className="p-4 rounded-2xl bg-slate-800/60 border border-slate-700/60 space-y-3">
                 <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-amber-400">
@@ -530,6 +600,7 @@ export default function AdminVouchersPage() {
                   <tr className="border-b border-slate-800 text-slate-400 uppercase text-[10px] tracking-wider font-bold">
                     <th className="pb-3">Code</th>
                     <th className="pb-3">Network & Bundle</th>
+                    <th className="pb-3">Eligibility</th>
                     <th className="pb-3">Timer / Expiration</th>
                     <th className="pb-3">Progress</th>
                     <th className="pb-3">Status</th>
@@ -549,6 +620,17 @@ export default function AdminVouchersPage() {
                         <td className="py-4 font-semibold text-slate-200">
                           <span className="uppercase text-white font-bold">{v.package_size}</span>{" "}
                           <span className="text-slate-400 text-xs uppercase">({v.network})</span>
+                        </td>
+                        <td className="py-4">
+                          {v.min_orders_required && v.min_orders_required > 0 ? (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-indigo-900/60 text-indigo-300 border border-indigo-500/40">
+                              ≥ {v.min_orders_required} Orders
+                            </span>
+                          ) : (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-slate-850 text-slate-400 border border-slate-700">
+                              Open to All
+                            </span>
+                          )}
                         </td>
                         <td className="py-4 text-xs font-mono">
                           {v.expires_at ? (
@@ -627,6 +709,8 @@ export default function AdminVouchersPage() {
                 <thead>
                   <tr className="border-b border-slate-800 text-slate-400 uppercase text-[10px] tracking-wider font-bold">
                     <th className="pb-3">Beneficiary Phone</th>
+                    <th className="pb-3">Customer Name</th>
+                    <th className="pb-3">Account Orders</th>
                     <th className="pb-3">Voucher Code</th>
                     <th className="pb-3">Bundle</th>
                     <th className="pb-3">Order Ref</th>
@@ -639,6 +723,14 @@ export default function AdminVouchersPage() {
                       <td className="py-3 font-mono font-bold text-white flex items-center gap-2">
                         <Phone className="w-3.5 h-3.5 text-slate-400" />
                         {c.phone}
+                      </td>
+                      <td className="py-3 text-slate-200 font-medium">
+                        {c.customer_name || <span className="text-slate-500 italic">Guest / Unnamed</span>}
+                      </td>
+                      <td className="py-3">
+                        <span className="px-2 py-0.5 rounded-md text-[11px] font-bold bg-slate-800 text-indigo-300 border border-slate-700">
+                          {c.customer_orders_count !== undefined ? `${c.customer_orders_count} orders` : "—"}
+                        </span>
                       </td>
                       <td className="py-3 font-mono text-emerald-400 font-semibold">
                         {c.voucher_code}

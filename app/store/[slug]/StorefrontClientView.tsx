@@ -92,20 +92,16 @@ export default function StorefrontClientView({
     }
   }, [agent?.store_slug]);
 
-  // Refresh product prices with client cache only if missing or on 15m idle refresh (stops egress drain)
+  // Refresh product prices in background so changes and new products appear immediately without disappearing
   useEffect(() => {
     let isMounted = true;
     const fetchFreshProducts = async () => {
       try {
-        const data = await cachedAsync(
-          `store_products_${agent.id}`,
-          async () => {
-            const res = await fetch(`/api/agent/products?agent_id=${agent.id}`);
-            return await res.json();
-          },
-          15 * 60 * 1000, // 15 minutes cache
-          false
-        );
+        const res = await fetch(`/api/agent/products?agent_id=${agent.id}`, {
+          cache: "no-store",
+          headers: { Pragma: "no-cache" },
+        });
+        const data = await res.json();
         if (data?.success && Array.isArray(data.products) && isMounted && data.products.length > 0) {
           const mapped: ProductItem[] = data.products
             .filter((p: any) => p.is_active !== false)
@@ -121,17 +117,15 @@ export default function StorefrontClientView({
       } catch (err) {}
     };
 
-    // Only fetch if initial SSR product list was empty
-    if (!productList || productList.length === 0) {
-      fetchFreshProducts();
-    }
+    // Always fetch fresh products on mount in background
+    fetchFreshProducts();
 
-    // Gentle 15-minute background refresh (only when tab is actively visible)
+    // Background refresh every 3 minutes when window is visible
     const interval = setInterval(() => {
       if (typeof document !== "undefined" && document.visibilityState === "visible") {
         fetchFreshProducts();
       }
-    }, 15 * 60 * 1000);
+    }, 3 * 60 * 1000);
 
     return () => {
       isMounted = false;

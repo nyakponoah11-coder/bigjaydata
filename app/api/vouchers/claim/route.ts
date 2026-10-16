@@ -51,6 +51,49 @@ export async function POST(req: Request) {
       );
     }
 
+    // 2b. Check Account Order Eligibility if required by Admin (e.g. at least 3, 4, 5... orders)
+    const isPaidOrder = (o: any) => {
+      const ps = (o.payment_status || "").toLowerCase().trim();
+      const s = (o.status || "").toLowerCase().trim();
+      const ds = (o.delivery_status || "").toLowerCase().trim();
+      return (
+        ps === "paid" ||
+        ps === "completed" ||
+        ps === "success" ||
+        s === "delivered" ||
+        s === "completed" ||
+        ds === "delivered" ||
+        ds === "completed"
+      );
+    };
+
+    const [allOrders, phoneOrders] = await Promise.all([
+      db.getOrders(),
+      db.getOrdersByPhone(formattedPhone),
+    ]);
+    const cleanPhoneDigits = formattedPhone.replace(/[^0-9]/g, "");
+    const combinedOrdersMap = new Map<string, any>();
+    [...allOrders, ...phoneOrders].forEach((o) => {
+      if (o && o.id) combinedOrdersMap.set(o.id, o);
+    });
+    const customerOrders = Array.from(combinedOrdersMap.values()).filter(
+      (o) => o.phone && o.phone.replace(/[^0-9]/g, "") === cleanPhoneDigits && isPaidOrder(o)
+    );
+
+    const minRequired = Number(voucher.min_orders_required) || 0;
+    if (minRequired > 0 && customerOrders.length < minRequired) {
+      return NextResponse.json(
+        {
+          error: `Eligibility Requirement: This voucher is exclusively for accounts with at least ${minRequired} completed orders. Your phone number has ${customerOrders.length} completed order(s). Place ${minRequired - customerOrders.length} more order(s) to claim!`,
+        },
+        { status: 400 }
+      );
+    }
+
+    // Lookup customer name if registered
+    const customer = await db.getCustomerByPhone(formattedPhone);
+    const customerName = customer?.name || "Customer";
+
     // 3. Dispatch data delivery via DataMart
     const orderRef = `BMGH-FREE-${Date.now().toString().slice(-6)}`;
     const dmResult = await sendDataMartDelivery({
@@ -82,6 +125,8 @@ export async function POST(req: Request) {
       voucher_id: voucher.id,
       voucher_code: voucher.code,
       phone: formattedPhone,
+      customer_name: customerName,
+      customer_orders_count: customerOrders.length,
       network: voucher.network,
       package_size: voucher.package_size,
       order_reference: orderRef,

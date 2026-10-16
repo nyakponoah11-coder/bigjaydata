@@ -3,12 +3,43 @@ import { db } from "@/lib/db";
 
 export async function GET() {
   try {
-    const [vouchers, claims] = await Promise.all([
+    const [vouchers, claims, customers, allOrders] = await Promise.all([
       db.getVouchers(),
       db.getVoucherClaims(),
+      db.getCustomers(),
+      db.getOrders(),
     ]);
 
-    return NextResponse.json({ vouchers, claims });
+    const isPaidOrder = (o: any) => {
+      const ps = (o.payment_status || "").toLowerCase().trim();
+      const s = (o.status || "").toLowerCase().trim();
+      const ds = (o.delivery_status || "").toLowerCase().trim();
+      return (
+        ps === "paid" ||
+        ps === "completed" ||
+        ps === "success" ||
+        s === "delivered" ||
+        s === "completed" ||
+        ds === "delivered" ||
+        ds === "completed"
+      );
+    };
+
+    const enrichedClaims = claims.map((c) => {
+      const cleanPhone = c.phone ? c.phone.replace(/[^0-9]/g, "") : "";
+      const matchedCust = customers.find((cust) => cust.phone.replace(/[^0-9]/g, "") === cleanPhone);
+      const ordersCount = allOrders.filter(
+        (o) => o.phone && o.phone.replace(/[^0-9]/g, "") === cleanPhone && isPaidOrder(o)
+      ).length;
+
+      return {
+        ...c,
+        customer_name: c.customer_name || matchedCust?.name || "Guest Customer",
+        customer_orders_count: c.customer_orders_count !== undefined ? c.customer_orders_count : ordersCount,
+      };
+    });
+
+    return NextResponse.json({ vouchers, claims: enrichedClaims });
   } catch (error: any) {
     console.error("Admin Vouchers GET error:", error);
     return NextResponse.json(
@@ -21,7 +52,7 @@ export async function GET() {
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { code, network, package_size, tagline, max_claims, expires_at } = body;
+    const { code, network, package_size, tagline, max_claims, expires_at, min_orders_required } = body;
 
     if (!code || !network || !package_size) {
       return NextResponse.json(
@@ -35,6 +66,7 @@ export async function POST(req: Request) {
     const cleanSize = package_size.trim().toUpperCase();
     const cleanTagline = (tagline || "Free Data Giveaway!").trim();
     const numMaxClaims = Number(max_claims) > 0 ? Number(max_claims) : 10;
+    const numMinOrders = Number(min_orders_required) >= 0 ? Number(min_orders_required) : 0;
 
     const voucher = await db.createVoucher({
       code: cleanCode,
@@ -42,6 +74,7 @@ export async function POST(req: Request) {
       package_size: cleanSize,
       tagline: cleanTagline,
       max_claims: numMaxClaims,
+      min_orders_required: numMinOrders,
       is_active: true,
       expires_at: expires_at ? new Date(expires_at).toISOString() : null,
     });

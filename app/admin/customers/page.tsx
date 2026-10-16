@@ -1,9 +1,11 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import Link from "next/link";
 import AdminLayout from "@/components/AdminLayout";
 import {
   Users,
+  UserCheck,
   Copy,
   Check,
   Download,
@@ -208,8 +210,15 @@ export default function AdminCustomersPage() {
             </p>
           </div>
 
-          {/* Quick Header Actions */}
-          <div className="flex flex-wrap items-center gap-2.5">
+            <Link
+              href="/admin/registered-accounts"
+              className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 text-xs font-black shadow-lg shadow-amber-500/20 transition-all hover:scale-105 cursor-pointer"
+              title="View Registered User Accounts & Wallets"
+            >
+              <UserCheck className="w-3.5 h-3.5 text-slate-950" />
+              <span>Registered Accounts</span>
+            </Link>
+
             <button
               onClick={fetchCustomers}
               disabled={loading}

@@ -287,6 +287,51 @@ CREATE INDEX IF NOT EXISTS idx_agent_withdrawals_agent_id ON public.agent_withdr
 CREATE INDEX IF NOT EXISTS idx_agent_withdrawals_status ON public.agent_withdrawals(status);
 
 -- ========================================================================
+-- 12. CUSTOMERS TABLE
+-- Storefront customer accounts with Paystack wallet deposits
+-- ========================================================================
+CREATE TABLE IF NOT EXISTS public.customers (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    phone TEXT UNIQUE NOT NULL,
+    email TEXT,
+    password_hash TEXT NOT NULL,
+    wallet_balance NUMERIC(10, 2) NOT NULL DEFAULT 0.00,
+    is_active BOOLEAN NOT NULL DEFAULT true,
+    is_verified BOOLEAN NOT NULL DEFAULT false,
+    provider TEXT NOT NULL DEFAULT 'local',
+    google_id TEXT,
+    avatar_url TEXT,
+    verification_code TEXT,
+    verification_code_expires_at BIGINT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
+);
+
+CREATE INDEX IF NOT EXISTS idx_customers_phone ON public.customers(phone);
+CREATE INDEX IF NOT EXISTS idx_customers_email ON public.customers(email);
+
+-- ========================================================================
+-- 13. CUSTOMER TRANSACTIONS TABLE
+-- Wallet deposits via Paystack, bundle purchases, and transaction ledger
+-- ========================================================================
+CREATE TABLE IF NOT EXISTS public.customer_transactions (
+    id TEXT PRIMARY KEY,
+    customer_id TEXT NOT NULL REFERENCES public.customers(id) ON DELETE CASCADE,
+    amount NUMERIC(10, 2) NOT NULL,
+    type TEXT NOT NULL DEFAULT 'deposit',
+    reference TEXT UNIQUE NOT NULL,
+    paystack_ref TEXT,
+    status TEXT NOT NULL DEFAULT 'success',
+    description TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
+);
+
+CREATE INDEX IF NOT EXISTS idx_customer_transactions_customer ON public.customer_transactions(customer_id);
+CREATE INDEX IF NOT EXISTS idx_customer_transactions_ref ON public.customer_transactions(reference);
+CREATE INDEX IF NOT EXISTS idx_customer_transactions_created ON public.customer_transactions(created_at DESC);
+
+-- ========================================================================
 -- ROW LEVEL SECURITY (RLS) POLICIES
 -- Enable RLS and allow full access for the application service role & public APIs
 -- ========================================================================
@@ -301,6 +346,8 @@ ALTER TABLE public.agent_base_products ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.agent_products ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.agent_orders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.agent_withdrawals ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.customers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.customer_transactions ENABLE ROW LEVEL SECURITY;
 
 -- Clean up any existing policies
 DROP POLICY IF EXISTS "Allow all on products" ON public.products;
@@ -314,6 +361,8 @@ DROP POLICY IF EXISTS "Allow all on agent_base_products" ON public.agent_base_pr
 DROP POLICY IF EXISTS "Allow all on agent_products" ON public.agent_products;
 DROP POLICY IF EXISTS "Allow all on agent_orders" ON public.agent_orders;
 DROP POLICY IF EXISTS "Allow all on agent_withdrawals" ON public.agent_withdrawals;
+DROP POLICY IF EXISTS "Allow all on customers" ON public.customers;
+DROP POLICY IF EXISTS "Allow all on customer_transactions" ON public.customer_transactions;
 
 -- Create open access policies for public storefront & backend
 CREATE POLICY "Allow all on products" ON public.products FOR ALL USING (true) WITH CHECK (true);
@@ -327,3 +376,5 @@ CREATE POLICY "Allow all on agent_base_products" ON public.agent_base_products F
 CREATE POLICY "Allow all on agent_products" ON public.agent_products FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all on agent_orders" ON public.agent_orders FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all on agent_withdrawals" ON public.agent_withdrawals FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all on customers" ON public.customers FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all on customer_transactions" ON public.customer_transactions FOR ALL USING (true) WITH CHECK (true);

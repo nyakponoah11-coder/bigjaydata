@@ -457,6 +457,9 @@ export default function AgentDashboardPage() {
           try {
             localStorage.setItem(`bmgh_agent_prods_${agent.id}`, JSON.stringify(updated));
             invalidateCache(`store_products_${agent.id}`);
+            invalidateCache(`store_products_${agent.store_slug}`);
+            localStorage.removeItem(`bmgh_sess_store_${agent.store_slug.toLowerCase()}`);
+            localStorage.removeItem(`bmgh_sess_store_${agent.id.toLowerCase()}`);
           } catch {}
           return updated;
         });
@@ -484,33 +487,47 @@ export default function AgentDashboardPage() {
       setSavingAll(true);
       setError("");
       setNotice("");
+
+      const payload: Array<{ base_product_id: string; selling_price: number; is_active: boolean }> = [];
       for (const p of products) {
         const customVal = editPrices[p.base_product_id];
         if (customVal !== undefined && customVal !== "") {
           const numPrice = parseFloat(customVal);
           if (!isNaN(numPrice) && numPrice >= p.base_price) {
-            await fetch("/api/agent/products", {
-              method: "PUT",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                agent_id: agent.id,
-                base_product_id: p.base_product_id,
-                selling_price: numPrice,
-                is_active: p.is_active,
-              }),
+            payload.push({
+              base_product_id: p.base_product_id,
+              selling_price: numPrice,
+              is_active: p.is_active,
             });
           }
         }
       }
+
+      if (payload.length === 0) {
+        setNotice("All prices are already up to date.");
+        setTimeout(() => setNotice(""), 3000);
+        return;
+      }
+
+      const res = await fetch("/api/agent/products", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          agent_id: agent.id,
+          products: payload,
+        }),
+      });
+      const data = await res.json();
+      if (!data.success) {
+        throw new Error(data.message || "Failed to update prices");
+      }
+
       setProducts((prev) => {
         const updated = sortProductList(
           prev.map((item) => {
-            const customVal = editPrices[item.base_product_id];
-            if (customVal !== undefined && customVal !== "") {
-              const numPrice = parseFloat(customVal);
-              if (!isNaN(numPrice) && numPrice >= item.base_price) {
-                return { ...item, selling_price: numPrice };
-              }
+            const found = payload.find((x) => x.base_product_id === item.base_product_id);
+            if (found) {
+              return { ...item, selling_price: found.selling_price };
             }
             return item;
           })
@@ -518,14 +535,18 @@ export default function AgentDashboardPage() {
         try {
           localStorage.setItem(`bmgh_agent_prods_${agent.id}`, JSON.stringify(updated));
           invalidateCache(`store_products_${agent.id}`);
+          invalidateCache(`store_products_${agent.store_slug}`);
+          localStorage.removeItem(`bmgh_sess_store_${agent.store_slug.toLowerCase()}`);
+          localStorage.removeItem(`bmgh_sess_store_${agent.id.toLowerCase()}`);
         } catch {}
         return updated;
       });
-      setNotice("All product retail prices updated successfully!");
+
+      setNotice("All product retail prices updated and saved permanently!");
       await loadDashboardData(agent.id, true);
       setTimeout(() => setNotice(""), 3500);
     } catch (err: any) {
-      setError("Failed to save some prices. Please retry.");
+      setError(err?.message || "Failed to save prices. Please retry.");
     } finally {
       setSavingAll(false);
     }

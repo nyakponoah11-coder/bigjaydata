@@ -2,7 +2,7 @@
 
 import React from "react";
 import Link from "next/link";
-import { Zap, Search, Bot } from "lucide-react";
+import { Zap, Search, Bot, Wallet, ArrowRight } from "lucide-react";
 
 interface Props {
   storeName?: string;
@@ -16,33 +16,52 @@ export default function HeroActionButtons({
   whatsappChannelUrl = "",
 }: Props) {
   return (
-    <div className="relative mt-7 sm:mt-8 w-full max-w-xl mx-auto grid grid-cols-3 gap-2 sm:gap-3.5">
-      {/* 1. BUY */}
-      <a
-        href="#networks"
-        className="w-full py-3 sm:py-3.5 px-2 sm:px-4 rounded-2xl bg-gradient-to-r from-amber-400 to-yellow-500 hover:from-amber-500 hover:to-yellow-600 text-slate-950 font-black text-xs sm:text-base shadow-lg shadow-amber-500/25 flex items-center justify-center gap-1.5 sm:gap-2 transition-all transform active:scale-95"
-      >
-        <Zap className="w-4 h-4 fill-current text-slate-950 shrink-0" />
-        <span>Buy</span>
-      </a>
+    <div className="relative mt-7 sm:mt-8 w-full max-w-xl mx-auto space-y-3">
+      <div className="grid grid-cols-3 gap-2 sm:gap-3.5">
+        {/* 1. BUY */}
+        <a
+          href="#networks"
+          className="w-full py-3 sm:py-3.5 px-2 sm:px-4 rounded-2xl bg-gradient-to-r from-amber-400 to-yellow-500 hover:from-amber-500 hover:to-yellow-600 text-slate-950 font-black text-xs sm:text-base shadow-lg shadow-amber-500/25 flex items-center justify-center gap-1.5 sm:gap-2 transition-all transform active:scale-95"
+        >
+          <Zap className="w-4 h-4 fill-current text-slate-950 shrink-0" />
+          <span>Buy</span>
+        </a>
 
-      {/* 2. TRACK */}
-      <Link
-        href="/track"
-        className="w-full py-3 sm:py-3.5 px-2 sm:px-4 rounded-2xl bg-slate-800/90 hover:bg-slate-800 border border-slate-700 hover:border-slate-500 text-white font-black text-xs sm:text-base shadow-sm flex items-center justify-center gap-1.5 sm:gap-2 transition-all transform active:scale-95"
-      >
-        <Search className="w-4 h-4 text-slate-400 shrink-0" />
-        <span>Track</span>
-      </Link>
+        {/* 2. TRACK */}
+        <Link
+          href="/track"
+          className="w-full py-3 sm:py-3.5 px-2 sm:px-4 rounded-2xl bg-slate-800/90 hover:bg-slate-800 border border-slate-700 hover:border-slate-500 text-white font-black text-xs sm:text-base shadow-sm flex items-center justify-center gap-1.5 sm:gap-2 transition-all transform active:scale-95"
+        >
+          <Search className="w-4 h-4 text-slate-400 shrink-0" />
+          <span>Track</span>
+        </Link>
 
-      {/* 3. HELP (DEDICATED SUPPORT ROOM) */}
-      <Link
-        href="/help"
-        className="w-full py-3 sm:py-3.5 px-2 sm:px-4 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-xs sm:text-base shadow-lg shadow-emerald-600/30 flex items-center justify-center gap-1.5 sm:gap-2 transition-all transform active:scale-95 border border-emerald-400/30"
-      >
-        <Bot className="w-4 h-4 text-emerald-300 shrink-0" />
-        <span>Help</span>
-      </Link>
+        {/* 3. HELP (DEDICATED SUPPORT ROOM) */}
+        <Link
+          href="/help"
+          className="w-full py-3 sm:py-3.5 px-2 sm:px-4 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-xs sm:text-base shadow-lg shadow-emerald-600/30 flex items-center justify-center gap-1.5 sm:gap-2 transition-all transform active:scale-95 border border-emerald-400/30"
+        >
+          <Bot className="w-4 h-4 text-emerald-300 shrink-0" />
+          <span>Help</span>
+        </Link>
+      </div>
+
+      {/* Account & Wallet Quick Banner */}
+      <div className="p-2.5 sm:p-3 rounded-2xl bg-slate-950/80 border border-slate-800/80 backdrop-blur-md flex items-center justify-between gap-2 text-xs shadow-md">
+        <div className="flex items-center gap-2 pl-1">
+          <Wallet className="w-4 h-4 text-amber-400 shrink-0" />
+          <span className="text-[11px] sm:text-xs text-slate-300 font-medium text-left">
+            Have an account? Deposit with Paystack or buy as guest.
+          </span>
+        </div>
+        <Link
+          href="/signup"
+          className="px-3 py-1.5 rounded-xl bg-amber-400/20 hover:bg-amber-400/30 border border-amber-400/40 text-amber-300 font-bold text-[11px] tracking-wide shrink-0 transition-colors flex items-center gap-1"
+        >
+          <span>Account & Wallet</span>
+          <ArrowRight className="w-3 h-3" />
+        </Link>
+      </div>
     </div>
   );
 }
