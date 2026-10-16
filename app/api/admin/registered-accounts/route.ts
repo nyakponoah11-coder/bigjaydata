@@ -158,3 +158,43 @@ export async function PATCH(req: Request) {
     );
   }
 }
+
+export async function DELETE(req: Request) {
+  try {
+    const { searchParams } = new URL(req.url);
+    let customerId = searchParams.get("customer_id") || searchParams.get("id");
+
+    if (!customerId) {
+      const body = await req.json().catch(() => ({}));
+      customerId = body.customer_id || body.id;
+    }
+
+    if (!customerId) {
+      return NextResponse.json(
+        { success: false, message: "Customer ID is required." },
+        { status: 400 }
+      );
+    }
+
+    const existing = await db.getCustomerById(customerId);
+    if (!existing) {
+      return NextResponse.json(
+        { success: false, message: "Customer account not found." },
+        { status: 404 }
+      );
+    }
+
+    await db.deleteCustomer(customerId);
+
+    return NextResponse.json({
+      success: true,
+      message: `Account for ${existing.name || existing.phone} deleted successfully.`,
+    });
+  } catch (error: any) {
+    console.error("Admin delete customer error:", error);
+    return NextResponse.json(
+      { success: false, message: error?.message || "Failed to delete customer account." },
+      { status: 500 }
+    );
+  }
+}

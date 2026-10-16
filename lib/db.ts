@@ -4278,6 +4278,33 @@ export const db = {
     return all[idx];
   },
 
+  async deleteCustomer(id: string): Promise<boolean> {
+    invalidateServerCache("customers");
+    invalidateServerCache("customer_transactions");
+    if (!globalStore.__bmgh_customers) globalStore.__bmgh_customers = [];
+    globalStore.__bmgh_customers = globalStore.__bmgh_customers.filter((c) => c.id !== id);
+    if (globalStore.__bmgh_customer_transactions) {
+      globalStore.__bmgh_customer_transactions = globalStore.__bmgh_customer_transactions.filter(
+        (t) => t.customer_id !== id
+      );
+    }
+    saveToDisk();
+
+    if (isSupabaseConfigured && supabaseAdmin) {
+      try {
+        await supabaseAdmin.from("customer_transactions").delete().eq("customer_id", id);
+      } catch (err) {
+        // Ignored if table not created
+      }
+      try {
+        await supabaseAdmin.from("customers").delete().eq("id", id);
+      } catch (err) {
+        console.warn("Supabase customer delete error:", err);
+      }
+    }
+    return true;
+  },
+
   async creditCustomerWallet(
     customerId: string,
     amount: number,

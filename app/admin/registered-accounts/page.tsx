@@ -24,6 +24,8 @@ import {
   TrendingUp,
   Receipt,
   FileSpreadsheet,
+  Trash2,
+  Loader2,
 } from "lucide-react";
 
 interface CustomerTransaction {
@@ -77,6 +79,10 @@ export default function AdminRegisteredAccountsPage() {
   const [adjustAmount, setAdjustAmount] = useState("");
   const [adjustReason, setAdjustReason] = useState("");
   const [submittingAction, setSubmittingAction] = useState(false);
+
+  // Delete Customer State
+  const [customerToDelete, setCustomerToDelete] = useState<EnrichedCustomer | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const fetchAccounts = async () => {
     try {
@@ -144,6 +150,34 @@ export default function AdminRegisteredAccountsPage() {
       }
     } catch (err: any) {
       alert(err?.message || "Failed to update status.");
+    }
+  };
+
+  // Permanently delete registered customer account
+  const handleDeleteCustomer = async () => {
+    if (!customerToDelete) return;
+
+    try {
+      setIsDeleting(true);
+      const res = await fetch(
+        `/api/admin/registered-accounts?customer_id=${encodeURIComponent(customerToDelete.id)}`,
+        {
+          method: "DELETE",
+        }
+      );
+      const data = await res.json();
+      if (data.success) {
+        triggerToast(data.message || `Account for ${customerToDelete.name} was permanently deleted.`);
+        setCustomers((prev) => prev.filter((c) => c.id !== customerToDelete.id));
+        setCustomerToDelete(null);
+        fetchAccounts();
+      } else {
+        alert(data.message || "Failed to delete customer account.");
+      }
+    } catch (err: any) {
+      alert(err?.message || "Failed to delete customer account.");
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -548,6 +582,16 @@ export default function AdminRegisteredAccountsPage() {
                               <ShieldCheck className="w-3.5 h-3.5" />
                             )}
                           </button>
+
+                          {/* Delete Account Button */}
+                          <button
+                            type="button"
+                            onClick={() => setCustomerToDelete(cust)}
+                            className="p-1.5 rounded-xl border border-rose-500/30 bg-rose-950/40 hover:bg-rose-900/70 text-rose-400 hover:text-rose-200 text-[11px] transition-colors cursor-pointer"
+                            title={`Delete account for ${cust.name}`}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -758,6 +802,104 @@ export default function AdminRegisteredAccountsPage() {
                 >
                   Close
                 </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Delete Customer Account Confirmation Modal */}
+        {customerToDelete && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
+            <div
+              className="bg-slate-900 border border-rose-500/40 rounded-3xl max-w-md w-full overflow-hidden shadow-2xl relative text-white"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="h-1.5 w-full bg-rose-500" />
+
+              <div className="p-6 pb-4 flex items-center justify-between border-b border-slate-800">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-rose-500/20 border border-rose-500/30 text-rose-400 flex items-center justify-center">
+                    <Trash2 className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-black text-white">Delete Registered Account</h3>
+                    <p className="text-xs text-rose-300 font-semibold">Irreversible action</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  disabled={isDeleting}
+                  onClick={() => setCustomerToDelete(null)}
+                  className="w-8 h-8 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition-colors disabled:opacity-50"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="p-6 space-y-4">
+                <p className="text-sm text-slate-300 leading-relaxed">
+                  Are you sure you want to permanently delete the registered account for{" "}
+                  <strong className="text-white font-bold">{customerToDelete.name}</strong>?
+                </p>
+
+                <div className="p-4 rounded-2xl bg-slate-950/80 border border-slate-800 space-y-2 text-xs">
+                  <div className="flex justify-between items-center text-slate-400">
+                    <span>Phone:</span>
+                    <span className="font-mono font-bold text-slate-200">{customerToDelete.phone}</span>
+                  </div>
+                  {customerToDelete.email && (
+                    <div className="flex justify-between items-center text-slate-400">
+                      <span>Email:</span>
+                      <span className="text-slate-200 truncate max-w-[200px]">{customerToDelete.email}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between items-center text-slate-400">
+                    <span>Wallet Balance:</span>
+                    <span className="font-mono font-bold text-emerald-400">
+                      GHS {Number(customerToDelete.wallet_balance || 0).toFixed(2)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center text-slate-400">
+                    <span>Total Orders:</span>
+                    <span className="font-bold text-slate-200">{customerToDelete.total_orders}</span>
+                  </div>
+                </div>
+
+                <div className="p-3 rounded-xl bg-rose-950/40 border border-rose-500/30 text-rose-300 text-xs flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-400" />
+                  <span>
+                    This customer will no longer be able to log in or access their wallet. This action cannot be undone.
+                  </span>
+                </div>
+
+                <div className="pt-2 flex items-center justify-end gap-2.5">
+                  <button
+                    type="button"
+                    disabled={isDeleting}
+                    onClick={() => setCustomerToDelete(null)}
+                    className="py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs transition-colors cursor-pointer disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isDeleting}
+                    onClick={handleDeleteCustomer}
+                    className="py-2.5 px-5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-black text-xs shadow-lg shadow-rose-600/30 flex items-center gap-2 transition-all cursor-pointer disabled:opacity-50"
+                  >
+                    {isDeleting ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>Deleting...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Trash2 className="w-4 h-4" />
+                        <span>Yes, Delete Account</span>
+                      </>
+                    )}
+                  </button>
+                </div>
               </div>
             </div>
           </div>
