@@ -153,46 +153,49 @@ export default function CustomerDepositModal({
             { display_name: "Transaction Type", variable_name: "transaction_type", value: "Wallet Deposit" },
           ],
         },
-        callback: async function (response: any) {
+        // Plain synchronous function required by Paystack Inline validator ({}.toString.call(t) === "[object Function]")
+        callback: function (response: any) {
           const finalPaystackRef = response?.reference || response?.trxref || ref;
-          try {
-            const verifyRes = await fetch("/api/customer/deposit", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                customer_id: customer.id,
-                paystack_ref: finalPaystackRef,
-                amount: finalAmount,
-              }),
-            });
-
-            const data = await verifyRes.json();
-            if (!verifyRes.ok || !data.success) {
-              throw new Error(data.message || "Failed to credit wallet balance.");
-            }
-
-            // Confetti celebration
+          (async () => {
             try {
-              confetti({
-                particleCount: 80,
-                spread: 70,
-                origin: { y: 0.6 },
+              const verifyRes = await fetch("/api/customer/deposit", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  customer_id: customer.id,
+                  paystack_ref: finalPaystackRef,
+                  amount: finalAmount,
+                }),
               });
-            } catch {}
 
-            setSuccessMsg(`Awesome! GHS ${finalAmount.toFixed(2)} credited to your wallet.`);
-            onSuccess(data.new_balance);
+              const data = await verifyRes.json();
+              if (!verifyRes.ok || !data.success) {
+                throw new Error(data.message || "Failed to credit wallet balance.");
+              }
 
-            setTimeout(() => {
-              onClose();
-              setSuccessMsg("");
-            }, 1800);
-          } catch (verErr: any) {
-            console.error("Deposit confirmation error:", verErr);
-            setError(verErr?.message || "Deposit confirmation error. Please contact support.");
-          } finally {
-            setLoading(false);
-          }
+              // Confetti celebration
+              try {
+                confetti({
+                  particleCount: 80,
+                  spread: 70,
+                  origin: { y: 0.6 },
+                });
+              } catch {}
+
+              setSuccessMsg(`Awesome! GHS ${finalAmount.toFixed(2)} credited to your wallet.`);
+              onSuccess(data.new_balance);
+
+              setTimeout(() => {
+                onClose();
+                setSuccessMsg("");
+              }, 1800);
+            } catch (verErr: any) {
+              console.error("Deposit confirmation error:", verErr);
+              setError(verErr?.message || "Deposit confirmation error. Please contact support.");
+            } finally {
+              setLoading(false);
+            }
+          })();
         },
         onClose: function () {
           setLoading(false);
