@@ -161,6 +161,7 @@ export interface Voucher {
   max_claims: number;
   claimed_count: number;
   min_orders_required?: number; // Minimum orders required to be eligible (0 = everyone)
+  batch_id?: string | null;
   is_active: boolean;
   expires_at?: string | null;
   created_at: string;
@@ -173,6 +174,7 @@ export interface VoucherClaim {
   phone: string;
   customer_name?: string;
   customer_orders_count?: number;
+  batch_id?: string | null;
   network: string;
   package_size: string;
   order_reference: string;
@@ -1704,6 +1706,7 @@ export const db = {
       ...voucher,
       id: crypto.randomUUID(),
       code: voucher.code.trim().toUpperCase(),
+      batch_id: voucher.batch_id || null,
       claimed_count: 0,
       expires_at: voucher.expires_at || null,
       created_at: new Date().toISOString(),
@@ -1711,7 +1714,14 @@ export const db = {
 
     if (isSupabaseConfigured && supabaseAdmin) {
       try {
-        const { data, error } = await supabaseAdmin.from("vouchers").insert([newVoucher]).select().single();
+        let insertData: any = { ...newVoucher };
+        let { data, error } = await supabaseAdmin.from("vouchers").insert([insertData]).select().single();
+        if (error && (error.message?.includes("batch_id") || error.code === "42703")) {
+          const { batch_id, ...fallbackData } = insertData;
+          const retry = await supabaseAdmin.from("vouchers").insert([fallbackData]).select().single();
+          data = retry.data;
+          error = retry.error;
+        }
         if (!error && data) {
           if (!globalStore.__bmgh_vouchers) globalStore.__bmgh_vouchers = [];
           globalStore.__bmgh_vouchers.unshift(data as Voucher);
@@ -1729,6 +1739,48 @@ export const db = {
     invalidateDbCache("active_voucher");
     saveToDisk();
     return newVoucher;
+  },
+
+  async createVouchersBatch(vouchers: Array<Omit<Voucher, "id" | "claimed_count" | "created_at">>): Promise<Voucher[]> {
+    invalidateDbCache("active_voucher");
+    const now = new Date().toISOString();
+    const newVouchers: Voucher[] = vouchers.map((v) => ({
+      ...v,
+      id: crypto.randomUUID(),
+      code: v.code.trim().toUpperCase(),
+      batch_id: v.batch_id || null,
+      claimed_count: 0,
+      expires_at: v.expires_at || null,
+      created_at: now,
+    }));
+
+    if (isSupabaseConfigured && supabaseAdmin) {
+      try {
+        let insertData = newVouchers.map((item) => ({ ...item }));
+        let { data, error } = await supabaseAdmin.from("vouchers").insert(insertData).select();
+        if (error && (error.message?.includes("batch_id") || error.code === "42703")) {
+          const fallbackData = insertData.map(({ batch_id, ...rest }) => rest);
+          const retry = await supabaseAdmin.from("vouchers").insert(fallbackData).select();
+          data = retry.data;
+          error = retry.error;
+        }
+        if (!error && data) {
+          if (!globalStore.__bmgh_vouchers) globalStore.__bmgh_vouchers = [];
+          globalStore.__bmgh_vouchers.unshift(...(data as Voucher[]));
+          invalidateDbCache("active_voucher");
+          saveToDisk();
+          return data as Voucher[];
+        }
+      } catch (err) {
+        console.error("Supabase createVouchersBatch error:", err);
+      }
+    }
+
+    if (!globalStore.__bmgh_vouchers) globalStore.__bmgh_vouchers = [];
+    globalStore.__bmgh_vouchers.unshift(...newVouchers);
+    invalidateDbCache("active_voucher");
+    saveToDisk();
+    return newVouchers;
   },
 
   async toggleVoucher(id: string, is_active: boolean): Promise<boolean> {
@@ -1781,10 +1833,36 @@ export const db = {
     return true;
   },
 
-  async hasPhoneClaimedVoucher(phone: string): Promise<boolean> {
+  async hasPhoneClaimedVoucher(phone: string, voucherIdOrBatchId?: string | null): Promise<boolean> {
     const cleaned = (phone || "").replace(/[^0-9]/g, "");
     const formatted = cleaned.startsWith("233") ? "0" + cleaned.slice(3) : cleaned.length === 9 ? "0" + cleaned : cleaned;
     
+    if (voucherIdOrBatchId) {
+      if (isSupabaseConfigured && supabaseAdmin) {
+        try {
+          const { data, error } = await supabaseAdmin
+            .from("voucher_claims")
+            .select("id, voucher_id, batch_id")
+            .eq("phone", formatted);
+          if (!error && data && data.length > 0) {
+            const match = data.some(
+              (c: any) =>
+                c.voucher_id === voucherIdOrBatchId ||
+                (c.batch_id && c.batch_id === voucherIdOrBatchId)
+            );
+            if (match) return true;
+          }
+        } catch (err) {
+          console.error("Supabase hasPhoneClaimedVoucher error:", err);
+        }
+      }
+      return (globalStore.__bmgh_voucher_claims || []).some(
+        (c) =>
+          c.phone === formatted &&
+          (c.voucher_id === voucherIdOrBatchId || (c.batch_id && c.batch_id === voucherIdOrBatchId))
+      );
+    }
+
     if (isSupabaseConfigured && supabaseAdmin) {
       try {
         const { data, error } = await supabaseAdmin.from("voucher_claims").select("id").eq("phone", formatted).limit(1);
@@ -1796,6 +1874,38 @@ export const db = {
     return (globalStore.__bmgh_voucher_claims || []).some((c) => c.phone === formatted);
   },
 
+  async hasPhoneClaimedBatch(phone: string, batchId?: string | null, voucherId?: string | null): Promise<boolean> {
+    const cleaned = (phone || "").replace(/[^0-9]/g, "");
+    const formatted = cleaned.startsWith("233") ? "0" + cleaned.slice(3) : cleaned.length === 9 ? "0" + cleaned : cleaned;
+
+    if (isSupabaseConfigured && supabaseAdmin) {
+      try {
+        const { data, error } = await supabaseAdmin
+          .from("voucher_claims")
+          .select("id, voucher_id, batch_id")
+          .eq("phone", formatted);
+        if (!error && data && data.length > 0) {
+          const found = data.some((c: any) => {
+            if (batchId && c.batch_id === batchId) return true;
+            if (voucherId && c.voucher_id === voucherId) return true;
+            return false;
+          });
+          if (found) return true;
+        }
+      } catch (err) {
+        console.error("Supabase hasPhoneClaimedBatch error:", err);
+      }
+    }
+
+    const claims = globalStore.__bmgh_voucher_claims || [];
+    return claims.some((c) => {
+      if (c.phone !== formatted) return false;
+      if (batchId && c.batch_id === batchId) return true;
+      if (voucherId && c.voucher_id === voucherId) return true;
+      return false;
+    });
+  },
+
   async recordVoucherClaim(claim: Omit<VoucherClaim, "id" | "created_at">): Promise<VoucherClaim> {
     const cleaned = (claim.phone || "").replace(/[^0-9]/g, "");
     const formatted = cleaned.startsWith("233") ? "0" + cleaned.slice(3) : cleaned.length === 9 ? "0" + cleaned : cleaned;
@@ -1803,12 +1913,18 @@ export const db = {
       ...claim,
       id: crypto.randomUUID(),
       phone: formatted,
+      batch_id: claim.batch_id || null,
       created_at: new Date().toISOString(),
     };
 
     if (isSupabaseConfigured && supabaseAdmin) {
       try {
-        await supabaseAdmin.from("voucher_claims").insert([newClaim]);
+        let insertPayload: any = { ...newClaim };
+        let { error: insertErr } = await supabaseAdmin.from("voucher_claims").insert([insertPayload]);
+        if (insertErr && (insertErr.message?.includes("batch_id") || insertErr.code === "42703")) {
+          const { batch_id, ...fallbackClaim } = insertPayload;
+          await supabaseAdmin.from("voucher_claims").insert([fallbackClaim]);
+        }
         const { data: v } = await supabaseAdmin.from("vouchers").select("claimed_count, max_claims").eq("id", claim.voucher_id).single();
         if (v) {
           const nextCount = (v.claimed_count || 0) + 1;

@@ -19,6 +19,9 @@ import {
   Power,
   Clock,
   Calendar,
+  Copy,
+  Check,
+  Share2,
 } from "lucide-react";
 
 interface Voucher {
@@ -30,6 +33,7 @@ interface Voucher {
   max_claims: number;
   claimed_count: number;
   min_orders_required?: number;
+  batch_id?: string | null;
   is_active: boolean;
   expires_at?: string | null;
   created_at: string;
@@ -42,6 +46,7 @@ interface VoucherClaim {
   phone: string;
   customer_name?: string;
   customer_orders_count?: number;
+  batch_id?: string | null;
   network: string;
   package_size: string;
   order_reference: string;
@@ -57,23 +62,51 @@ export default function AdminVouchersPage() {
 
   // Form State
   const [code, setCode] = useState("");
+  const [count, setCount] = useState("10"); // Batch count to generate
   const [network, setNetwork] = useState("mtn");
   const [packageSize, setPackageSize] = useState("1GB");
   const [tagline, setTagline] = useState("🎁 Special Free Data Drop! Enter code to receive data.");
-  const [maxClaims, setMaxClaims] = useState("10");
   const [minOrdersRequired, setMinOrdersRequired] = useState("0");
 
   // Timer State
   const [timerPreset, setTimerPreset] = useState<string>("none"); // 'none' | '30m' | '1h' | '2h' | '6h' | '24h' | 'custom'
   const [customExpiresAt, setCustomExpiresAt] = useState<string>("");
 
-  const generateRandomCode = () => {
-    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-    let res = "FREE-";
-    for (let i = 0; i < 4; i++) {
-      res += chars.charAt(Math.floor(Math.random() * chars.length));
+  // Last Generated Batch Session for Copying
+  const [lastBatch, setLastBatch] = useState<{
+    batchId: string;
+    count: number;
+    codes: string[];
+    network: string;
+    packageSize: string;
+    createdAt: string;
+    expiresAt?: string | null;
+  } | null>(null);
+  const [copiedLabel, setCopiedLabel] = useState<string | null>(null);
+
+  const copyToClipboard = async (text: string, label: string) => {
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const textarea = document.createElement("textarea");
+        textarea.value = text;
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand("copy");
+        document.body.removeChild(textarea);
+      }
+      setCopiedLabel(label);
+      setTimeout(() => setCopiedLabel(null), 3000);
+    } catch (err) {
+      console.error("Clipboard copy failed:", err);
     }
-    setCode(res);
+  };
+
+  // Generate 8-digit voucher code: FREE-XXXXXXXX
+  const generateRandomCode = () => {
+    const digits = Math.floor(10000000 + Math.random() * 90000000).toString();
+    setCode(`FREE-${digits}`);
   };
 
   const loadData = async () => {
@@ -150,15 +183,17 @@ export default function AdminVouchersPage() {
     try {
       const expiresAtIso = calculateExpiresAt();
 
+      const countNum = Math.max(1, Math.min(100, Number(count) || 1));
+
       const res = await fetch("/api/admin/vouchers", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           code: code.trim().toUpperCase(),
+          count: countNum,
           network,
           package_size: packageSize.trim().toUpperCase(),
           tagline: tagline.trim(),
-          max_claims: Number(maxClaims) || 10,
           min_orders_required: Number(minOrdersRequired) || 0,
           expires_at: expiresAtIso,
         }),
@@ -169,9 +204,24 @@ export default function AdminVouchersPage() {
         throw new Error(data.error || "Failed to create voucher.");
       }
 
+      if (data.codes && data.codes.length > 0) {
+        setLastBatch({
+          batchId: data.batch_id || "",
+          count: data.codes.length,
+          codes: data.codes,
+          network,
+          packageSize,
+          createdAt: new Date().toISOString(),
+          expiresAt: expiresAtIso,
+        });
+      }
+
       setMsg({
         type: "success",
-        text: `Voucher ${code.toUpperCase()} created successfully with eligibility requirements!`,
+        text:
+          countNum > 1
+            ? `Successfully generated batch of ${countNum} single-use voucher codes (FREE-XXXXXXXX)! See the batch copy section below.`
+            : `Voucher ${data.voucher?.code || code.toUpperCase()} created successfully!`,
       });
       generateRandomCode();
       setMinOrdersRequired("0");
@@ -310,39 +360,170 @@ export default function AdminVouchersPage() {
           </div>
         )}
 
+        {/* Dedicated Session to Copy All Generated Codes */}
+        {lastBatch && (
+          <div className="bg-gradient-to-br from-emerald-950/90 via-slate-900 to-teal-950/90 border-2 border-emerald-500/50 rounded-3xl p-6 sm:p-8 shadow-2xl relative overflow-hidden animate-in fade-in duration-300">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-5 border-b border-emerald-500/20">
+              <div>
+                <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-emerald-400">
+                  <Sparkles className="w-4 h-4" />
+                  Generated Voucher Batch ({lastBatch.codes.length} Codes)
+                </div>
+                <h3 className="text-xl sm:text-2xl font-black text-white mt-1">
+                  {lastBatch.codes.length} Single-Use Codes Ready to Share
+                </h3>
+                <p className="text-xs text-slate-300 mt-1">
+                  Network: <strong className="text-white uppercase">{lastBatch.network}</strong> • Bundle: <strong className="text-white">{lastBatch.packageSize}</strong> • Format: <span className="font-mono text-emerald-400 font-bold">FREE-XXXXXXXX (8 digits)</span>
+                </p>
+              </div>
+
+              {/* Action Buttons to Copy */}
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => copyToClipboard(lastBatch.codes.join("\n"), "batch_lines")}
+                  className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs flex items-center gap-2 shadow-lg shadow-emerald-600/30 transition-all hover:scale-105 active:scale-95"
+                >
+                  {copiedLabel === "batch_lines" ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                  <span>{copiedLabel === "batch_lines" ? "All Codes Copied!" : "Copy All Codes (Newline)"}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => copyToClipboard(lastBatch.codes.join(", "), "batch_comma")}
+                  className="px-3.5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs flex items-center gap-2 border border-slate-700 transition-all hover:scale-105"
+                >
+                  {copiedLabel === "batch_comma" ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
+                  <span>{copiedLabel === "batch_comma" ? "Copied!" : "Copy Comma-Separated"}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const promoText = `🎉 FREE DATA DROP IS LIVE! 🎁\n\nNetwork: ${lastBatch.network.toUpperCase()}\nBundle: ${lastBatch.packageSize}\nClaim Site: ${typeof window !== "undefined" ? window.location.origin : "Our Website"}\n\n⚠️ Note: Each code is 1-time single use. Copy & paste is disabled on the site — you must type the 8 digits manually into the claim form!\n\nClaim Codes:\n${lastBatch.codes.map((c, i) => `${i + 1}. ${c}`).join("\n")}`;
+                    copyToClipboard(promoText, "batch_promo");
+                  }}
+                  className="px-3.5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center gap-2 shadow-lg shadow-indigo-600/30 transition-all hover:scale-105"
+                >
+                  {copiedLabel === "batch_promo" ? <Check className="w-4 h-4" /> : <Share2 className="w-4 h-4" />}
+                  <span>{copiedLabel === "batch_promo" ? "Promo Copied!" : "Copy Promo Broadcast"}</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Codes List Preview */}
+            <div className="mt-5">
+              <div className="flex items-center justify-between text-xs text-slate-400 mb-2 font-medium">
+                <span>Click any individual code to copy:</span>
+                <span className="text-amber-400 font-semibold">⌨️ Customers must manually type (anti-paste enforced)</span>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2 max-h-56 overflow-y-auto pr-1">
+                {lastBatch.codes.map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => copyToClipboard(c, `code_${c}`)}
+                    className="flex items-center justify-between px-3 py-2 rounded-xl bg-slate-900/90 hover:bg-emerald-950/60 border border-slate-700 hover:border-emerald-500/50 text-emerald-400 font-mono font-bold text-xs tracking-wider transition-all group"
+                  >
+                    <span>{c}</span>
+                    {copiedLabel === `code_${c}` ? (
+                      <Check className="w-3.5 h-3.5 text-emerald-300" />
+                    ) : (
+                      <Copy className="w-3.5 h-3.5 text-slate-500 group-hover:text-emerald-300 transition-colors" />
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Create Voucher Form & Rules Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Create Form */}
           <div className="lg:col-span-2 bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-xl">
             <h2 className="text-lg font-black text-white flex items-center gap-2 mb-6">
               <Plus className="w-5 h-5 text-emerald-400" />
-              Generate New Free Data Voucher
+              Generate Free Data Voucher Drop
             </h2>
 
             <form onSubmit={handleCreateVoucher} className="space-y-5">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {/* Code */}
+                {/* Code Format / Preview */}
                 <div>
                   <div className="flex items-center justify-between mb-1.5">
                     <label className="text-xs font-bold uppercase tracking-wider text-slate-300">
-                      Voucher Code
+                      {Number(count) > 1 ? "Code Format (8 Digits)" : "Voucher Code"}
                     </label>
                     <button
                       type="button"
                       onClick={generateRandomCode}
                       className="text-[11px] text-emerald-400 hover:underline font-semibold"
                     >
-                      Generate New
+                      Regenerate
                     </button>
                   </div>
-                  <input
-                    type="text"
-                    required
-                    value={code}
-                    onChange={(e) => setCode(e.target.value.toUpperCase())}
-                    placeholder="e.g. FREE-7X89"
-                    className="w-full px-4 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white font-mono font-bold tracking-wider uppercase text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  />
+                  {Number(count) > 1 ? (
+                    <div className="px-4 py-2.5 rounded-xl bg-slate-800/80 border border-slate-700 text-emerald-400 font-mono font-bold tracking-wider text-sm flex items-center justify-between">
+                      <span>FREE-XXXXXXXX</span>
+                      <span className="text-[10px] text-slate-400 font-sans uppercase font-bold px-2 py-0.5 rounded bg-slate-700/60">
+                        {count} Distinct Codes
+                      </span>
+                    </div>
+                  ) : (
+                    <input
+                      type="text"
+                      required
+                      value={code}
+                      onChange={(e) => setCode(e.target.value.toUpperCase())}
+                      placeholder="e.g. FREE-84920183"
+                      className="w-full px-4 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white font-mono font-bold tracking-wider uppercase text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    />
+                  )}
+                  <p className="text-[10px] text-slate-400 mt-1">
+                    Always format: <span className="font-mono text-emerald-400">FREE-XXXXXXXX</span> (8 digits after FREE-)
+                  </p>
+                </div>
+
+                {/* Count to Generate */}
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-xs font-bold uppercase tracking-wider text-slate-300">
+                      Count to Generate
+                    </label>
+                    <span className="text-[10px] text-amber-400 font-bold">1 Claim Per Code</span>
+                  </div>
+                  <div className="space-y-2">
+                    <div className="grid grid-cols-6 gap-1">
+                      {["1", "5", "10", "20", "50", "100"].map((cnt) => (
+                        <button
+                          key={cnt}
+                          type="button"
+                          onClick={() => setCount(cnt)}
+                          className={`py-1.5 text-xs font-bold rounded-lg border transition-all ${
+                            count === cnt
+                              ? "bg-emerald-600 border-emerald-500 text-white shadow"
+                              : "bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700"
+                          }`}
+                        >
+                          {cnt}
+                        </button>
+                      ))}
+                    </div>
+                    <input
+                      type="number"
+                      min="1"
+                      max="100"
+                      required
+                      value={count}
+                      onChange={(e) => setCount(e.target.value)}
+                      placeholder="Enter count (e.g. 10)"
+                      className="w-full px-4 py-2 rounded-xl bg-slate-800 border border-slate-700 text-white font-bold text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    />
+                  </div>
+                  <p className="text-[10px] text-slate-400 mt-1">
+                    Generates {count || 0} unique single-use codes in one batch.
+                  </p>
                 </div>
 
                 {/* Network */}
@@ -372,23 +553,6 @@ export default function AdminVouchersPage() {
                     value={packageSize}
                     onChange={(e) => setPackageSize(e.target.value)}
                     placeholder="e.g. 1GB, 500MB, 2GB"
-                    className="w-full px-4 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white font-bold text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  />
-                </div>
-
-                {/* Max Claims */}
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-300 mb-1.5">
-                    Max Claims Limit
-                  </label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="1000"
-                    required
-                    value={maxClaims}
-                    onChange={(e) => setMaxClaims(e.target.value)}
-                    placeholder="10"
                     className="w-full px-4 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white font-bold text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
                   />
                 </div>
@@ -557,19 +721,23 @@ export default function AdminVouchersPage() {
               <ul className="space-y-3 text-xs text-slate-300 leading-relaxed">
                 <li className="flex items-start gap-2">
                   <span className="text-emerald-400 font-bold">•</span>
-                  <span><strong>Middle-Left Position:</strong> The Free Data badge is docked to the middle of the left side of the customer screen.</span>
+                  <span><strong>8-Digit Code Format:</strong> All voucher codes strictly use <code className="text-emerald-400 font-mono font-bold">FREE-XXXXXXXX</code> (8 digits).</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-emerald-400 font-bold">•</span>
-                  <span><strong>1 Claim Per Phone:</strong> Duplicate claims across all vouchers are strictly blocked.</span>
+                  <span><strong>1 Claim Per Phone:</strong> Only 1 claim allowed per phone number within each giveaway drop/batch.</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-emerald-400 font-bold">•</span>
-                  <span><strong>Anti-Paste Enabled:</strong> Copy and paste is disabled on customer input without any alert text.</span>
+                  <span><strong>Single-Use Codes:</strong> Each generated code can only be redeemed once (<code className="text-slate-300 font-mono">max_claims: 1</code>).</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-emerald-400 font-bold">•</span>
-                  <span><strong>Live Countdown:</strong> When a timer is configured, the badge updates every second.</span>
+                  <span><strong>Anti-Paste Protection:</strong> Customers must manually type the code. Copy & paste and drag-drop are strictly blocked.</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-emerald-400 font-bold">•</span>
+                  <span><strong>Live Countdown Timer:</strong> Configurable countdown clock displayed in the floating badge on the storefront.</span>
                 </li>
               </ul>
             </div>
@@ -582,23 +750,48 @@ export default function AdminVouchersPage() {
 
         {/* Existing Vouchers List */}
         <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-xl">
-          <div className="flex items-center justify-between mb-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
             <h2 className="text-lg font-black text-white flex items-center gap-2">
               <Tag className="w-5 h-5 text-amber-400" />
               Active & Past Vouchers ({vouchers.length})
             </h2>
+
+            {vouchers.some((v) => v.is_active && v.claimed_count < v.max_claims && (!v.expires_at || new Date(v.expires_at) > new Date())) && (
+              <button
+                type="button"
+                onClick={() => {
+                  const now = new Date();
+                  const unclaimed = vouchers
+                    .filter((v) => v.is_active && v.claimed_count < v.max_claims && (!v.expires_at || new Date(v.expires_at) > now))
+                    .map((v) => v.code);
+                  copyToClipboard(unclaimed.join("\n"), "all_unclaimed");
+                }}
+                className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs flex items-center gap-2 border border-slate-700 transition-all self-start sm:self-auto hover:border-emerald-500/50"
+              >
+                {copiedLabel === "all_unclaimed" ? (
+                  <Check className="w-4 h-4 text-emerald-400" />
+                ) : (
+                  <Copy className="w-4 h-4 text-emerald-400" />
+                )}
+                <span>
+                  {copiedLabel === "all_unclaimed"
+                    ? "Unclaimed Codes Copied!"
+                    : "Copy All Unclaimed Active Codes"}
+                </span>
+              </button>
+            )}
           </div>
 
           {vouchers.length === 0 ? (
             <div className="text-center py-12 text-slate-500 text-sm">
-              No vouchers created yet. Use the form above to generate your first free data voucher.
+              No vouchers created yet. Use the form above to generate your first free data voucher drop.
             </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs sm:text-sm">
                 <thead>
                   <tr className="border-b border-slate-800 text-slate-400 uppercase text-[10px] tracking-wider font-bold">
-                    <th className="pb-3">Code</th>
+                    <th className="pb-3">Code (Click to Copy)</th>
                     <th className="pb-3">Network & Bundle</th>
                     <th className="pb-3">Eligibility</th>
                     <th className="pb-3">Timer / Expiration</th>
@@ -613,9 +806,19 @@ export default function AdminVouchersPage() {
                     return (
                       <tr key={v.id} className="hover:bg-slate-800/30 transition-colors">
                         <td className="py-4">
-                          <span className="px-3 py-1 rounded-lg bg-slate-800 border border-slate-700 text-emerald-400 font-mono font-bold text-xs">
-                            {v.code}
-                          </span>
+                          <button
+                            type="button"
+                            onClick={() => copyToClipboard(v.code, `code_${v.id}`)}
+                            className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-emerald-500/50 text-emerald-400 font-mono font-bold text-xs transition-all group"
+                            title="Click to copy voucher code"
+                          >
+                            <span>{v.code}</span>
+                            {copiedLabel === `code_${v.id}` ? (
+                              <Check className="w-3 h-3 text-emerald-300" />
+                            ) : (
+                              <Copy className="w-3 h-3 text-slate-500 group-hover:text-emerald-300 transition-colors" />
+                            )}
+                          </button>
                         </td>
                         <td className="py-4 font-semibold text-slate-200">
                           <span className="uppercase text-white font-bold">{v.package_size}</span>{" "}
@@ -650,7 +853,14 @@ export default function AdminVouchersPage() {
                           )}
                         </td>
                         <td className="py-4 text-slate-300">
-                          <span className="font-bold text-white">{v.claimed_count}</span> / {v.max_claims} claimed
+                          <span className="font-bold text-white">{v.claimed_count}</span> / {v.max_claims}
+                          {v.max_claims === 1 ? (
+                            <span className="ml-1.5 text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">
+                              Single Use
+                            </span>
+                          ) : (
+                            <span className="ml-1 text-slate-400 text-xs">claimed</span>
+                          )}
                         </td>
                         <td className="py-4">
                           <button

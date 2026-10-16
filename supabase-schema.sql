@@ -383,8 +383,12 @@ CREATE POLICY "Allow all on customer_transactions" ON public.customer_transactio
 -- 14. SCHEMA MIGRATIONS (Run on existing databases to add new features)
 -- ========================================================================
 ALTER TABLE public.vouchers ADD COLUMN IF NOT EXISTS min_orders_required INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE public.vouchers ADD COLUMN IF NOT EXISTS batch_id TEXT;
+ALTER TABLE public.voucher_claims ADD COLUMN IF NOT EXISTS batch_id TEXT;
 ALTER TABLE public.voucher_claims ADD COLUMN IF NOT EXISTS customer_name TEXT;
 ALTER TABLE public.voucher_claims ADD COLUMN IF NOT EXISTS customer_orders_count INTEGER DEFAULT 0;
+CREATE INDEX IF NOT EXISTS idx_vouchers_batch_id ON public.vouchers(batch_id);
+CREATE INDEX IF NOT EXISTS idx_voucher_claims_batch_id ON public.voucher_claims(batch_id);
 ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS avatar_url TEXT;
 ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS pending_new_email TEXT;
 ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS email_change_code TEXT;

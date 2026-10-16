@@ -22,6 +22,7 @@ export default function FreeDataClaimModal({
   const [phone, setPhone] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pasteNotice, setPasteNotice] = useState<string | null>(null);
   const [successData, setSuccessData] = useState<{
     message: string;
     reference: string;
@@ -31,9 +32,17 @@ export default function FreeDataClaimModal({
 
   if (!isOpen) return null;
 
+  const handleBlockedPaste = () => {
+    setPasteNotice("⚠️ Copy & paste is disabled! Please type the 8-digit voucher code manually into the box.");
+    setTimeout(() => {
+      setPasteNotice(null);
+    }, 5000);
+  };
+
   const handleClaim = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setPasteNotice(null);
 
     const cleanCode = code.trim().toUpperCase();
     const cleanPhone = phone.trim().replace(/[^0-9]/g, "");
@@ -77,6 +86,7 @@ export default function FreeDataClaimModal({
     setCode("");
     setPhone("");
     setError(null);
+    setPasteNotice(null);
     setSuccessData(null);
     onClose();
   };
@@ -144,11 +154,23 @@ export default function FreeDataClaimModal({
                 </div>
               )}
 
+              {pasteNotice && (
+                <div className="p-3.5 rounded-2xl bg-amber-50 dark:bg-amber-950/50 border border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-200 text-xs flex items-start gap-2.5 animate-pulse">
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
+                  <span className="font-bold leading-relaxed">{pasteNotice}</span>
+                </div>
+              )}
+
               {/* Voucher Code Input */}
               <div className="space-y-1.5">
-                <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
-                  Voucher Code
-                </label>
+                <div className="flex items-center justify-between">
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                    Voucher Code
+                  </label>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
+                    ⌨️ Manual Typing Only
+                  </span>
+                </div>
                 <div className="relative">
                   <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
                     <KeyRound className="w-4 h-4" />
@@ -156,13 +178,30 @@ export default function FreeDataClaimModal({
                   <input
                     type="text"
                     required
+                    maxLength={13}
                     value={code}
                     onChange={(e) => setCode(e.target.value.toUpperCase())}
-                    onPaste={(e) => e.preventDefault()}
-                    placeholder="Enter unique code"
+                    onPaste={(e) => {
+                      e.preventDefault();
+                      handleBlockedPaste();
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      handleBlockedPaste();
+                    }}
+                    onKeyDown={(e) => {
+                      if ((e.ctrlKey || e.metaKey) && (e.key === "v" || e.key === "V")) {
+                        e.preventDefault();
+                        handleBlockedPaste();
+                      }
+                    }}
+                    placeholder="FREE-12345678 (Type manually)"
                     className="w-full pl-10 pr-4 py-3 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 font-mono font-bold tracking-wider text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 uppercase text-sm"
                   />
                 </div>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">
+                  Copy & paste is disabled to prevent automated bots. Type the 8 digits after FREE-.
+                </p>
               </div>
 
               {/* Phone Number Input */}
@@ -180,7 +219,6 @@ export default function FreeDataClaimModal({
                     maxLength={10}
                     value={phone}
                     onChange={(e) => setPhone(e.target.value.replace(/[^0-9]/g, ""))}
-                    onPaste={(e) => e.preventDefault()}
                     placeholder="0551234567"
                     className="w-full pl-10 pr-4 py-3 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 font-mono font-bold tracking-wider text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm"
                   />

@@ -24,16 +24,7 @@ export async function POST(req: Request) {
       );
     }
 
-    // 1. Check if this phone number has already claimed a voucher
-    const alreadyClaimed = await db.hasPhoneClaimedVoucher(formattedPhone);
-    if (alreadyClaimed) {
-      return NextResponse.json(
-        { error: "This phone number has already claimed a free data voucher. Only one claim is permitted per number." },
-        { status: 400 }
-      );
-    }
-
-    // 2. Validate voucher code and availability
+    // 1. Validate voucher code and availability
     const now = new Date();
     const vouchers = await db.getVouchers();
     const voucher = vouchers.find(
@@ -47,6 +38,20 @@ export async function POST(req: Request) {
     if (!voucher) {
       return NextResponse.json(
         { error: "Invalid, expired, or fully redeemed voucher code." },
+        { status: 400 }
+      );
+    }
+
+    // 2. Check if this phone number has already claimed a voucher in this giveaway drop/batch
+    const alreadyClaimedThisBatch = await db.hasPhoneClaimedBatch(
+      formattedPhone,
+      voucher.batch_id || null,
+      voucher.id
+    );
+
+    if (alreadyClaimedThisBatch) {
+      return NextResponse.json(
+        { error: "This phone number has already claimed a free data code from this giveaway drop. Only one claim is permitted per phone number." },
         { status: 400 }
       );
     }
@@ -124,6 +129,7 @@ export async function POST(req: Request) {
     await db.recordVoucherClaim({
       voucher_id: voucher.id,
       voucher_code: voucher.code,
+      batch_id: voucher.batch_id || null,
       phone: formattedPhone,
       customer_name: customerName,
       customer_orders_count: customerOrders.length,

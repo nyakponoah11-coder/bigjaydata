@@ -52,34 +52,105 @@ export async function GET() {
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { code, network, package_size, tagline, max_claims, expires_at, min_orders_required } = body;
+    const {
+      code,
+      network,
+      package_size,
+      tagline,
+      max_claims,
+      count,
+      expires_at,
+      min_orders_required,
+    } = body;
 
-    if (!code || !network || !package_size) {
+    if (!network || !package_size) {
       return NextResponse.json(
-        { error: "Voucher code, network, and package size are required." },
+        { error: "Network and package size are required." },
         { status: 400 }
       );
     }
 
-    const cleanCode = code.trim().toUpperCase();
     const cleanNetwork = network.toLowerCase();
     const cleanSize = package_size.trim().toUpperCase();
     const cleanTagline = (tagline || "Free Data Giveaway!").trim();
-    const numMaxClaims = Number(max_claims) > 0 ? Number(max_claims) : 10;
     const numMinOrders = Number(min_orders_required) >= 0 ? Number(min_orders_required) : 0;
+    const expiresAtIso = expires_at ? new Date(expires_at).toISOString() : null;
+
+    const requestedCount = Math.max(1, Math.min(100, Number(count) || 1));
+
+    const existingVouchers = await db.getVouchers();
+    const existingCodes = new Set(existingVouchers.map((v) => (v.code || "").toUpperCase()));
+
+    // Generate 8-digit code FREE-XXXXXXXX
+    const generate8DigitCode = (): string => {
+      for (let i = 0; i < 1000; i++) {
+        const digits = Math.floor(10000000 + Math.random() * 90000000).toString();
+        const candidate = `FREE-${digits}`;
+        if (!existingCodes.has(candidate)) {
+          existingCodes.add(candidate);
+          return candidate;
+        }
+      }
+      return `FREE-${Date.now().toString().slice(-8)}`;
+    };
+
+    const batchId = `batch_${Date.now()}_${Math.floor(1000 + Math.random() * 9000)}`;
+
+    if (requestedCount > 1) {
+      const batchItems = [];
+      const generatedCodes: string[] = [];
+
+      for (let i = 0; i < requestedCount; i++) {
+        const newCode = generate8DigitCode();
+        generatedCodes.push(newCode);
+        batchItems.push({
+          code: newCode,
+          network: cleanNetwork,
+          package_size: cleanSize,
+          tagline: cleanTagline,
+          max_claims: 1, // Strictly single use per generated code
+          min_orders_required: numMinOrders,
+          batch_id: batchId,
+          is_active: true,
+          expires_at: expiresAtIso,
+        });
+      }
+
+      const createdVouchers = await db.createVouchersBatch(batchItems);
+      return NextResponse.json({
+        success: true,
+        count: createdVouchers.length,
+        batch_id: batchId,
+        codes: generatedCodes,
+        vouchers: createdVouchers,
+      });
+    }
+
+    // Single code generation
+    let finalCode = (code || "").trim().toUpperCase();
+    if (!finalCode || !finalCode.startsWith("FREE-") || finalCode.length < 13) {
+      finalCode = generate8DigitCode();
+    }
 
     const voucher = await db.createVoucher({
-      code: cleanCode,
+      code: finalCode,
       network: cleanNetwork,
       package_size: cleanSize,
       tagline: cleanTagline,
-      max_claims: numMaxClaims,
+      max_claims: 1, // Single use
       min_orders_required: numMinOrders,
+      batch_id: batchId,
       is_active: true,
-      expires_at: expires_at ? new Date(expires_at).toISOString() : null,
+      expires_at: expiresAtIso,
     });
 
-    return NextResponse.json({ success: true, voucher });
+    return NextResponse.json({
+      success: true,
+      count: 1,
+      batch_id: batchId,
+      codes: [voucher.code],
+      voucher,
+    });
   } catch (error: any) {
     console.error("Admin Vouchers POST error:", error);
     return NextResponse.json(
