@@ -840,10 +840,8 @@ export const db = {
           .select()
           .single();
         if (error) {
-          console.error("Supabase addProduct error:", error);
-          throw new Error(error.message);
-        }
-        if (data) {
+          console.warn("Supabase addProduct warning:", error.message);
+        } else if (data) {
           const created = data as Product;
           globalStore.__bmgh_products = [created, ...(globalStore.__bmgh_products || [])];
           invalidateDbCache("products");
@@ -851,8 +849,7 @@ export const db = {
           return created;
         }
       } catch (err: any) {
-        console.error("Supabase addProduct exception:", err?.message || err);
-        throw err;
+        console.warn("Supabase addProduct network failure, falling back to local store:", err?.message || err);
       }
     }
 
@@ -885,10 +882,8 @@ export const db = {
           .select()
           .single();
         if (error) {
-          console.error("Supabase updateProduct error:", error);
-          throw new Error(error.message);
-        }
-        if (data) {
+          console.warn("Supabase updateProduct warning:", error.message);
+        } else if (data) {
           const updated = data as Product;
           const idx = (globalStore.__bmgh_products || []).findIndex((p) => p.id === id);
           if (idx !== -1) globalStore.__bmgh_products![idx] = updated;
@@ -897,8 +892,7 @@ export const db = {
           return updated;
         }
       } catch (err: any) {
-        console.error("Supabase updateProduct exception:", err?.message || err);
-        throw err;
+        console.warn("Supabase updateProduct network failure, falling back to local store:", err?.message || err);
       }
     }
 
@@ -918,23 +912,16 @@ export const db = {
       try {
         const { error } = await supabaseAdmin.from("products").delete().eq("id", id);
         if (error) {
-          console.error("Supabase deleteProduct error:", error);
-          throw new Error(error.message);
+          console.warn("Supabase deleteProduct warning:", error.message);
         }
-        globalStore.__bmgh_products = (globalStore.__bmgh_products || []).filter((p) => p.id !== id);
-        invalidateDbCache("products");
-        saveToDisk();
       } catch (err: any) {
-        console.error("Supabase deleteProduct exception:", err?.message || err);
-        throw err;
-      }
-    } else {
-      const index = (globalStore.__bmgh_products || []).findIndex((p) => p.id === id);
-      if (index !== -1) {
-        globalStore.__bmgh_products!.splice(index, 1);
-        saveToDisk();
+        console.warn("Supabase deleteProduct network failure, falling back to local store:", err?.message || err);
       }
     }
+
+    globalStore.__bmgh_products = (globalStore.__bmgh_products || []).filter((p) => p.id !== id);
+    invalidateDbCache("products");
+    saveToDisk();
 
     // Cascade to agent base products if a matching product exists by ID or by matching network + size
     try {
