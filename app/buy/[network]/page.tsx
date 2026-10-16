@@ -4,6 +4,7 @@ import Footer from "@/components/Footer";
 import WhatsAppButton from "@/components/WhatsAppButton";
 import BuyClientView from "./BuyClientView";
 import DeliveryTrackerCard from "@/components/DeliveryTrackerCard";
+import AnnouncementBanner from "@/components/AnnouncementBanner";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 
@@ -55,6 +56,11 @@ export default async function BuyNetworkPage({
         storeName={settings.store_name}
         whatsappNumber={settings.whatsapp_number}
         whatsappChannelUrl={settings.whatsapp_channel_url}
+      />
+
+      <AnnouncementBanner
+        text={settings.announcement_text}
+        isActive={settings.announcement_active}
       />
 
       <main className="flex-1 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full space-y-6">

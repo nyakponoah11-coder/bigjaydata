@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import DeliveryTrackerCard from "@/components/DeliveryTrackerCard";
+import AnnouncementBanner from "@/components/AnnouncementBanner";
 import { getCachedAgentStore, saveAgentStoreSession } from "@/lib/device-session";
 import { createSmartInterval, cachedAsync } from "@/lib/localCache";
 import {
@@ -541,6 +542,9 @@ export default function StorefrontClientView({
           </div>
         </div>
       </div>
+
+      {/* Rolling Announcement Marquee Banner */}
+      <AnnouncementBanner />
 
       <main className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
         {/* Storefront Hero Header */}

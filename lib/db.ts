@@ -673,9 +673,9 @@ export const db = {
             }
           }
 
-          if (data.announcement_text && String(data.announcement_text).trim()) {
-            merged.announcement_text = String(data.announcement_text).trim();
-          } else if (globalStore.__bmgh_settings?.announcement_text) {
+          if (data.announcement_text !== undefined && data.announcement_text !== null) {
+            merged.announcement_text = String(data.announcement_text);
+          } else if (globalStore.__bmgh_settings?.announcement_text !== undefined) {
             merged.announcement_text = globalStore.__bmgh_settings.announcement_text;
           }
 
@@ -683,6 +683,26 @@ export const db = {
             merged.announcement_active = Boolean(data.announcement_active);
           } else if (globalStore.__bmgh_settings?.announcement_active !== undefined) {
             merged.announcement_active = globalStore.__bmgh_settings.announcement_active;
+          }
+
+          // Check backup config row for announcement banner so it never gets lost across schema variations
+          try {
+            const { data: annRow } = await supabaseAdmin
+              .from("settings")
+              .select("store_name, announcement_text, announcement_active")
+              .eq("id", "announcement_banner_config")
+              .maybeSingle();
+            if (annRow) {
+              const annVal = annRow.announcement_text !== undefined && annRow.announcement_text !== null
+                ? String(annRow.announcement_text)
+                : (annRow.store_name ? String(annRow.store_name) : "");
+              merged.announcement_text = annVal;
+              if (annRow.announcement_active !== undefined && annRow.announcement_active !== null) {
+                merged.announcement_active = Boolean(annRow.announcement_active);
+              }
+            }
+          } catch (annErr) {
+            // ignore
           }
 
           if (data.gemini_api_key) merged.gemini_api_key = data.gemini_api_key;
@@ -792,6 +812,20 @@ export const db = {
             });
           } catch (aiErr) {
             console.warn("AI instructions backup row save error:", aiErr);
+          }
+        }
+
+        // Save Announcement banner text & active status to dedicated config row so it NEVER disappears
+        if (safeUpdates.announcement_text !== undefined || safeUpdates.announcement_active !== undefined) {
+          try {
+            await supabaseAdmin.from("settings").upsert({
+              id: "announcement_banner_config",
+              store_name: safeUpdates.announcement_text !== undefined ? safeUpdates.announcement_text.trim() : (globalStore.__bmgh_settings?.announcement_text || ""),
+              announcement_text: safeUpdates.announcement_text !== undefined ? safeUpdates.announcement_text.trim() : (globalStore.__bmgh_settings?.announcement_text || ""),
+              announcement_active: safeUpdates.announcement_active !== undefined ? Boolean(safeUpdates.announcement_active) : (globalStore.__bmgh_settings?.announcement_active !== false),
+            });
+          } catch (annErr) {
+            console.warn("Announcement backup row save error:", annErr);
           }
         }
 

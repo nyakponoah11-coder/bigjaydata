@@ -160,7 +160,10 @@ export default function AdminSettingsPage() {
   const fetchSettings = async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/settings");
+      const res = await fetch("/api/settings", {
+        cache: "no-store",
+        headers: { "Cache-Control": "no-cache", "Pragma": "no-cache" },
+      });
       const data = await res.json();
       if (data.success && data.settings) {
         const s: Settings = data.settings;
@@ -288,10 +291,18 @@ export default function AdminSettingsPage() {
         if (data.settings.groq_model !== undefined || data.settings.grok_model !== undefined) {
           setGroqModel(data.settings.groq_model || data.settings.grok_model || "llama-3.3-70b-versatile");
         }
+
+        // Immediately purge client caches and broadcast update to all open tabs
+        try {
+          localStorage.removeItem("bmgh_sess_settings");
+          localStorage.removeItem("cache_public_settings");
+          localStorage.setItem("bmgh_settings_updated_at", String(Date.now()));
+          window.dispatchEvent(new CustomEvent("bmgh_settings_updated", { detail: data.settings }));
+        } catch {}
       }
 
       setNotice(
-        `Settings saved successfully! AI keys and store settings updated in database.`
+        `Settings saved successfully! Marquee banner and store settings updated.`
       );
       setTimeout(() => setNotice(""), 6000);
     } catch (err: any) {

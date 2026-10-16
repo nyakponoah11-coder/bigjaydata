@@ -2,7 +2,6 @@
 
 import React, { useState, useEffect } from "react";
 import { Zap } from "lucide-react";
-import { getCachedSettings, saveSettingsSession } from "@/lib/device-session";
 
 interface Props {
   text?: string;
@@ -13,69 +12,50 @@ export default function AnnouncementBanner({
   text = "",
   isActive = true,
 }: Props) {
-  const [currentText, setCurrentText] = useState(() => {
-    if (text) return text;
-    const cached = getCachedSettings();
-    return cached?.announcement_text || "";
-  });
-  const [active, setActive] = useState(() => {
-    if (isActive !== undefined) return isActive;
-    const cached = getCachedSettings();
-    return cached?.announcement_active !== false;
-  });
+  const [currentText, setCurrentText] = useState(text || "");
+  const [active, setActive] = useState(isActive !== false);
 
-  // Sync when props change from server
+  // Sync immediately when props change from server
   useEffect(() => {
-    if (text) {
-      setCurrentText(text);
-    }
-    if (isActive !== undefined) {
-      setActive(isActive);
-    }
+    setCurrentText(text || "");
+    setActive(isActive !== false);
   }, [text, isActive]);
 
-  // Only fetch from /api/settings if no initial text was provided
+  // Real-time synchronization when admin saves settings in another tab or same window
   useEffect(() => {
-    if (text && text.trim()) return;
-
     let isMounted = true;
-    const fetchLiveBanner = async (forceFresh = false) => {
+
+    const fetchFresh = async () => {
       try {
-        const { cachedAsync } = await import("@/lib/localCache");
-        const data = await cachedAsync(
-          "public_settings",
-          async () => {
-            const res = await fetch("/api/settings", {
-              cache: "no-store",
-              headers: { "Cache-Control": "no-cache" },
-            });
-            return await res.json();
-          },
-          60 * 1000,
-          forceFresh
-        );
+        const res = await fetch("/api/settings", {
+          cache: "no-store",
+          headers: { "Cache-Control": "no-cache", "Pragma": "no-cache" },
+        });
+        const data = await res.json();
         if (isMounted && data?.success && data?.settings) {
           if (data.settings.announcement_text !== undefined) {
-            setCurrentText(data.settings.announcement_text);
+            setCurrentText(data.settings.announcement_text || "");
           }
           if (data.settings.announcement_active !== undefined) {
             setActive(data.settings.announcement_active !== false);
           }
-          saveSettingsSession(data.settings);
         }
       } catch (err) {}
     };
 
-    fetchLiveBanner();
+    const handleUpdate = () => fetchFresh();
 
-    // Listen for focus events to auto-refresh when admin saves settings in another tab
-    const handleFocus = () => fetchLiveBanner(false);
-    window.addEventListener("focus", handleFocus);
+    window.addEventListener("focus", handleUpdate);
+    window.addEventListener("storage", handleUpdate);
+    window.addEventListener("bmgh_settings_updated", handleUpdate);
+
     return () => {
       isMounted = false;
-      window.removeEventListener("focus", handleFocus);
+      window.removeEventListener("focus", handleUpdate);
+      window.removeEventListener("storage", handleUpdate);
+      window.removeEventListener("bmgh_settings_updated", handleUpdate);
     };
-  }, [text]);
+  }, []);
 
   if (!active || !currentText?.trim()) return null;
 
