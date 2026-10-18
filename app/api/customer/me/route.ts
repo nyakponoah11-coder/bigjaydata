@@ -33,24 +33,32 @@ export async function GET(req: Request) {
       );
     }
 
-    const [transactions, allOrders] = await Promise.all([
-      db.getCustomerTransactions(customer.id),
-      db.getOrders(),
-    ]);
+    const includeOrders = searchParams.get("include_orders") === "true";
+    let transactions: any[] = [];
+    let customerOrders: any[] = [];
 
-    const customerOrders = allOrders.filter(
-      (o) =>
-        o.customer_id === customer.id ||
-        (o.phone && o.phone.replace(/[^0-9]/g, "") === customer.phone.replace(/[^0-9]/g, ""))
-    );
+    if (includeOrders) {
+      const [txList, allOrders] = await Promise.all([
+        db.getCustomerTransactions(customer.id),
+        db.getOrders(),
+      ]);
+      transactions = txList.slice(0, 50);
+      customerOrders = allOrders.filter(
+        (o) =>
+          o.customer_id === customer.id ||
+          (o.phone && o.phone.replace(/[^0-9]/g, "") === customer.phone.replace(/[^0-9]/g, ""))
+      ).slice(0, 50);
+    } else {
+      transactions = (await db.getCustomerTransactions(customer.id)).slice(0, 20);
+    }
 
     const { password_hash, ...safeCustomer } = customer;
 
     return NextResponse.json({
       success: true,
       customer: safeCustomer,
-      transactions: transactions.slice(0, 50),
-      orders: customerOrders.slice(0, 50),
+      transactions,
+      orders: customerOrders,
     });
   } catch (error: any) {
     console.error("Customer me error:", error);

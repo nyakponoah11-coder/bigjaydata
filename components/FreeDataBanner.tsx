@@ -50,10 +50,10 @@ export default function FreeDataBanner() {
 
     // Check periodically so the storefront automatically updates when admin turns promo on/off
     const pollInterval = setInterval(() => {
-      if (typeof document !== "undefined" && !document.hidden) {
+      if (typeof document !== "undefined" && !document.hidden && document.visibilityState === "visible") {
         fetchActive();
       }
-    }, 15000);
+    }, 90000);
 
     const handleEvent = () => fetchActive();
     window.addEventListener("voucher_updated", handleEvent);

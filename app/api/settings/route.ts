@@ -7,21 +7,21 @@ export const revalidate = 0;
 export async function GET() {
   try {
     const settings = await db.getSettings();
+    const config = await db.getAgentStoreConfig();
     // Don't expose secret key directly to client
     const safeSettings = {
       ...settings,
+      paystack_public_key: settings.paystack_public_key || process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY || "",
       paystack_secret_key: settings.paystack_secret_key ? "••••••••" : "",
     };
-    const config = await db.getAgentStoreConfig();
     return NextResponse.json({
       success: true,
       settings: safeSettings,
       agent_store_enabled: config.is_enabled,
+      registration_fee: config.registration_fee || 0,
     }, {
       headers: {
-        "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
-        "Pragma": "no-cache",
-        "Expires": "0",
+        "Cache-Control": "public, max-age=30, s-maxage=60, stale-while-revalidate=120",
       },
     });
   } catch (error: any) {

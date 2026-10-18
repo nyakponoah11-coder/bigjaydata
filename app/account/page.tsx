@@ -120,7 +120,7 @@ export default function CustomerAccountDashboard() {
 
     setRefreshing(true);
     try {
-      const res = await fetch(`/api/customer/me?id=${encodeURIComponent(targetId)}`);
+      const res = await fetch(`/api/customer/me?id=${encodeURIComponent(targetId)}&include_orders=true`);
       const data = await res.json();
       if (data.success && data.customer) {
         setCustomer(data.customer);

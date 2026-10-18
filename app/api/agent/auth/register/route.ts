@@ -78,6 +78,17 @@ export async function POST(req: Request) {
           { status: 402 }
         );
       }
+
+      // Confirm paid amount matches fee
+      if (verification.amount > 0 && verification.amount < config.registration_fee - 0.05) {
+        return NextResponse.json(
+          {
+            success: false,
+            message: `Paid registration fee (GHS ${verification.amount.toFixed(2)}) is less than required fee (GHS ${config.registration_fee.toFixed(2)}).`,
+          },
+          { status: 402 }
+        );
+      }
       registrationPaid = true;
     }
 

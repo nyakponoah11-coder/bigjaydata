@@ -482,6 +482,8 @@ const globalStore = globalThis as unknown as {
   __bmgh_customer_transactions?: CustomerTransaction[];
   __bmgh_cache_timestamps?: Record<string, number>;
   __bmgh_agents_zeroed_migrated?: boolean;
+  __bmgh_deleted_agents?: string[];
+  __bmgh_deleted_base_products?: string[];
 };
 
 function saveToDisk() {
@@ -492,17 +494,21 @@ function saveToDisk() {
       }
       const existingDisk = loadFromDisk() || {};
       const baseProdsToSave =
-        Array.isArray(globalStore.__bmgh_agent_base_products) && globalStore.__bmgh_agent_base_products.length > 0
+        Array.isArray(globalStore.__bmgh_agent_base_products)
           ? globalStore.__bmgh_agent_base_products
-          : existingDisk.agent_base_products || initialAgentBaseProducts;
+          : existingDisk.agent_base_products !== undefined
+          ? existingDisk.agent_base_products
+          : initialAgentBaseProducts;
       const agentProdsToSave =
-        Array.isArray(globalStore.__bmgh_agent_products) && globalStore.__bmgh_agent_products.length > 0
+        Array.isArray(globalStore.__bmgh_agent_products)
           ? globalStore.__bmgh_agent_products
           : existingDisk.agent_products || [];
       const agentsToSave =
-        Array.isArray(globalStore.__bmgh_agents) && globalStore.__bmgh_agents.length > 0
+        Array.isArray(globalStore.__bmgh_agents)
           ? globalStore.__bmgh_agents
-          : existingDisk.agents || initialAgents;
+          : existingDisk.agents !== undefined
+          ? existingDisk.agents
+          : initialAgents;
 
       const dataToSave = {
         settings: globalStore.__bmgh_settings || existingDisk.settings,
@@ -522,12 +528,21 @@ function saveToDisk() {
         developer_accounts: globalStore.__bmgh_developer_accounts || existingDisk.developer_accounts,
         customers: globalStore.__bmgh_customers || existingDisk.customers,
         customer_transactions: globalStore.__bmgh_customer_transactions || existingDisk.customer_transactions,
+        deleted_agents: globalStore.__bmgh_deleted_agents || existingDisk.deleted_agents || [],
+        deleted_base_products: globalStore.__bmgh_deleted_base_products || existingDisk.deleted_base_products || [],
       };
       fs.writeFileSync(STORE_FILE, JSON.stringify(dataToSave, null, 2), "utf-8");
     }
   } catch (err) {
     console.warn("Failed to save local store to disk:", err);
   }
+}
+
+if (!globalStore.__bmgh_deleted_agents) {
+  globalStore.__bmgh_deleted_agents = diskData?.deleted_agents || [];
+}
+if (!globalStore.__bmgh_deleted_base_products) {
+  globalStore.__bmgh_deleted_base_products = diskData?.deleted_base_products || [];
 }
 
 if (!globalStore.__bmgh_products) globalStore.__bmgh_products = diskData?.products || initialProducts;
@@ -548,14 +563,17 @@ if (!globalStore.__bmgh_agent_config) {
     registration_fee: 0 
   };
 }
-if (!globalStore.__bmgh_agent_base_products || globalStore.__bmgh_agent_base_products.length === 0) {
-  globalStore.__bmgh_agent_base_products =
-    diskData?.agent_base_products && diskData.agent_base_products.length > 0
-      ? diskData.agent_base_products
-      : initialAgentBaseProducts;
+if (!globalStore.__bmgh_agent_base_products) {
+  const diskBase = diskData?.agent_base_products;
+  globalStore.__bmgh_agent_base_products = Array.isArray(diskBase)
+    ? diskBase.filter((bp) => !globalStore.__bmgh_deleted_base_products?.includes(bp.id) && !globalStore.__bmgh_deleted_base_products?.includes(`${bp.network.toLowerCase().trim()}_${bp.size.toLowerCase().trim().replace(/\s+/g, "")}`))
+    : initialAgentBaseProducts.filter((bp) => !globalStore.__bmgh_deleted_base_products?.includes(bp.id) && !globalStore.__bmgh_deleted_base_products?.includes(`${bp.network.toLowerCase().trim()}_${bp.size.toLowerCase().trim().replace(/\s+/g, "")}`));
 }
-if (!globalStore.__bmgh_agents || globalStore.__bmgh_agents.length === 0) {
-  globalStore.__bmgh_agents = (diskData?.agents && diskData.agents.length > 0) ? diskData.agents : [...initialAgents];
+if (!globalStore.__bmgh_agents) {
+  const diskAgents = diskData?.agents;
+  globalStore.__bmgh_agents = Array.isArray(diskAgents)
+    ? diskAgents.filter((a) => !globalStore.__bmgh_deleted_agents?.includes(a.id) && !globalStore.__bmgh_deleted_agents?.includes(a.store_slug.toLowerCase()))
+    : initialAgents.filter((a) => !globalStore.__bmgh_deleted_agents?.includes(a.id) && !globalStore.__bmgh_deleted_agents?.includes(a.store_slug.toLowerCase()));
 }
 if (!globalStore.__bmgh_agent_products || globalStore.__bmgh_agent_products.length === 0) {
   globalStore.__bmgh_agent_products =
@@ -644,6 +662,12 @@ export const db = {
   // SETTINGS
   async getSettings(): Promise<Settings> {
     if (isCacheFresh("settings", CACHE_TTLS.settings) && globalStore.__bmgh_settings) {
+      if (!globalStore.__bmgh_settings.paystack_public_key && process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY) {
+        globalStore.__bmgh_settings.paystack_public_key = process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY;
+      }
+      if (!globalStore.__bmgh_settings.paystack_secret_key && process.env.PAYSTACK_SECRET_KEY) {
+        globalStore.__bmgh_settings.paystack_secret_key = process.env.PAYSTACK_SECRET_KEY;
+      }
       return globalStore.__bmgh_settings;
     }
 
@@ -652,6 +676,12 @@ export const db = {
         const { data, error } = await supabaseAdmin.from("settings").select("*").eq("id", "default").single();
         if (!error && data) {
           const merged: Settings = { ...globalStore.__bmgh_settings, ...data };
+          if (!merged.paystack_public_key && process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY) {
+            merged.paystack_public_key = process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY;
+          }
+          if (!merged.paystack_secret_key && process.env.PAYSTACK_SECRET_KEY) {
+            merged.paystack_secret_key = process.env.PAYSTACK_SECRET_KEY;
+          }
           // Preserve channel url, announcement, and AI keys if configured locally
           if (data.whatsapp_channel_url && String(data.whatsapp_channel_url).trim()) {
             merged.whatsapp_channel_url = String(data.whatsapp_channel_url).trim();
@@ -757,6 +787,14 @@ export const db = {
       }
     }
     markCacheFresh("settings");
+    if (globalStore.__bmgh_settings) {
+      if (!globalStore.__bmgh_settings.paystack_public_key && process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY) {
+        globalStore.__bmgh_settings.paystack_public_key = process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY;
+      }
+      if (!globalStore.__bmgh_settings.paystack_secret_key && process.env.PAYSTACK_SECRET_KEY) {
+        globalStore.__bmgh_settings.paystack_secret_key = process.env.PAYSTACK_SECRET_KEY;
+      }
+    }
     return globalStore.__bmgh_settings!;
   },
 
@@ -897,7 +935,7 @@ export const db = {
 
   // PRODUCTS
   async getProducts(network?: string): Promise<Product[]> {
-    if (isCacheFresh("products", CACHE_TTLS.products) && globalStore.__bmgh_products && globalStore.__bmgh_products.length > 0) {
+    if (isCacheFresh("products", CACHE_TTLS.products) && Array.isArray(globalStore.__bmgh_products)) {
       let list = globalStore.__bmgh_products!;
       if (network) {
         list = list.filter((p) => p.network.toLowerCase() === network.toLowerCase());
@@ -1061,7 +1099,7 @@ export const db = {
     search?: string;
   }, forceFresh = false): Promise<Order[]> {
     // Egress Protection: Serve from in-memory cache if no search and cache is fresh
-    if (!forceFresh && !filter?.search && isCacheFresh("orders", CACHE_TTLS.orders) && globalStore.__bmgh_orders && globalStore.__bmgh_orders.length > 0) {
+    if (!forceFresh && !filter?.search && isCacheFresh("orders", CACHE_TTLS.orders) && Array.isArray(globalStore.__bmgh_orders)) {
       let results = [...globalStore.__bmgh_orders].map(normalizeOrder).sort(
         (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
       );
@@ -1646,14 +1684,23 @@ export const db = {
 
   // FREE DATA VOUCHERS
   async getVouchers(): Promise<Voucher[]> {
+    if (isCacheFresh("vouchers", 5 * 60 * 1000) && Array.isArray(globalStore.__bmgh_vouchers)) {
+      return globalStore.__bmgh_vouchers;
+    }
     if (isSupabaseConfigured && supabaseAdmin) {
       try {
         const { data, error } = await supabaseAdmin.from("vouchers").select("*").order("created_at", { ascending: false });
-        if (!error && data) return data as Voucher[];
+        if (!error && Array.isArray(data)) {
+          globalStore.__bmgh_vouchers = data as Voucher[];
+          markCacheFresh("vouchers");
+          saveToDisk();
+          return data as Voucher[];
+        }
       } catch (err) {
         console.error("Supabase getVouchers error:", err);
       }
     }
+    markCacheFresh("vouchers");
     return globalStore.__bmgh_vouchers || [];
   },
 
@@ -2101,20 +2148,26 @@ export const db = {
   },
 
   async getAgentBaseProducts(): Promise<AgentBaseProduct[]> {
+    const deletedKeys = new Set(
+      (globalStore.__bmgh_deleted_base_products || []).map((k) => k.toLowerCase().trim())
+    );
+
     if (
       isCacheFresh("agent_base_products", CACHE_TTLS.agent_base_products) &&
-      Array.isArray(globalStore.__bmgh_agent_base_products) &&
-      globalStore.__bmgh_agent_base_products.length > 0
+      Array.isArray(globalStore.__bmgh_agent_base_products)
     ) {
-      return globalStore.__bmgh_agent_base_products;
+      return globalStore.__bmgh_agent_base_products.filter((bp) => {
+        const compKey = `${(bp.network || "").toLowerCase().trim()}_${(bp.size || "").toLowerCase().trim().replace(/\s+/g, "")}`;
+        return !deletedKeys.has(bp.id.toLowerCase()) && !deletedKeys.has(compKey);
+      });
     }
 
     let mergedList: AgentBaseProduct[] = [];
-    if (Array.isArray(globalStore.__bmgh_agent_base_products) && globalStore.__bmgh_agent_base_products.length > 0) {
+    if (Array.isArray(globalStore.__bmgh_agent_base_products)) {
       mergedList = [...globalStore.__bmgh_agent_base_products];
     } else {
       const disk = loadFromDisk();
-      if (Array.isArray(disk?.agent_base_products) && disk.agent_base_products.length > 0) {
+      if (Array.isArray(disk?.agent_base_products)) {
         mergedList = [...disk.agent_base_products];
       } else {
         mergedList = [...initialAgentBaseProducts];
@@ -2124,8 +2177,10 @@ export const db = {
     const baseMap = new Map<string, AgentBaseProduct>();
     mergedList.forEach((bp) => {
       const compKey = `${(bp.network || "").toLowerCase().trim()}_${(bp.size || "").toLowerCase().trim().replace(/\s+/g, "")}`;
-      baseMap.set(bp.id, bp);
-      baseMap.set(compKey, bp);
+      if (!deletedKeys.has(bp.id.toLowerCase()) && !deletedKeys.has(compKey)) {
+        baseMap.set(bp.id, bp);
+        baseMap.set(compKey, bp);
+      }
     });
 
     if (isSupabaseConfigured && supabaseAdmin) {
@@ -2137,6 +2192,9 @@ export const db = {
         if (!dbErr && Array.isArray(directBase) && directBase.length > 0) {
           directBase.forEach((b: any) => {
             const compKey = `${(b.network || "").toLowerCase().trim()}_${(b.size || "").toLowerCase().trim().replace(/\s+/g, "")}`;
+            if (deletedKeys.has(b.id?.toLowerCase()) || deletedKeys.has(compKey)) {
+              return;
+            }
             const existing = baseMap.get(b.id) || baseMap.get(compKey);
             if (existing) {
               existing.base_price = Number(b.base_price);
@@ -2174,6 +2232,9 @@ export const db = {
             if (Array.isArray(list) && list.length > 0) {
               list.forEach((b: any) => {
                 const compKey = `${(b.network || "").toLowerCase().trim()}_${(b.size || "").toLowerCase().trim().replace(/\s+/g, "")}`;
+                if (deletedKeys.has(b.id?.toLowerCase()) || deletedKeys.has(compKey)) {
+                  return;
+                }
                 const existing = baseMap.get(b.id) || baseMap.get(compKey);
                 if (existing) {
                   existing.base_price = Number(b.base_price);
@@ -2203,7 +2264,10 @@ export const db = {
 
     const uniqueMap = new Map<string, AgentBaseProduct>();
     Array.from(baseMap.values()).forEach((p) => {
-      uniqueMap.set(p.id, p);
+      const compKey = `${(p.network || "").toLowerCase().trim()}_${(p.size || "").toLowerCase().trim().replace(/\s+/g, "")}`;
+      if (!deletedKeys.has(p.id.toLowerCase()) && !deletedKeys.has(compKey)) {
+        uniqueMap.set(p.id, p);
+      }
     });
     const finalResult = Array.from(uniqueMap.values());
 
@@ -2389,6 +2453,19 @@ export const db = {
     const filtered = list.filter((x) => x.id !== id);
     globalStore.__bmgh_agent_base_products = filtered;
 
+    if (!globalStore.__bmgh_deleted_base_products) {
+      globalStore.__bmgh_deleted_base_products = [];
+    }
+    if (id && !globalStore.__bmgh_deleted_base_products.includes(id)) {
+      globalStore.__bmgh_deleted_base_products.push(id);
+    }
+    if (targetProduct) {
+      const compKey = `${targetProduct.network.toLowerCase().trim()}_${targetProduct.size.toLowerCase().trim().replace(/\s+/g, "")}`;
+      if (!globalStore.__bmgh_deleted_base_products.includes(compKey)) {
+        globalStore.__bmgh_deleted_base_products.push(compKey);
+      }
+    }
+
     // Clean up corresponding custom agent products in memory
     if (globalStore.__bmgh_agent_products) {
       globalStore.__bmgh_agent_products = globalStore.__bmgh_agent_products.filter(
@@ -2412,16 +2489,25 @@ export const db = {
       });
     }
 
-    // Fully bust all caches so fresh data is served immediately
+    // Fully bust agent products caches so fresh data is served immediately
     invalidateDbCache("agent_base_products");
     invalidateDbCache("agent_products");
-    invalidateDbCache();
     saveToDisk();
 
     if (isSupabaseConfigured && supabaseAdmin) {
       try {
         await supabaseAdmin.from("agent_base_products").delete().eq("id", id);
       } catch {}
+
+      if (targetProduct) {
+        try {
+          await supabaseAdmin
+            .from("agent_base_products")
+            .delete()
+            .eq("network", targetProduct.network.toLowerCase().trim())
+            .eq("size", targetProduct.size.trim());
+        } catch {}
+      }
 
       try {
         await supabaseAdmin.from("agent_products").delete().eq("base_product_id", id);
@@ -2439,6 +2525,17 @@ export const db = {
       } catch (err) {
         console.warn("Agent base products Supabase delete error:", err);
       }
+
+      try {
+        await supabaseAdmin.from("settings").upsert({
+          id: "deleted_agent_base_products_config",
+          store_name: "DeletedAgentBaseProducts",
+          support_phone: "+233551234567",
+          whatsapp_number: "233551234567",
+          email: "support@bundlemartgh.com",
+          announcement_text: JSON.stringify(globalStore.__bmgh_deleted_base_products),
+        });
+      } catch (err) {}
 
       // CRITICAL: Also update agent_products_registry_config so deleted products are permanently purged from Supabase!
       try {
@@ -2460,6 +2557,10 @@ export const db = {
 
   // AGENTS
   async getAgents(): Promise<Agent[]> {
+    const deletedAgents = new Set(
+      (globalStore.__bmgh_deleted_agents || []).map((a) => a.toLowerCase().trim())
+    );
+
     if (isSupabaseConfigured && supabaseAdmin && !globalStore.__bmgh_agents_zeroed_migrated) {
       globalStore.__bmgh_agents_zeroed_migrated = true;
       (async () => {
@@ -2483,8 +2584,10 @@ export const db = {
       })();
     }
 
-    if (isCacheFresh("agents", CACHE_TTLS.agents) && globalStore.__bmgh_agents && globalStore.__bmgh_agents.length > 0) {
-      return globalStore.__bmgh_agents;
+    if (isCacheFresh("agents", CACHE_TTLS.agents) && Array.isArray(globalStore.__bmgh_agents)) {
+      return globalStore.__bmgh_agents.filter(
+        (a) => !deletedAgents.has(a.id.toLowerCase()) && !deletedAgents.has(a.store_slug.toLowerCase())
+      );
     }
 
     if (isSupabaseConfigured && supabaseAdmin) {
@@ -2492,36 +2595,34 @@ export const db = {
       try {
         const { data: dbAgents } = await supabaseAdmin.from("agents").select("*");
         if (Array.isArray(dbAgents) && dbAgents.length > 0) {
-          const list: Agent[] = dbAgents.map((a: any) => ({
-            id: a.id,
-            name: a.name,
-            store_name: a.store_name,
-            store_slug: a.store_slug,
-            email: a.email,
-            phone: a.phone,
-            momo_number: a.momo_number,
-            momo_network: a.momo_network,
-            description: a.description,
-            logo_url: a.logo_url || "/agent-icon.png",
-            password_hash: a.password_hash,
-            theme: a.theme || "emerald",
-            wallet_balance: Number(a.wallet_balance || 0),
-            total_earned: Number(a.total_earned || 0),
-            total_withdrawn: Number(a.total_withdrawn || 0),
-            is_active: a.is_active !== false,
-            registration_paid: a.registration_paid !== false,
-            custom_prices: a.custom_prices || {},
-            cloaked_url: a.cloaked_url,
-            created_at: a.created_at,
-          }));
+          const list: Agent[] = dbAgents
+            .filter((a: any) => !deletedAgents.has(a.id?.toLowerCase()) && !deletedAgents.has(a.store_slug?.toLowerCase()))
+            .map((a: any) => ({
+              id: a.id,
+              name: a.name,
+              store_name: a.store_name,
+              store_slug: a.store_slug,
+              email: a.email,
+              phone: a.phone,
+              momo_number: a.momo_number,
+              momo_network: a.momo_network,
+              description: a.description,
+              logo_url: a.logo_url || "/agent-icon.png",
+              password_hash: a.password_hash,
+              theme: a.theme || "emerald",
+              wallet_balance: Number(a.wallet_balance || 0),
+              total_earned: Number(a.total_earned || 0),
+              total_withdrawn: Number(a.total_withdrawn || 0),
+              is_active: a.is_active !== false,
+              registration_paid: a.registration_paid !== false,
+              custom_prices: a.custom_prices || {},
+              cloaked_url: a.cloaked_url,
+              created_at: a.created_at,
+            }));
 
-          initialAgents.forEach((ia) => {
-            if (!list.some((a) => a.id === ia.id || a.store_slug === ia.store_slug)) {
-              list.push(ia);
-            }
-          });
           globalStore.__bmgh_agents = list;
           markCacheFresh("agents");
+          saveToDisk();
           return list;
         }
       } catch {}
@@ -2536,15 +2637,14 @@ export const db = {
         if (data?.announcement_text) {
           try {
             const list = JSON.parse(data.announcement_text);
-            if (Array.isArray(list) && list.length > 0) {
-              initialAgents.forEach((ia) => {
-                if (!list.some((a: any) => a.id === ia.id || a.store_slug === ia.store_slug)) {
-                  list.push(ia);
-                }
-              });
-              globalStore.__bmgh_agents = list;
+            if (Array.isArray(list)) {
+              const cleaned = list.filter(
+                (a: any) => !deletedAgents.has(a.id?.toLowerCase()) && !deletedAgents.has(a.store_slug?.toLowerCase())
+              );
+              globalStore.__bmgh_agents = cleaned;
               markCacheFresh("agents");
-              return list;
+              saveToDisk();
+              return cleaned;
             }
           } catch {}
         }
@@ -2553,25 +2653,25 @@ export const db = {
       }
     }
     markCacheFresh("agents");
-    const current = globalStore.__bmgh_agents || [];
-    initialAgents.forEach((ia) => {
-      if (!current.some((a) => a.id === ia.id || a.store_slug === ia.store_slug)) {
-        current.push(ia);
-      }
-    });
+    const current = (globalStore.__bmgh_agents || []).filter(
+      (a) => !deletedAgents.has(a.id.toLowerCase()) && !deletedAgents.has(a.store_slug.toLowerCase())
+    );
     globalStore.__bmgh_agents = current;
     markServerCache("agents");
+    saveToDisk();
     return current;
   },
 
   async getAgentById(id: string): Promise<Agent | null> {
     const cleanId = (id || "").trim();
     if (!cleanId) return null;
+    const deletedAgents = new Set(
+      (globalStore.__bmgh_deleted_agents || []).map((a) => a.toLowerCase().trim())
+    );
+    if (deletedAgents.has(cleanId.toLowerCase())) return null;
+
     const all = await this.getAgents();
     let found = all.find((a) => a.id === cleanId || a.store_slug.toLowerCase() === cleanId.toLowerCase()) || null;
-    if (!found) {
-      found = initialAgents.find((a) => a.id === cleanId || a.store_slug.toLowerCase() === cleanId.toLowerCase()) || null;
-    }
     if (found) {
       try {
         const orders = await this.getAgentOrders(found.id);
@@ -2642,13 +2742,17 @@ export const db = {
 
   async getAgentBySlug(slug: string): Promise<Agent | null> {
     const clean = slug.toLowerCase().trim();
+    const deletedAgents = new Set(
+      (globalStore.__bmgh_deleted_agents || []).map((a) => a.toLowerCase().trim())
+    );
+    if (deletedAgents.has(clean)) return null;
+
     const all = await this.getAgents();
     const found = all.find((a) => a.store_slug.toLowerCase() === clean);
     if (found) {
       if (!found.logo_url) found.logo_url = "/agent-icon.png";
       return found;
     }
-    if (clean === "stony") return initialAgents[0];
     return null;
   },
 
@@ -2777,8 +2881,23 @@ export const db = {
   async deleteAgent(id: string): Promise<boolean> {
     invalidateServerCache("agents");
     const agents = await this.getAgents();
-    const filtered = agents.filter((a) => a.id !== id && a.store_slug !== id);
+    const targetAgent = agents.find((a) => a.id === id || a.store_slug.toLowerCase() === id.toLowerCase());
+    const targetId = targetAgent?.id || id;
+    const targetSlug = targetAgent?.store_slug?.toLowerCase() || id.toLowerCase();
+
+    const filtered = agents.filter((a) => a.id !== targetId && a.store_slug.toLowerCase() !== targetSlug);
     globalStore.__bmgh_agents = filtered;
+
+    if (!globalStore.__bmgh_deleted_agents) {
+      globalStore.__bmgh_deleted_agents = [];
+    }
+    if (!globalStore.__bmgh_deleted_agents.includes(targetId)) {
+      globalStore.__bmgh_deleted_agents.push(targetId);
+    }
+    if (!globalStore.__bmgh_deleted_agents.includes(targetSlug)) {
+      globalStore.__bmgh_deleted_agents.push(targetSlug);
+    }
+
     saveToDisk();
 
     if (isSupabaseConfigured && supabaseAdmin) {
@@ -2786,6 +2905,9 @@ export const db = {
         await supabaseAdmin.from("settings").upsert({
           id: "agents_registry_config",
           store_name: "AgentsRegistry",
+          support_phone: "+233551234567",
+          whatsapp_number: "233551234567",
+          email: "support@bundlemartgh.com",
           announcement_text: JSON.stringify(filtered),
         });
       } catch (err) {
@@ -2793,16 +2915,35 @@ export const db = {
       }
 
       try {
-        await supabaseAdmin.from("agents").delete().eq("id", id);
+        await supabaseAdmin.from("settings").upsert({
+          id: "deleted_agents_config",
+          store_name: "DeletedAgents",
+          support_phone: "+233551234567",
+          whatsapp_number: "233551234567",
+          email: "support@bundlemartgh.com",
+          announcement_text: JSON.stringify(globalStore.__bmgh_deleted_agents),
+        });
+      } catch (err) {}
+
+      try {
+        await supabaseAdmin.from("agents").delete().eq("id", targetId);
+      } catch {}
+      try {
+        await supabaseAdmin.from("agents").delete().eq("store_slug", targetSlug);
       } catch {}
 
       try {
-        await supabaseAdmin.from("agent_products").delete().eq("agent_id", id);
+        await supabaseAdmin.from("agent_products").delete().eq("agent_id", targetId);
+      } catch {}
+      try {
+        await supabaseAdmin.from("agent_products").delete().eq("agent_id", targetSlug);
       } catch {}
     }
 
     if (globalStore.__bmgh_agent_products) {
-      globalStore.__bmgh_agent_products = globalStore.__bmgh_agent_products.filter((p) => p.agent_id !== id);
+      globalStore.__bmgh_agent_products = globalStore.__bmgh_agent_products.filter(
+        (p) => p.agent_id !== targetId && p.agent_id !== targetSlug
+      );
     }
 
     return true;
@@ -3452,7 +3593,7 @@ export const db = {
     };
 
     const cacheKey = targetAgentId ? `agent_orders:${targetAgentId}` : "agent_orders_all";
-    if (isCacheFresh(cacheKey, CACHE_TTLS.agent_orders) && globalStore.__bmgh_agent_orders && globalStore.__bmgh_agent_orders.length > 0) {
+    if (isCacheFresh(cacheKey, CACHE_TTLS.agent_orders) && Array.isArray(globalStore.__bmgh_agent_orders)) {
       const cleaned = globalStore.__bmgh_agent_orders.filter((o) => !isMasterPlatformOrder(o));
       if (targetAgentId) {
         return cleaned.filter((o) => o.agent_id === targetAgentId || o.agent_id === targetSlug);
@@ -3811,7 +3952,7 @@ export const db = {
     }
 
     const cacheKey = targetAgentId ? `agent_withdrawals:${targetAgentId}` : "agent_withdrawals_all";
-    if (isCacheFresh(cacheKey, CACHE_TTLS.agent_withdrawals) && globalStore.__bmgh_agent_withdrawals && globalStore.__bmgh_agent_withdrawals.length > 0) {
+    if (isCacheFresh(cacheKey, CACHE_TTLS.agent_withdrawals) && Array.isArray(globalStore.__bmgh_agent_withdrawals)) {
       if (targetAgentId) {
         return globalStore.__bmgh_agent_withdrawals.filter((w) => w.agent_id === targetAgentId || w.agent_id === targetSlug);
       }

@@ -37,32 +37,54 @@ export default function AgentRegisterPage() {
   const [error, setError] = useState("");
   const [fee, setFee] = useState(0);
   const [isEnabled, setIsEnabled] = useState(true);
-  const [paystackKey, setPaystackKey] = useState("");
+  const [paystackKey, setPaystackKey] = useState(process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY || "");
 
-  // Load Paystack inline script
-  useEffect(() => {
-    if (!window.PaystackPop) {
+  const ensurePaystackLoaded = (): Promise<boolean> => {
+    return new Promise((resolve) => {
+      if (typeof window !== "undefined" && window.PaystackPop) {
+        return resolve(true);
+      }
+      if (typeof document === "undefined") return resolve(false);
+
+      const existing = document.querySelector('script[src*="paystack"]');
+      if (existing) {
+        existing.addEventListener("load", () => resolve(Boolean(window.PaystackPop)));
+        setTimeout(() => resolve(Boolean(window.PaystackPop)), 2500);
+        return;
+      }
+
       const script = document.createElement("script");
       script.src = "https://js.paystack.co/v1/inline.js";
       script.async = true;
+      script.onload = () => resolve(Boolean(window.PaystackPop));
+      script.onerror = () => resolve(false);
       document.body.appendChild(script);
-    }
+      setTimeout(() => resolve(Boolean(window.PaystackPop)), 3000);
+    });
+  };
+
+  // Pre-load Paystack inline script
+  useEffect(() => {
+    ensurePaystackLoaded();
   }, []);
 
-  // Fetch agent store config & registration fee
+  // Fetch agent store config & registration fee from lightweight public settings
   useEffect(() => {
     const fetchConfig = async () => {
       try {
-        const res = await fetch("/api/admin/agent-store");
-        const data = await res.json();
-        if (data.success && data.config) {
-          setIsEnabled(data.config.is_enabled);
-          setFee(data.config.registration_fee || 0);
-        }
         const setRes = await fetch("/api/settings");
         const setData = await setRes.json();
-        if (setData.success && setData.settings) {
-          setPaystackKey(setData.settings.paystack_public_key || "");
+        if (setData.success) {
+          if (setData.agent_store_enabled !== undefined) {
+            setIsEnabled(Boolean(setData.agent_store_enabled));
+          }
+          if (setData.registration_fee !== undefined) {
+            setFee(Number(setData.registration_fee) || 0);
+          }
+          const key = setData.settings?.paystack_public_key || process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY || "";
+          if (key) {
+            setPaystackKey(key);
+          }
         }
       } catch (err) {
         console.error("Failed to load config:", err);
@@ -126,32 +148,49 @@ export default function AgentRegisterPage() {
 
     // If registration fee > 0, pop up Paystack
     if (fee > 0) {
-      if (!paystackKey || !window.PaystackPop) {
-        setError("Payment gateway is initializing or unavailable. Please retry shortly.");
+      const activeKey = paystackKey || process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY || "";
+      if (!activeKey || activeKey.includes("sample_bigj_data")) {
+        setError("Paystack gateway key is missing or not configured. Please contact the administrator.");
         setLoading(false);
         return;
       }
 
-      const handler = window.PaystackPop.setup({
-        key: paystackKey,
-        email: email.trim(),
-        amount: Math.round(fee * 100),
-        currency: "GHS",
-        ref: `REG-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`,
-        metadata: {
-          custom_fields: [
-            { display_name: "Agent Name", variable_name: "agent_name", value: name },
-            { display_name: "Store Name", variable_name: "store_name", value: storeName },
-          ],
-        },
-        callback: function (response: any) {
-          submitRegistration(response.reference || response.trxref);
-        },
-        onClose: function () {
-          setLoading(false);
-        },
-      });
-      handler.openIframe();
+      const isLoaded = await ensurePaystackLoaded();
+      if (!isLoaded || !window.PaystackPop) {
+        setError("Payment gateway failed to initialize. Please check your internet connection or reload the page.");
+        setLoading(false);
+        return;
+      }
+
+      try {
+        const handler = window.PaystackPop.setup({
+          key: activeKey,
+          email: email.trim(),
+          amount: Math.round(fee * 100),
+          currency: "GHS",
+          channels: ["mobile_money", "card"],
+          ref: `REG-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`,
+          metadata: {
+            custom_fields: [
+              { display_name: "Agent Name", variable_name: "agent_name", value: name.trim() },
+              { display_name: "Store Name", variable_name: "store_name", value: storeName.trim() },
+              { display_name: "Phone Number", variable_name: "phone_number", value: phone.trim() },
+            ],
+          },
+          callback: function (response: any) {
+            const finalRef = response?.reference || response?.trxref || response?.trans;
+            submitRegistration(finalRef);
+          },
+          onClose: function () {
+            setLoading(false);
+          },
+        });
+        handler.openIframe();
+      } catch (paystackErr: any) {
+        console.error("Paystack open error:", paystackErr);
+        setError("Failed to open Paystack payment modal: " + (paystackErr?.message || "Please try again"));
+        setLoading(false);
+      }
     } else {
       // Free registration
       submitRegistration();
