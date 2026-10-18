@@ -673,108 +673,89 @@ export const db = {
 
     if (isSupabaseConfigured && supabaseAdmin) {
       try {
-        const { data, error } = await supabaseAdmin.from("settings").select("*").eq("id", "default").single();
-        if (!error && data) {
-          const merged: Settings = { ...globalStore.__bmgh_settings, ...data };
+        const { data: allRows, error } = await supabaseAdmin.from("settings").select("*");
+        if (!error && Array.isArray(allRows) && allRows.length > 0) {
+          const defaultData = allRows.find((r) => r.id === "default") || allRows[0];
+          const bRow = allRows.find((r) => r.id === "whatsapp_channel_config");
+          const annRow = allRows.find((r) => r.id === "announcement_banner_config");
+          const aiRow = allRows.find((r) => r.id === "ai_instructions_config");
+          const agentRow = allRows.find((r) => r.id === "agent_store_config");
+
+          const merged: Settings = { ...globalStore.__bmgh_settings, ...defaultData };
           if (!merged.paystack_public_key && process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY) {
             merged.paystack_public_key = process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY;
           }
           if (!merged.paystack_secret_key && process.env.PAYSTACK_SECRET_KEY) {
             merged.paystack_secret_key = process.env.PAYSTACK_SECRET_KEY;
           }
-          // Preserve channel url, announcement, and AI keys if configured locally
-          if (data.whatsapp_channel_url && String(data.whatsapp_channel_url).trim()) {
-            merged.whatsapp_channel_url = String(data.whatsapp_channel_url).trim();
+
+          // Channel URL
+          if (defaultData.whatsapp_channel_url && String(defaultData.whatsapp_channel_url).trim()) {
+            merged.whatsapp_channel_url = String(defaultData.whatsapp_channel_url).trim();
+          } else if (bRow?.store_name && String(bRow.store_name).trim()) {
+            merged.whatsapp_channel_url = String(bRow.store_name).trim();
           } else if (globalStore.__bmgh_settings?.whatsapp_channel_url) {
             merged.whatsapp_channel_url = globalStore.__bmgh_settings.whatsapp_channel_url;
           }
 
-          // Check backup config row in Supabase so link never disappears across container restarts
-          if (!merged.whatsapp_channel_url) {
-            try {
-              const { data: bRow } = await supabaseAdmin
-                .from("settings")
-                .select("store_name")
-                .eq("id", "whatsapp_channel_config")
-                .maybeSingle();
-              if (bRow?.store_name && String(bRow.store_name).trim()) {
-                merged.whatsapp_channel_url = String(bRow.store_name).trim();
-              }
-            } catch (bErr) {
-              // ignore
+          // Announcement Banner
+          if (annRow) {
+            const annVal = annRow.announcement_text !== undefined && annRow.announcement_text !== null
+              ? String(annRow.announcement_text)
+              : (annRow.store_name ? String(annRow.store_name) : "");
+            merged.announcement_text = annVal;
+            if (annRow.announcement_active !== undefined && annRow.announcement_active !== null) {
+              merged.announcement_active = Boolean(annRow.announcement_active);
+            }
+          } else if (defaultData.announcement_text !== undefined && defaultData.announcement_text !== null) {
+            merged.announcement_text = String(defaultData.announcement_text);
+            if (defaultData.announcement_active !== undefined) {
+              merged.announcement_active = Boolean(defaultData.announcement_active);
             }
           }
 
-          if (data.announcement_text !== undefined && data.announcement_text !== null) {
-            merged.announcement_text = String(data.announcement_text);
-          } else if (globalStore.__bmgh_settings?.announcement_text !== undefined) {
-            merged.announcement_text = globalStore.__bmgh_settings.announcement_text;
-          }
-
-          if (data.announcement_active !== undefined && data.announcement_active !== null) {
-            merged.announcement_active = Boolean(data.announcement_active);
-          } else if (globalStore.__bmgh_settings?.announcement_active !== undefined) {
-            merged.announcement_active = globalStore.__bmgh_settings.announcement_active;
-          }
-
-          // Check backup config row for announcement banner so it never gets lost across schema variations
-          try {
-            const { data: annRow } = await supabaseAdmin
-              .from("settings")
-              .select("store_name, announcement_text, announcement_active")
-              .eq("id", "announcement_banner_config")
-              .maybeSingle();
-            if (annRow) {
-              const annVal = annRow.announcement_text !== undefined && annRow.announcement_text !== null
-                ? String(annRow.announcement_text)
-                : (annRow.store_name ? String(annRow.store_name) : "");
-              merged.announcement_text = annVal;
-              if (annRow.announcement_active !== undefined && annRow.announcement_active !== null) {
-                merged.announcement_active = Boolean(annRow.announcement_active);
-              }
-            }
-          } catch (annErr) {
-            // ignore
-          }
-
-          if (data.gemini_api_key) merged.gemini_api_key = data.gemini_api_key;
+          // AI Keys
+          if (defaultData.gemini_api_key) merged.gemini_api_key = defaultData.gemini_api_key;
           else if (globalStore.__bmgh_settings?.gemini_api_key) merged.gemini_api_key = globalStore.__bmgh_settings.gemini_api_key;
+          if (defaultData.gemini_model) merged.gemini_model = defaultData.gemini_model;
+          if (defaultData.grok_api_key) merged.grok_api_key = defaultData.grok_api_key;
+          if (defaultData.grok_model) merged.grok_model = defaultData.grok_model;
+          if (defaultData.openai_api_key) merged.openai_api_key = defaultData.openai_api_key;
+          if (defaultData.openai_model) merged.openai_model = defaultData.openai_model;
 
-          if (data.gemini_model) merged.gemini_model = data.gemini_model;
-          else if (globalStore.__bmgh_settings?.gemini_model) merged.gemini_model = globalStore.__bmgh_settings.gemini_model;
-
-          if (data.grok_api_key) merged.grok_api_key = data.grok_api_key;
-          else if (globalStore.__bmgh_settings?.grok_api_key) merged.grok_api_key = globalStore.__bmgh_settings.grok_api_key;
-
-          if (data.grok_model) merged.grok_model = data.grok_model;
-          else if (globalStore.__bmgh_settings?.grok_model) merged.grok_model = globalStore.__bmgh_settings.grok_model;
-
-          if (data.openai_api_key) merged.openai_api_key = data.openai_api_key;
-          else if (globalStore.__bmgh_settings?.openai_api_key) merged.openai_api_key = globalStore.__bmgh_settings.openai_api_key;
-
-          if (data.openai_model) merged.openai_model = data.openai_model;
-          else if (globalStore.__bmgh_settings?.openai_model) merged.openai_model = globalStore.__bmgh_settings.openai_model;
-
-          if (data.ai_system_instructions !== undefined && data.ai_system_instructions !== null) {
-            merged.ai_system_instructions = String(data.ai_system_instructions);
-          } else if (globalStore.__bmgh_settings?.ai_system_instructions) {
-            merged.ai_system_instructions = globalStore.__bmgh_settings.ai_system_instructions;
+          if (aiRow?.announcement_text && String(aiRow.announcement_text).trim()) {
+            merged.ai_system_instructions = String(aiRow.announcement_text).trim();
+          } else if (defaultData.ai_system_instructions) {
+            merged.ai_system_instructions = String(defaultData.ai_system_instructions);
           }
 
-          // Check fallback config row in Supabase so AI instructions never disappear across restarts
-          if (!merged.ai_system_instructions) {
+          // Also populate agent config if available so getAgentStoreConfig never needs another round-trip
+          if (agentRow && agentRow.store_name) {
             try {
-              const { data: aiRow } = await supabaseAdmin
-                .from("settings")
-                .select("announcement_text")
-                .eq("id", "ai_instructions_config")
-                .maybeSingle();
-              if (aiRow?.announcement_text && String(aiRow.announcement_text).trim()) {
-                merged.ai_system_instructions = String(aiRow.announcement_text).trim();
+              let devMaster = true;
+              let adminEn = true;
+              let customDom = "";
+              let autoPayout = false;
+              if (agentRow.store_name.startsWith("{")) {
+                const p = JSON.parse(agentRow.store_name);
+                devMaster = p.developer_master_enabled !== false;
+                adminEn = p.admin_enabled !== false;
+                customDom = p.custom_domain || "";
+                autoPayout = Boolean(p.auto_paystack_payout);
+              } else {
+                devMaster = agentRow.store_name !== "false" && agentRow.store_name !== "0";
+                adminEn = devMaster;
               }
-            } catch (aiErr) {
-              // ignore
-            }
+              globalStore.__bmgh_agent_config = {
+                is_enabled: Boolean(devMaster && adminEn),
+                developer_master_enabled: devMaster,
+                admin_enabled: adminEn,
+                registration_fee: Number(agentRow.announcement_text) || 0,
+                custom_domain: customDom,
+                auto_paystack_payout: autoPayout,
+              };
+              markCacheFresh("agent_config");
+            } catch (_) {}
           }
 
           globalStore.__bmgh_settings = merged;
@@ -1125,11 +1106,9 @@ export const db = {
       try {
         let query = supabaseAdmin
           .from("orders")
-          .select("*")
-          .order("created_at", { ascending: false });
-        if (!filter?.search) {
-          query = query.limit(200);
-        }
+          .select("id, reference, network, package_size, phone, amount, paystack_ref, payment_status, delivery_status, status, source, api_key_id, developer_name, created_at")
+          .order("created_at", { ascending: false })
+          .limit(filter?.search ? 100 : 200);
         if (filter?.network && filter.network !== "all") {
           query = query.eq("network", filter.network.toLowerCase());
         }
@@ -1240,13 +1219,15 @@ export const db = {
 
   async getOrdersByPhone(phone: string): Promise<Order[]> {
     const cleanPhone = phone.trim().replace(/\s+/g, "");
+    if (!cleanPhone) return [];
     if (isSupabaseConfigured && supabaseAdmin) {
       try {
         const { data, error } = await supabaseAdmin
           .from("orders")
-          .select("*")
+          .select("id, reference, network, package_size, phone, amount, paystack_ref, payment_status, delivery_status, status, source, api_key_id, developer_name, created_at")
           .ilike("phone", `%${cleanPhone}%`)
-          .order("created_at", { ascending: false });
+          .order("created_at", { ascending: false })
+          .limit(50);
         if (!error && data) return (data as Order[]).map(normalizeOrder);
       } catch (err) {
         console.error("Supabase getOrdersByPhone error:", err);

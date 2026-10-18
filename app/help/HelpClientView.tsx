@@ -253,16 +253,19 @@ export default function HelpClientView({
     }
   };
 
-  // Poll for admin replies every 30 seconds when tab is active
+  // Poll for admin replies only if user has actually sent messages in this session
   useEffect(() => {
     if (!sessionId) return;
+    const hasUserMessages = messages.some((m) => m.sender === "user");
+    if (!hasUserMessages) return;
+
     const interval = setInterval(() => {
       if (typeof document !== "undefined" && document.visibilityState === "visible") {
         fetchExistingMessages(sessionId, false);
       }
-    }, 30000);
+    }, 60000); // 60 seconds
     return () => clearInterval(interval);
-  }, [sessionId]);
+  }, [sessionId, messages.length]);
 
   // Handle Image File Selection
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {

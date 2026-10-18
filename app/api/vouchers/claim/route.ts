@@ -72,16 +72,9 @@ export async function POST(req: Request) {
       );
     };
 
-    const [allOrders, phoneOrders] = await Promise.all([
-      db.getOrders(),
-      db.getOrdersByPhone(formattedPhone),
-    ]);
+    const phoneOrders = await db.getOrdersByPhone(formattedPhone);
     const cleanPhoneDigits = formattedPhone.replace(/[^0-9]/g, "");
-    const combinedOrdersMap = new Map<string, any>();
-    [...allOrders, ...phoneOrders].forEach((o) => {
-      if (o && o.id) combinedOrdersMap.set(o.id, o);
-    });
-    const customerOrders = Array.from(combinedOrdersMap.values()).filter(
+    const customerOrders = (phoneOrders || []).filter(
       (o) => o.phone && o.phone.replace(/[^0-9]/g, "") === cleanPhoneDigits && isPaidOrder(o)
     );
 

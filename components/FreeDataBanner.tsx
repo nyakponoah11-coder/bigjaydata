@@ -23,13 +23,7 @@ export default function FreeDataBanner() {
 
   const fetchActive = useCallback(async () => {
     try {
-      const res = await fetch(`/api/vouchers/active?t=${Date.now()}`, {
-        cache: "no-store",
-        headers: {
-          "Cache-Control": "no-cache, no-store, must-revalidate",
-          Pragma: "no-cache",
-        },
-      });
+      const res = await fetch("/api/vouchers/active");
       if (res.ok) {
         const data = await res.json();
         if (data?.active && data?.voucher) {
@@ -48,23 +42,21 @@ export default function FreeDataBanner() {
   useEffect(() => {
     fetchActive();
 
-    // Check periodically so the storefront automatically updates when admin turns promo on/off
+    // Check periodically (every 3 minutes) when visible
     const pollInterval = setInterval(() => {
       if (typeof document !== "undefined" && !document.hidden && document.visibilityState === "visible") {
         fetchActive();
       }
-    }, 90000);
+    }, 180000);
 
     const handleEvent = () => fetchActive();
     window.addEventListener("voucher_updated", handleEvent);
     window.addEventListener("storage", handleEvent);
-    window.addEventListener("focus", handleEvent);
 
     return () => {
       clearInterval(pollInterval);
       window.removeEventListener("voucher_updated", handleEvent);
       window.removeEventListener("storage", handleEvent);
-      window.removeEventListener("focus", handleEvent);
     };
   }, [fetchActive]);
 

@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
+export const revalidate = 120;
 
 export async function GET(req: Request) {
   try {
@@ -16,9 +15,7 @@ export async function GET(req: Request) {
     const products = await db.getAgentProducts(agentId);
     return NextResponse.json({ success: true, products }, {
       headers: {
-        "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
-        "Pragma": "no-cache",
-        "Expires": "0",
+        "Cache-Control": "public, max-age=60, s-maxage=120, stale-while-revalidate=240",
       },
     });
   } catch (error: any) {

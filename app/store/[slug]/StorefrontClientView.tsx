@@ -98,10 +98,7 @@ export default function StorefrontClientView({
     let isMounted = true;
     const fetchFreshProducts = async () => {
       try {
-        const res = await fetch(`/api/agent/products?agent_id=${agent.id}`, {
-          cache: "no-store",
-          headers: { Pragma: "no-cache" },
-        });
+        const res = await fetch(`/api/agent/products?agent_id=${agent.id}`);
         const data = await res.json();
         if (data?.success && Array.isArray(data.products) && isMounted && data.products.length > 0) {
           const mapped: ProductItem[] = data.products

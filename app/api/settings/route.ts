@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
+export const revalidate = 120;
 
 export async function GET() {
   try {
@@ -21,7 +20,7 @@ export async function GET() {
       registration_fee: config.registration_fee || 0,
     }, {
       headers: {
-        "Cache-Control": "public, max-age=30, s-maxage=60, stale-while-revalidate=120",
+        "Cache-Control": "public, max-age=60, s-maxage=120, stale-while-revalidate=300",
       },
     });
   } catch (error: any) {

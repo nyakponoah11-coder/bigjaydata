@@ -27,10 +27,7 @@ export default function AnnouncementBanner({
 
     const fetchFresh = async () => {
       try {
-        const res = await fetch("/api/settings", {
-          cache: "no-store",
-          headers: { "Cache-Control": "no-cache", "Pragma": "no-cache" },
-        });
+        const res = await fetch("/api/settings");
         const data = await res.json();
         if (isMounted && data?.success && data?.settings) {
           if (data.settings.announcement_text !== undefined) {
@@ -45,13 +42,11 @@ export default function AnnouncementBanner({
 
     const handleUpdate = () => fetchFresh();
 
-    window.addEventListener("focus", handleUpdate);
     window.addEventListener("storage", handleUpdate);
     window.addEventListener("bmgh_settings_updated", handleUpdate);
 
     return () => {
       isMounted = false;
-      window.removeEventListener("focus", handleUpdate);
       window.removeEventListener("storage", handleUpdate);
       window.removeEventListener("bmgh_settings_updated", handleUpdate);
     };

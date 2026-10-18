@@ -34,21 +34,18 @@ export async function GET(req: Request) {
     }
 
     const includeOrders = searchParams.get("include_orders") === "true";
+    const includeTransactions = searchParams.get("include_transactions") === "true" || includeOrders;
     let transactions: any[] = [];
     let customerOrders: any[] = [];
 
     if (includeOrders) {
-      const [txList, allOrders] = await Promise.all([
+      const [txList, phoneOrders] = await Promise.all([
         db.getCustomerTransactions(customer.id),
-        db.getOrders(),
+        db.getOrdersByPhone(customer.phone),
       ]);
       transactions = txList.slice(0, 50);
-      customerOrders = allOrders.filter(
-        (o) =>
-          o.customer_id === customer.id ||
-          (o.phone && o.phone.replace(/[^0-9]/g, "") === customer.phone.replace(/[^0-9]/g, ""))
-      ).slice(0, 50);
-    } else {
+      customerOrders = phoneOrders.slice(0, 50);
+    } else if (includeTransactions) {
       transactions = (await db.getCustomerTransactions(customer.id)).slice(0, 20);
     }
 

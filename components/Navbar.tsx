@@ -58,16 +58,20 @@ export default function Navbar({
       if (raw) {
         const parsed = JSON.parse(raw);
         setCustomer(parsed);
-        // Refresh balance in background
-        fetch(`/api/customer/me?id=${encodeURIComponent(parsed.id)}`)
-          .then((r) => r.json())
-          .then((d) => {
-            if (d?.success && d.customer) {
-              setCustomer(d.customer);
-              localStorage.setItem("bmgh_customer_session", JSON.stringify(d.customer));
-            }
-          })
-          .catch(() => {});
+        // Throttle balance refresh in background: at most once every 3 minutes
+        const lastCheck = Number(sessionStorage.getItem("bmgh_last_bal_check") || 0);
+        if (Date.now() - lastCheck > 3 * 60 * 1000) {
+          sessionStorage.setItem("bmgh_last_bal_check", String(Date.now()));
+          fetch(`/api/customer/me?id=${encodeURIComponent(parsed.id)}`)
+            .then((r) => r.json())
+            .then((d) => {
+              if (d?.success && d.customer) {
+                setCustomer(d.customer);
+                localStorage.setItem("bmgh_customer_session", JSON.stringify(d.customer));
+              }
+            })
+            .catch(() => {});
+        }
       } else {
         setCustomer(null);
       }
@@ -108,10 +112,10 @@ export default function Navbar({
       cachedAsync(
         "public_settings",
         async () => {
-          const r = await fetch("/api/settings", { cache: "no-store" });
+          const r = await fetch("/api/settings");
           return await r.json();
         },
-        60 * 1000
+        5 * 60 * 1000
       )
         .then((d) => {
           if (d?.settings?.whatsapp_channel_url && String(d.settings.whatsapp_channel_url).trim()) {

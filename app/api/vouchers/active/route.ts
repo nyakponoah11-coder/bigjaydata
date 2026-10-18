@@ -1,54 +1,39 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
+export const revalidate = 60;
 
 export async function GET() {
   try {
-    const vouchers = await db.getVouchers();
-    const now = new Date();
-    const activeVouchers = (vouchers || []).filter((v) => {
-      if (!v.is_active || v.claimed_count >= v.max_claims) return false;
-      if (v.expires_at && new Date(v.expires_at) < now) return false;
-      return true;
-    });
+    const voucher = await db.getActiveVoucher();
 
-    if (activeVouchers.length === 0) {
+    if (!voucher) {
       return NextResponse.json(
         { active: false, voucher: null },
         {
           headers: {
-            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
-            Pragma: "no-cache",
+            "Cache-Control": "public, max-age=60, s-maxage=120, stale-while-revalidate=240",
           },
         }
       );
     }
 
-    const first = activeVouchers[0];
-    const totalRemaining = activeVouchers.reduce(
-      (sum, v) => sum + Math.max(0, v.max_claims - v.claimed_count),
-      0
-    );
-
     return NextResponse.json(
       {
         active: true,
         voucher: {
-          id: first.id,
-          tagline: first.tagline || "Free Data Giveaway!",
-          network: first.network,
-          package_size: first.package_size,
-          remaining_claims: totalRemaining,
-          active_codes_count: activeVouchers.length,
-          expires_at: first.expires_at || null,
+          id: voucher.id,
+          tagline: voucher.tagline || "Free Data Giveaway!",
+          network: voucher.network,
+          package_size: voucher.package_size,
+          remaining_claims: Math.max(0, voucher.max_claims - voucher.claimed_count),
+          active_codes_count: 1,
+          expires_at: voucher.expires_at || null,
         },
       },
       {
         headers: {
-          "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
-          Pragma: "no-cache",
+          "Cache-Control": "public, max-age=60, s-maxage=120, stale-while-revalidate=240",
         },
       }
     );
