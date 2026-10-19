@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 
-export const revalidate = 120;
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 export async function GET(req: Request) {
   try {
@@ -13,11 +14,16 @@ export async function GET(req: Request) {
     }
 
     const products = await db.getAgentProducts(agentId);
-    return NextResponse.json({ success: true, products }, {
-      headers: {
-        "Cache-Control": "public, max-age=60, s-maxage=120, stale-while-revalidate=240",
-      },
-    });
+    return NextResponse.json(
+      { success: true, products },
+      {
+        headers: {
+          "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+          Pragma: "no-cache",
+          Expires: "0",
+        },
+      }
+    );
   } catch (error: any) {
     return NextResponse.json({ success: false, message: error?.message }, { status: 500 });
   }
@@ -62,5 +68,36 @@ export async function PUT(req: Request) {
     return NextResponse.json({ success: true, product: updated });
   } catch (error: any) {
     return NextResponse.json({ success: false, message: error?.message }, { status: 500 });
+  }
+}
+
+export async function DELETE(req: Request) {
+  try {
+    const { searchParams } = new URL(req.url);
+    let agent_id = searchParams.get("agent_id");
+    let base_product_id = searchParams.get("base_product_id") || searchParams.get("id");
+
+    if (!agent_id || !base_product_id) {
+      try {
+        const body = await req.json();
+        agent_id = agent_id || body.agent_id;
+        base_product_id = base_product_id || body.base_product_id || body.id;
+      } catch {}
+    }
+
+    if (!agent_id || !base_product_id) {
+      return NextResponse.json(
+        { success: false, message: "Agent ID and Base Product ID are required" },
+        { status: 400 }
+      );
+    }
+
+    const deleted = await db.deleteAgentProduct(agent_id, base_product_id);
+    return NextResponse.json({ success: deleted });
+  } catch (error: any) {
+    return NextResponse.json(
+      { success: false, message: error?.message || "Failed to delete agent product" },
+      { status: 500 }
+    );
   }
 }

@@ -242,6 +242,7 @@ export interface Agent {
   support_email?: string;
   cloaked_url?: string;
   custom_prices?: Record<string, number>;
+  deleted_products?: string[];
 }
 
 export interface AgentOrder {
@@ -673,7 +674,20 @@ export const db = {
 
     if (isSupabaseConfigured && supabaseAdmin) {
       try {
-        const { data: allRows, error } = await supabaseAdmin.from("settings").select("*");
+        const { data: allRows, error } = await supabaseAdmin
+          .from("settings")
+          .select(
+            "id, store_name, support_phone, whatsapp_number, whatsapp_channel_url, email, paystack_public_key, paystack_secret_key, datamart_api_key, datamart_api_url, announcement_text, announcement_active, gemini_api_key, gemini_model, groq_api_key, groq_model, grok_api_key, grok_model, openai_api_key, openai_model, ai_system_instructions"
+          )
+          .in("id", [
+            "default",
+            "1",
+            "settings",
+            "whatsapp_channel_config",
+            "announcement_banner_config",
+            "ai_instructions_config",
+            "agent_store_config",
+          ]);
         if (!error && Array.isArray(allRows) && allRows.length > 0) {
           const defaultData = allRows.find((r) => r.id === "default") || allRows[0];
           const bRow = allRows.find((r) => r.id === "whatsapp_channel_config");
@@ -2129,6 +2143,29 @@ export const db = {
   },
 
   async getAgentBaseProducts(): Promise<AgentBaseProduct[]> {
+    // 1. Ensure deleted keys are loaded from Supabase if not yet in memory
+    if (
+      isSupabaseConfigured &&
+      supabaseAdmin &&
+      (!globalStore.__bmgh_deleted_base_products || globalStore.__bmgh_deleted_base_products.length === 0)
+    ) {
+      try {
+        const { data: delRow } = await supabaseAdmin
+          .from("settings")
+          .select("announcement_text")
+          .eq("id", "deleted_agent_base_products_config")
+          .maybeSingle();
+        if (delRow?.announcement_text) {
+          try {
+            const parsed = JSON.parse(delRow.announcement_text);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              globalStore.__bmgh_deleted_base_products = parsed;
+            }
+          } catch {}
+        }
+      } catch {}
+    }
+
     const deletedKeys = new Set(
       (globalStore.__bmgh_deleted_base_products || []).map((k) => k.toLowerCase().trim())
     );
@@ -2151,7 +2188,10 @@ export const db = {
       if (Array.isArray(disk?.agent_base_products)) {
         mergedList = [...disk.agent_base_products];
       } else {
-        mergedList = [...initialAgentBaseProducts];
+        mergedList = initialAgentBaseProducts.filter((bp) => {
+          const compKey = `${(bp.network || "").toLowerCase().trim()}_${(bp.size || "").toLowerCase().trim().replace(/\s+/g, "")}`;
+          return !deletedKeys.has(bp.id.toLowerCase()) && !deletedKeys.has(compKey);
+        });
       }
     }
 
@@ -2160,7 +2200,6 @@ export const db = {
       const compKey = `${(bp.network || "").toLowerCase().trim()}_${(bp.size || "").toLowerCase().trim().replace(/\s+/g, "")}`;
       if (!deletedKeys.has(bp.id.toLowerCase()) && !deletedKeys.has(compKey)) {
         baseMap.set(bp.id, bp);
-        baseMap.set(compKey, bp);
       }
     });
 
@@ -2176,7 +2215,7 @@ export const db = {
             if (deletedKeys.has(b.id?.toLowerCase()) || deletedKeys.has(compKey)) {
               return;
             }
-            const existing = baseMap.get(b.id) || baseMap.get(compKey);
+            const existing = baseMap.get(b.id);
             if (existing) {
               existing.base_price = Number(b.base_price);
               if (b.suggested_price) existing.suggested_price = Number(b.suggested_price);
@@ -2192,7 +2231,6 @@ export const db = {
                 created_at: b.created_at || new Date().toISOString(),
               };
               baseMap.set(b.id, item);
-              baseMap.set(compKey, item);
             }
           });
         }
@@ -2216,7 +2254,7 @@ export const db = {
                 if (deletedKeys.has(b.id?.toLowerCase()) || deletedKeys.has(compKey)) {
                   return;
                 }
-                const existing = baseMap.get(b.id) || baseMap.get(compKey);
+                const existing = baseMap.get(b.id);
                 if (existing) {
                   existing.base_price = Number(b.base_price);
                   if (b.suggested_price) existing.suggested_price = Number(b.suggested_price);
@@ -2232,7 +2270,6 @@ export const db = {
                     created_at: b.created_at || new Date().toISOString(),
                   };
                   baseMap.set(b.id, item);
-                  baseMap.set(compKey, item);
                 }
               });
             }
@@ -2450,7 +2487,14 @@ export const db = {
     // Clean up corresponding custom agent products in memory
     if (globalStore.__bmgh_agent_products) {
       globalStore.__bmgh_agent_products = globalStore.__bmgh_agent_products.filter(
-        (ap) => ap.base_product_id !== id
+        (ap) =>
+          ap.base_product_id !== id &&
+          (!targetProduct ||
+            !(
+              (ap.network || "").toLowerCase().trim() === targetProduct.network.toLowerCase().trim() &&
+              (ap.size || "").toLowerCase().trim().replace(/\s+/g, "") ===
+                targetProduct.size.toLowerCase().trim().replace(/\s+/g, "")
+            ))
       );
     }
 
@@ -2493,6 +2537,16 @@ export const db = {
       try {
         await supabaseAdmin.from("agent_products").delete().eq("base_product_id", id);
       } catch {}
+
+      if (targetProduct) {
+        try {
+          await supabaseAdmin
+            .from("agent_products")
+            .delete()
+            .eq("network", targetProduct.network.toLowerCase().trim())
+            .eq("size", targetProduct.size.trim());
+        } catch {}
+      }
 
       try {
         await supabaseAdmin.from("settings").upsert({
@@ -3259,39 +3313,42 @@ export const db = {
         }
       } catch {}
 
-      try {
-        const { data } = await supabaseAdmin
-          .from("settings")
-          .select("announcement_text")
-          .eq("id", "agent_products_registry_config")
-          .maybeSingle();
-        if (data?.announcement_text) {
-          try {
-            const list = JSON.parse(data.announcement_text);
-            if (Array.isArray(list)) {
-              list
-                .filter((p: any) => isTargetAgent(p.agent_id) && baseProductIds.has(p.base_product_id))
-                .forEach((p: any) => {
-                  productMap.set(p.base_product_id, {
-                    id: p.id,
-                    agent_id: canonicalId,
-                    base_product_id: p.base_product_id,
-                    network: p.network,
-                    size: p.size,
-                    base_price: Number(p.base_price),
-                    selling_price: Number(p.selling_price),
-                    is_active: p.is_active !== false,
+      if (productMap.size === 0) {
+        try {
+          const { data } = await supabaseAdmin
+            .from("settings")
+            .select("announcement_text")
+            .eq("id", "agent_products_registry_config")
+            .maybeSingle();
+          if (data?.announcement_text) {
+            try {
+              const list = JSON.parse(data.announcement_text);
+              if (Array.isArray(list)) {
+                list
+                  .filter((p: any) => isTargetAgent(p.agent_id) && baseProductIds.has(p.base_product_id))
+                  .forEach((p: any) => {
+                    productMap.set(p.base_product_id, {
+                      id: p.id,
+                      agent_id: canonicalId,
+                      base_product_id: p.base_product_id,
+                      network: p.network,
+                      size: p.size,
+                      base_price: Number(p.base_price),
+                      selling_price: Number(p.selling_price),
+                      is_active: p.is_active !== false,
+                    });
                   });
-                });
-            }
-          } catch {}
-        }
-      } catch (err) {}
+              }
+            } catch {}
+          }
+        } catch (err) {}
+      }
     }
 
-    // 3. Ensure ALL base products exist in the catalog
+    // 3. Ensure ALL base products exist in the catalog (except ones explicitly deleted by this agent)
     let hasChanges = false;
     baseProducts.forEach((bp) => {
+      if (matchedAgent?.deleted_products?.includes(bp.id)) return;
       const existing = productMap.get(bp.id);
       if (!existing) {
         const added: AgentCustomProduct = {
@@ -3324,6 +3381,7 @@ export const db = {
     const current = matchedAgent || allAgents.find((a) => isTargetAgent(a.id) || isTargetAgent(a.store_slug));
     if (current?.custom_prices) {
       baseProducts.forEach((bp) => {
+        if (matchedAgent?.deleted_products?.includes(bp.id)) return;
         const directPrice =
           current.custom_prices?.[bp.id] ??
           current.custom_prices?.[`${bp.network.toLowerCase()}_${bp.size.toLowerCase()}`] ??
@@ -3352,7 +3410,9 @@ export const db = {
       });
     }
 
-    let result = Array.from(productMap.values()).filter((p) => baseProductIds.has(p.base_product_id));
+    let result = Array.from(productMap.values()).filter(
+      (p) => baseProductIds.has(p.base_product_id) && !matchedAgent?.deleted_products?.includes(p.base_product_id)
+    );
 
     // Sort strictly by network and package size (1GB, 2GB, 3GB, 5GB, 10GB, etc.)
     result.sort((a, b) => {
@@ -3551,6 +3611,82 @@ export const db = {
     return updatedItems;
   },
 
+  async deleteAgentProduct(agentId: string, baseProductId: string): Promise<boolean> {
+    const cleanId = (agentId || "").trim();
+    let canonicalId = cleanId;
+    let canonicalSlug = cleanId.toLowerCase();
+    const allAgents = await this.getAgents();
+    const matchedAgent = allAgents.find(
+      (a) => a.id === cleanId || a.store_slug.toLowerCase() === cleanId.toLowerCase()
+    );
+    if (matchedAgent) {
+      canonicalId = matchedAgent.id;
+      canonicalSlug = matchedAgent.store_slug.toLowerCase();
+    }
+    const isTargetAgent = (pAgentId: string) =>
+      pAgentId === canonicalId || pAgentId?.toLowerCase() === canonicalSlug || pAgentId === cleanId;
+
+    invalidateDbCache(`agent_products:${canonicalId}`);
+    invalidateDbCache(`agent_products:${canonicalSlug}`);
+    invalidateDbCache(`agent_products:${cleanId}`);
+    invalidateDbCache("agent_products");
+    invalidateDbCache("agents");
+
+    // 1. Remove from globalStore.__bmgh_agent_products
+    if (globalStore.__bmgh_agent_products) {
+      globalStore.__bmgh_agent_products = globalStore.__bmgh_agent_products.filter(
+        (p) => !(isTargetAgent(p.agent_id) && (p.base_product_id === baseProductId || p.id === baseProductId))
+      );
+    }
+
+    // 2. Mark in agent record so it does not get re-created by getAgentProducts
+    if (matchedAgent) {
+      if (!matchedAgent.deleted_products) {
+        matchedAgent.deleted_products = [];
+      }
+      if (!matchedAgent.deleted_products.includes(baseProductId)) {
+        matchedAgent.deleted_products.push(baseProductId);
+      }
+      if (matchedAgent.custom_prices) {
+        delete matchedAgent.custom_prices[baseProductId];
+      }
+      await this.updateAgent(matchedAgent.id, {
+        custom_prices: matchedAgent.custom_prices,
+        deleted_products: matchedAgent.deleted_products,
+      });
+    }
+
+    saveToDisk();
+
+    // 3. Delete from Supabase
+    if (isSupabaseConfigured && supabaseAdmin) {
+      try {
+        await supabaseAdmin
+          .from("agent_products")
+          .delete()
+          .or(`agent_id.eq.${canonicalId},agent_id.eq.${canonicalSlug}`)
+          .or(`base_product_id.eq.${baseProductId},id.eq.${baseProductId}`);
+      } catch (err) {
+        console.warn("Direct agent_products delete error:", err);
+      }
+
+      try {
+        await supabaseAdmin.from("settings").upsert({
+          id: "agent_products_registry_config",
+          store_name: "AgentProductsRegistry",
+          support_phone: "+233551234567",
+          whatsapp_number: "233551234567",
+          email: "support@bundlemartgh.com",
+          announcement_text: JSON.stringify(globalStore.__bmgh_agent_products || []),
+        });
+      } catch (err) {
+        console.warn("Agent products registry Supabase delete sync error:", err);
+      }
+    }
+
+    return true;
+  },
+
   // AGENT ORDERS
   async getAgentOrders(agentId?: string): Promise<AgentOrder[]> {
     const orderMap = new Map<string, AgentOrder>();
@@ -3628,26 +3764,28 @@ export const db = {
         }
       } catch {}
 
-      // 3. Settings table registry
-      try {
-        const { data } = await supabaseAdmin
-          .from("settings")
-          .select("announcement_text")
-          .eq("id", "agent_orders_registry_config")
-          .maybeSingle();
-        if (data?.announcement_text) {
-          try {
-            const list = JSON.parse(data.announcement_text);
-            if (Array.isArray(list)) {
-              list.forEach((o: any) => {
-                if (isMasterPlatformOrder(o)) return;
-                const key = o.reference || o.id;
-                if (key && !orderMap.has(key)) orderMap.set(key, o);
-              });
-            }
-          } catch {}
-        }
-      } catch {}
+      // 3. Settings table registry (fallback only if direct table has no orders)
+      if (orderMap.size === 0) {
+        try {
+          const { data } = await supabaseAdmin
+            .from("settings")
+            .select("announcement_text")
+            .eq("id", "agent_orders_registry_config")
+            .maybeSingle();
+          if (data?.announcement_text) {
+            try {
+              const list = JSON.parse(data.announcement_text);
+              if (Array.isArray(list)) {
+                list.forEach((o: any) => {
+                  if (isMasterPlatformOrder(o)) return;
+                  const key = o.reference || o.id;
+                  if (key && !orderMap.has(key)) orderMap.set(key, o);
+                });
+              }
+            } catch {}
+          }
+        } catch {}
+      }
 
       // 4. Also retrieve any orders placed through this agent's store from the master orders table
       try {
@@ -3976,24 +4114,26 @@ export const db = {
         }
       } catch {}
 
-      // 3. Settings table registry
-      try {
-        const { data } = await supabaseAdmin
-          .from("settings")
-          .select("announcement_text")
-          .eq("id", "agent_withdrawals_registry_config")
-          .maybeSingle();
-        if (data?.announcement_text) {
-          try {
-            const list = JSON.parse(data.announcement_text);
-            if (Array.isArray(list)) {
-              list.forEach((w: any) => {
-                if (w.id && !listMap.has(w.id)) listMap.set(w.id, w);
-              });
-            }
-          } catch {}
-        }
-      } catch {}
+      // 3. Settings table registry (fallback only if direct table has no withdrawals)
+      if (listMap.size === 0) {
+        try {
+          const { data } = await supabaseAdmin
+            .from("settings")
+            .select("announcement_text")
+            .eq("id", "agent_withdrawals_registry_config")
+            .maybeSingle();
+          if (data?.announcement_text) {
+            try {
+              const list = JSON.parse(data.announcement_text);
+              if (Array.isArray(list)) {
+                list.forEach((w: any) => {
+                  if (w.id && !listMap.has(w.id)) listMap.set(w.id, w);
+                });
+              }
+            } catch {}
+          }
+        } catch {}
+      }
     }
 
     const allMerged = Array.from(listMap.values()).sort(
@@ -4446,6 +4586,7 @@ export const db = {
 
   async getCustomerById(id: string): Promise<Customer | null> {
     const cleanId = String(id).trim();
+    if (!cleanId) return null;
     if (isSupabaseConfigured && supabaseAdmin) {
       try {
         const { data, error } = await supabaseAdmin
@@ -4455,24 +4596,38 @@ export const db = {
           .maybeSingle();
         if (!error && data) {
           const cust: Customer = { ...data, wallet_balance: Number(data.wallet_balance || 0) };
-          const all = await this.getCustomers();
-          const idx = all.findIndex((c) => c.id === cleanId);
-          if (idx !== -1) all[idx] = cust;
-          else all.unshift(cust);
+          if (Array.isArray(globalStore.__bmgh_customers)) {
+            const idx = globalStore.__bmgh_customers.findIndex((c) => c.id === cleanId);
+            if (idx !== -1) globalStore.__bmgh_customers[idx] = cust;
+            else globalStore.__bmgh_customers.unshift(cust);
+          }
           return cust;
         }
       } catch {}
     }
-    const all = await this.getCustomers();
-    return all.find((c) => c.id === cleanId) || null;
+    const local = globalStore.__bmgh_customers || [];
+    return local.find((c) => c.id === cleanId) || null;
   },
 
   async getCustomerByPhone(phone: string): Promise<Customer | null> {
     const clean = phone.replace(/[^0-9]/g, "");
     if (!clean) return null;
-    const all = await this.getCustomers();
+    if (isSupabaseConfigured && supabaseAdmin) {
+      try {
+        const { data, error } = await supabaseAdmin
+          .from("customers")
+          .select("*")
+          .ilike("phone", `%${clean.slice(-9)}%`)
+          .limit(1)
+          .maybeSingle();
+        if (!error && data) {
+          return { ...data, wallet_balance: Number(data.wallet_balance || 0) };
+        }
+      } catch {}
+    }
+    const local = globalStore.__bmgh_customers || [];
     return (
-      all.find((c) => {
+      local.find((c) => {
         const cPhone = c.phone.replace(/[^0-9]/g, "");
         return cPhone === clean || (clean.length >= 9 && cPhone.endsWith(clean.slice(-9)));
       }) || null
@@ -4482,15 +4637,41 @@ export const db = {
   async getCustomerByEmail(email: string): Promise<Customer | null> {
     const clean = email.toLowerCase().trim();
     if (!clean) return null;
-    const all = await this.getCustomers();
-    return all.find((c) => c.email && c.email.toLowerCase().trim() === clean) || null;
+    if (isSupabaseConfigured && supabaseAdmin) {
+      try {
+        const { data, error } = await supabaseAdmin
+          .from("customers")
+          .select("*")
+          .ilike("email", clean)
+          .limit(1)
+          .maybeSingle();
+        if (!error && data) {
+          return { ...data, wallet_balance: Number(data.wallet_balance || 0) };
+        }
+      } catch {}
+    }
+    const local = globalStore.__bmgh_customers || [];
+    return local.find((c) => c.email && c.email.toLowerCase().trim() === clean) || null;
   },
 
   async getCustomerByGoogleId(googleId: string): Promise<Customer | null> {
     const clean = String(googleId).trim();
     if (!clean) return null;
-    const all = await this.getCustomers();
-    return all.find((c) => c.google_id && c.google_id === clean) || null;
+    if (isSupabaseConfigured && supabaseAdmin) {
+      try {
+        const { data, error } = await supabaseAdmin
+          .from("customers")
+          .select("*")
+          .eq("google_id", clean)
+          .limit(1)
+          .maybeSingle();
+        if (!error && data) {
+          return { ...data, wallet_balance: Number(data.wallet_balance || 0) };
+        }
+      } catch {}
+    }
+    const local = globalStore.__bmgh_customers || [];
+    return local.find((c) => c.google_id && c.google_id === clean) || null;
   },
 
   async createCustomer(

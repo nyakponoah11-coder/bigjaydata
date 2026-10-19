@@ -298,7 +298,7 @@ export default function AgentDashboardPage() {
         localStorage.setItem("bmgh_agent_session", JSON.stringify(mergedAgent));
       }
 
-      if (prodData?.success && Array.isArray(prodData.products) && prodData.products.length > 0) {
+      if (prodData?.success && Array.isArray(prodData.products)) {
         const sorted = sortProductList(prodData.products);
         setProducts(sorted);
         try {
@@ -582,6 +582,44 @@ export default function AgentDashboardPage() {
       }
     } catch (err) {
       setError("Failed to toggle product");
+    }
+  };
+
+  const [deletingProductId, setDeletingProductId] = useState<string | null>(null);
+
+  const handleDeleteProduct = async (p: any) => {
+    const pkgName = `${(p.network || "").toUpperCase()} ${p.size}`;
+    if (!confirm(`Are you sure you want to remove ${pkgName} from your store?`)) return;
+
+    try {
+      setDeletingProductId(p.base_product_id);
+      setError("");
+      const res = await fetch(`/api/agent/products?agent_id=${agent.id}&base_product_id=${p.base_product_id}`, {
+        method: "DELETE",
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.message || "Failed to delete product");
+      }
+
+      setProducts((prev) => {
+        const updated = prev.filter((item) => item.base_product_id !== p.base_product_id);
+        try {
+          localStorage.setItem(`bmgh_agent_prods_${agent.id}`, JSON.stringify(updated));
+          invalidateCache(`store_products_${agent.id}`);
+          invalidateCache(`store_products_${agent.store_slug}`);
+          localStorage.removeItem(`bmgh_sess_store_${agent.store_slug.toLowerCase()}`);
+          localStorage.removeItem(`bmgh_sess_store_${agent.id.toLowerCase()}`);
+        } catch {}
+        return updated;
+      });
+
+      setNotice(`Removed ${pkgName} successfully.`);
+      setTimeout(() => setNotice(""), 3500);
+    } catch (err: any) {
+      setError(err?.message || "Failed to remove product");
+    } finally {
+      setDeletingProductId(null);
     }
   };
 
@@ -1182,31 +1220,46 @@ export default function AgentDashboardPage() {
                           </button>
                         </td>
                         <td className="py-3 px-4 text-right">
-                          {recentlySavedId === p.base_product_id ? (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-500/20 text-emerald-400 font-bold text-[11px] rounded-lg border border-emerald-500/30">
-                              ✓ Saved
-                            </span>
-                          ) : (
+                          <div className="flex items-center justify-end gap-1.5">
+                            {recentlySavedId === p.base_product_id ? (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-500/20 text-emerald-400 font-bold text-[11px] rounded-lg border border-emerald-500/30">
+                                ✓ Saved
+                              </span>
+                            ) : (
+                              <button
+                                onClick={() => handleSaveProductPrice(p)}
+                                disabled={isSaving}
+                                className={`px-3 py-1 font-bold text-[11px] rounded-lg shadow-sm transition-all disabled:opacity-50 cursor-pointer ${
+                                  editPrices[p.base_product_id] !== undefined &&
+                                  parseFloat(editPrices[p.base_product_id]) !== p.selling_price
+                                    ? "bg-amber-500 hover:bg-amber-400 text-slate-950 ring-2 ring-amber-400 animate-pulse font-black"
+                                    : "bg-emerald-600 hover:bg-emerald-500 text-white"
+                                }`}
+                              >
+                                {isSaving ? (
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                ) : editPrices[p.base_product_id] !== undefined &&
+                                  parseFloat(editPrices[p.base_product_id]) !== p.selling_price ? (
+                                  "Save ⚡"
+                                ) : (
+                                  "Save"
+                                )}
+                              </button>
+                            )}
+
                             <button
-                              onClick={() => handleSaveProductPrice(p)}
-                              disabled={isSaving}
-                              className={`px-3 py-1 font-bold text-[11px] rounded-lg shadow-sm transition-all disabled:opacity-50 cursor-pointer ${
-                                editPrices[p.base_product_id] !== undefined &&
-                                parseFloat(editPrices[p.base_product_id]) !== p.selling_price
-                                  ? "bg-amber-500 hover:bg-amber-400 text-slate-950 ring-2 ring-amber-400 animate-pulse font-black"
-                                  : "bg-emerald-600 hover:bg-emerald-500 text-white"
-                              }`}
+                              onClick={() => handleDeleteProduct(p)}
+                              disabled={deletingProductId === p.base_product_id}
+                              className="p-1 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 hover:text-rose-300 border border-rose-500/30 transition-colors cursor-pointer"
+                              title="Delete package from your store"
                             >
-                              {isSaving ? (
+                              {deletingProductId === p.base_product_id ? (
                                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                              ) : editPrices[p.base_product_id] !== undefined &&
-                                parseFloat(editPrices[p.base_product_id]) !== p.selling_price ? (
-                                "Save ⚡"
                               ) : (
-                                "Save"
+                                <Trash2 className="w-3.5 h-3.5" />
                               )}
                             </button>
-                          )}
+                          </div>
                         </td>
                       </tr>
                     );
