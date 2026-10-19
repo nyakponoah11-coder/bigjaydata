@@ -58,7 +58,13 @@ export async function sendAgentEmail({ to, subject, html, text }: EmailPayload):
   const resendApiKey = rawKey && rawKey.startsWith("re_") && rawKey !== "re_your_api_key_here" && !rawKey.includes("your_api_key") ? rawKey : null;
   if (resendApiKey) {
     try {
-      const fromEmail = process.env.EMAIL_FROM || "FastData Partner Portal <onboarding@resend.dev>";
+      let fromEmail = process.env.EMAIL_FROM?.trim() || settings?.email_from?.trim();
+      if (!fromEmail) {
+        fromEmail = `${settings?.store_name || "Data Ease"} <onboarding@resend.dev>`;
+      } else if (!fromEmail.includes("<") && fromEmail.includes("@")) {
+        fromEmail = `${settings?.store_name || "Data Ease"} <${fromEmail}>`;
+      }
+
       const res = await fetch("https://api.resend.com/emails", {
         method: "POST",
         headers: {
@@ -74,9 +80,9 @@ export async function sendAgentEmail({ to, subject, html, text }: EmailPayload):
         }),
       });
       const data = await res.json();
-      if (res.ok) {
+      if (res.ok && data?.id) {
         console.log(`[Email Gateway - Resend] Sent to ${cleanTo} | ID: ${data.id}`);
-        return { success: true, message: "Email sent successfully via Resend", messageId: data.id };
+        return { success: true, message: "Email sent successfully via Resend", messageId: data.id, isFallback: false };
       } else {
         console.warn(`[Email Gateway - Resend Error]`, data);
       }
@@ -93,18 +99,29 @@ export async function sendAgentEmail({ to, subject, html, text }: EmailPayload):
 
   if (smtpUser && smtpPass) {
     try {
+      const isSecure = smtpPort === 465;
       const transporter = nodemailer.createTransport({
         host: smtpHost,
         port: smtpPort,
-        secure: smtpPort === 465,
+        secure: isSecure,
         auth: {
           user: smtpUser,
           pass: smtpPass,
         },
+        tls: {
+          rejectUnauthorized: false,
+        },
       });
 
+      let senderFrom = process.env.EMAIL_FROM?.trim() || settings?.email_from?.trim();
+      if (!senderFrom || !senderFrom.includes("@")) {
+        senderFrom = `"${settings?.store_name || "Data Ease"}" <${smtpUser}>`;
+      } else if (!senderFrom.includes("<")) {
+        senderFrom = `"${settings?.store_name || "Data Ease"}" <${senderFrom}>`;
+      }
+
       const info = await transporter.sendMail({
-        from: `"FastData Partner Desk" <${smtpUser}>`,
+        from: senderFrom,
         to: cleanTo,
         subject,
         html,
@@ -112,13 +129,13 @@ export async function sendAgentEmail({ to, subject, html, text }: EmailPayload):
       });
 
       console.log(`[Email Gateway - SMTP] Sent to ${cleanTo} | ID: ${info.messageId}`);
-      return { success: true, message: "Email sent successfully via SMTP", messageId: info.messageId };
+      return { success: true, message: "Email sent successfully via SMTP", messageId: info.messageId, isFallback: false };
     } catch (err: any) {
       console.error("[Email Gateway - SMTP Exception]", err?.message);
     }
   }
 
-  // 3. Fallback / Dev Logger
+  // 3. Fallback / Simulation Logger
   console.log(`=======================================================`);
   console.log(`[EMAIL DISPATCH - SIMULATION MODE] (No SMTP/Resend key configured yet)`);
   console.log(`TO: ${cleanTo}`);
@@ -127,9 +144,9 @@ export async function sendAgentEmail({ to, subject, html, text }: EmailPayload):
   console.log(`=======================================================`);
 
   return {
-    success: true,
+    success: false,
     isFallback: true,
-    message: `Verification message generated for ${cleanTo}.`,
+    message: `Verification message generated for ${cleanTo} (simulation mode).`,
   };
 }
 

@@ -129,6 +129,7 @@ export interface Settings {
   openai_model?: string;
   ai_system_instructions?: string;
   resend_api_key?: string;
+  email_from?: string;
   smtp_user?: string;
   smtp_pass?: string;
   smtp_host?: string;
@@ -674,26 +675,64 @@ export const db = {
 
     if (isSupabaseConfigured && supabaseAdmin) {
       try {
-        const { data: allRows, error } = await supabaseAdmin
-          .from("settings")
-          .select(
-            "id, store_name, support_phone, whatsapp_number, whatsapp_channel_url, email, paystack_public_key, paystack_secret_key, datamart_api_key, datamart_api_url, announcement_text, announcement_active, gemini_api_key, gemini_model, groq_api_key, groq_model, grok_api_key, grok_model, openai_api_key, openai_model, ai_system_instructions"
-          )
-          .in("id", [
-            "default",
-            "1",
-            "settings",
-            "whatsapp_channel_config",
-            "announcement_banner_config",
-            "ai_instructions_config",
-            "agent_store_config",
-          ]);
-        if (!error && Array.isArray(allRows) && allRows.length > 0) {
+        let allRows: any[] | null = null;
+        let selectErr: any = null;
+
+        // Try selecting with email configuration columns
+        try {
+          const res = await supabaseAdmin
+            .from("settings")
+            .select(
+              "id, store_name, support_phone, whatsapp_number, whatsapp_channel_url, email, paystack_public_key, paystack_secret_key, datamart_api_key, datamart_api_url, announcement_text, announcement_active, gemini_api_key, gemini_model, groq_api_key, groq_model, grok_api_key, grok_model, openai_api_key, openai_model, ai_system_instructions, resend_api_key, email_from, smtp_user, smtp_pass, smtp_host, smtp_port"
+            )
+            .in("id", [
+              "default",
+              "1",
+              "settings",
+              "whatsapp_channel_config",
+              "announcement_banner_config",
+              "ai_instructions_config",
+              "agent_store_config",
+              "email_config",
+            ]);
+          if (!res.error && Array.isArray(res.data) && res.data.length > 0) {
+            allRows = res.data;
+          } else {
+            selectErr = res.error;
+          }
+        } catch (e: any) {
+          selectErr = e;
+        }
+
+        // If email columns are missing in older schema, fallback to core configuration columns
+        if (!allRows && selectErr) {
+          const retryRes = await supabaseAdmin
+            .from("settings")
+            .select(
+              "id, store_name, support_phone, whatsapp_number, whatsapp_channel_url, email, paystack_public_key, paystack_secret_key, datamart_api_key, datamart_api_url, announcement_text, announcement_active, gemini_api_key, gemini_model, groq_api_key, groq_model, grok_api_key, grok_model, openai_api_key, openai_model, ai_system_instructions"
+            )
+            .in("id", [
+              "default",
+              "1",
+              "settings",
+              "whatsapp_channel_config",
+              "announcement_banner_config",
+              "ai_instructions_config",
+              "agent_store_config",
+              "email_config",
+            ]);
+          if (!retryRes.error && Array.isArray(retryRes.data)) {
+            allRows = retryRes.data;
+          }
+        }
+
+        if (Array.isArray(allRows) && allRows.length > 0) {
           const defaultData = allRows.find((r) => r.id === "default") || allRows[0];
           const bRow = allRows.find((r) => r.id === "whatsapp_channel_config");
           const annRow = allRows.find((r) => r.id === "announcement_banner_config");
           const aiRow = allRows.find((r) => r.id === "ai_instructions_config");
           const agentRow = allRows.find((r) => r.id === "agent_store_config");
+          const emailRow = allRows.find((r) => r.id === "email_config");
 
           const merged: Settings = { ...globalStore.__bmgh_settings, ...defaultData };
           if (!merged.paystack_public_key && process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY) {
@@ -702,6 +741,25 @@ export const db = {
           if (!merged.paystack_secret_key && process.env.PAYSTACK_SECRET_KEY) {
             merged.paystack_secret_key = process.env.PAYSTACK_SECRET_KEY;
           }
+
+          // Email Gateway Configuration
+          if (emailRow?.store_name && String(emailRow.store_name).startsWith("{")) {
+            try {
+              const em = JSON.parse(emailRow.store_name);
+              if (em.resend_api_key) merged.resend_api_key = em.resend_api_key;
+              if (em.email_from) merged.email_from = em.email_from;
+              if (em.smtp_user) merged.smtp_user = em.smtp_user;
+              if (em.smtp_pass) merged.smtp_pass = em.smtp_pass;
+              if (em.smtp_host) merged.smtp_host = em.smtp_host;
+              if (em.smtp_port) merged.smtp_port = Number(em.smtp_port);
+            } catch {}
+          }
+          if (defaultData.resend_api_key) merged.resend_api_key = defaultData.resend_api_key;
+          if (defaultData.email_from) merged.email_from = defaultData.email_from;
+          if (defaultData.smtp_user) merged.smtp_user = defaultData.smtp_user;
+          if (defaultData.smtp_pass) merged.smtp_pass = defaultData.smtp_pass;
+          if (defaultData.smtp_host) merged.smtp_host = defaultData.smtp_host;
+          if (defaultData.smtp_port) merged.smtp_port = Number(defaultData.smtp_port);
 
           // Channel URL
           if (defaultData.whatsapp_channel_url && String(defaultData.whatsapp_channel_url).trim()) {
@@ -823,9 +881,42 @@ export const db = {
     if (safeUpdates.paystack_secret_key && safeUpdates.paystack_secret_key.includes("••••")) {
       delete safeUpdates.paystack_secret_key;
     }
+    if (safeUpdates.resend_api_key && safeUpdates.resend_api_key.includes("••••")) {
+      delete safeUpdates.resend_api_key;
+    }
+    if (safeUpdates.smtp_pass && safeUpdates.smtp_pass.includes("••••")) {
+      delete safeUpdates.smtp_pass;
+    }
 
     if (isSupabaseConfigured && supabaseAdmin) {
       try {
+        // Save Email configuration to dedicated config row so it NEVER disappears even if schema is old
+        if (
+          safeUpdates.resend_api_key !== undefined ||
+          safeUpdates.email_from !== undefined ||
+          safeUpdates.smtp_user !== undefined ||
+          safeUpdates.smtp_pass !== undefined ||
+          safeUpdates.smtp_host !== undefined ||
+          safeUpdates.smtp_port !== undefined
+        ) {
+          try {
+            const currentEmailConfig = {
+              resend_api_key: safeUpdates.resend_api_key !== undefined ? safeUpdates.resend_api_key : (globalStore.__bmgh_settings?.resend_api_key || ""),
+              email_from: safeUpdates.email_from !== undefined ? safeUpdates.email_from : (globalStore.__bmgh_settings?.email_from || ""),
+              smtp_user: safeUpdates.smtp_user !== undefined ? safeUpdates.smtp_user : (globalStore.__bmgh_settings?.smtp_user || ""),
+              smtp_pass: safeUpdates.smtp_pass !== undefined ? safeUpdates.smtp_pass : (globalStore.__bmgh_settings?.smtp_pass || ""),
+              smtp_host: safeUpdates.smtp_host !== undefined ? safeUpdates.smtp_host : (globalStore.__bmgh_settings?.smtp_host || "smtp.gmail.com"),
+              smtp_port: safeUpdates.smtp_port !== undefined ? Number(safeUpdates.smtp_port) : (globalStore.__bmgh_settings?.smtp_port || 465),
+            };
+            await supabaseAdmin.from("settings").upsert({
+              id: "email_config",
+              store_name: JSON.stringify(currentEmailConfig),
+            });
+          } catch (eErr) {
+            console.warn("Email config backup row save error:", eErr);
+          }
+        }
+
         // Save WhatsApp channel url to dedicated config row so it NEVER disappears even if schema is old
         if (safeUpdates.whatsapp_channel_url !== undefined) {
           try {

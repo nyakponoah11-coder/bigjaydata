@@ -52,10 +52,14 @@ export async function POST(req: Request) {
         verification_code_expires_at: expiresAt,
       });
 
+      let emailSent = false;
+      let emailFallback = true;
       if (customer.email) {
         try {
           const { sendCustomerVerificationEmail } = await import("@/lib/email");
-          await sendCustomerVerificationEmail(customer.email, customer.name, code, "login");
+          const emailRes = await sendCustomerVerificationEmail(customer.email, customer.name, code, "login");
+          emailSent = Boolean(emailRes.success && !emailRes.isFallback);
+          emailFallback = !emailSent;
         } catch {}
       }
 
@@ -65,9 +69,11 @@ export async function POST(req: Request) {
         customer_id: customer.id,
         phone: customer.phone,
         email: customer.email,
-        message: customer.email
+        has_real_email: emailSent,
+        dev_code: emailFallback ? code : undefined,
+        message: emailSent
           ? `Please enter the 6-digit verification code sent to your email (${customer.email}).`
-          : "Please enter the 6-digit verification code sent to your email to complete sign in.",
+          : `Account verification required. Your instant code is ${code}.`,
       });
     }
 

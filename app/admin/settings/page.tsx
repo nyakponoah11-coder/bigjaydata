@@ -20,6 +20,7 @@ import {
   Sparkles,
   Key,
   Zap,
+  Mail,
 } from "lucide-react";
 
 export default function AdminSettingsPage() {
@@ -41,6 +42,18 @@ export default function AdminSettingsPage() {
   const [datamartApiUrl, setDatamartApiUrl] = useState("");
   const [announcementText, setAnnouncementText] = useState("");
   const [announcementActive, setAnnouncementActive] = useState(true);
+
+  // Email Gateway Configuration State (Resend & SMTP)
+  const [resendApiKey, setResendApiKey] = useState("");
+  const [emailFrom, setEmailFrom] = useState("");
+  const [smtpUser, setSmtpUser] = useState("");
+  const [smtpPass, setSmtpPass] = useState("");
+  const [smtpHost, setSmtpHost] = useState("smtp.gmail.com");
+  const [smtpPort, setSmtpPort] = useState(465);
+  const [showEmailKeys, setShowEmailKeys] = useState(false);
+  const [testEmail, setTestEmail] = useState("");
+  const [testingEmail, setTestingEmail] = useState(false);
+  const [emailTestResult, setEmailTestResult] = useState<{ success: boolean; message: string } | null>(null);
 
   // Gemini AI Agent State
   const [geminiApiKey, setGeminiApiKey] = useState("");
@@ -157,6 +170,42 @@ export default function AdminSettingsPage() {
     }
   };
 
+  const handleTestEmail = async () => {
+    if (!testEmail.trim()) {
+      setEmailTestResult({ success: false, message: "Please enter a recipient email address to test." });
+      return;
+    }
+    setTestingEmail(true);
+    setEmailTestResult(null);
+    try {
+      const res = await fetch("/api/admin/email/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          targetEmail: testEmail.trim(),
+          resend_api_key: resendApiKey && !resendApiKey.includes("••••") ? resendApiKey.trim() : undefined,
+          email_from: emailFrom ? emailFrom.trim() : undefined,
+          smtp_user: smtpUser ? smtpUser.trim() : undefined,
+          smtp_pass: smtpPass && !smtpPass.includes("••••") ? smtpPass.trim() : undefined,
+          smtp_host: smtpHost ? smtpHost.trim() : undefined,
+          smtp_port: smtpPort ? Number(smtpPort) : undefined,
+        }),
+      });
+      const data = await res.json();
+      setEmailTestResult({
+        success: data.success,
+        message: data.message || (data.success ? `Test email sent successfully via ${data.provider}!` : "Failed to send test email."),
+      });
+    } catch (err: any) {
+      setEmailTestResult({
+        success: false,
+        message: err?.message || "Failed to trigger email test.",
+      });
+    } finally {
+      setTestingEmail(false);
+    }
+  };
+
   const fetchSettings = async () => {
     setLoading(true);
     try {
@@ -197,6 +246,12 @@ export default function AdminSettingsPage() {
         setGeminiModel(s.gemini_model || "gemini-3.8-flash");
         setGroqApiKey(s.groq_api_key || s.grok_api_key || "");
         setGroqModel(s.groq_model || s.grok_model || "llama-3.3-70b-versatile");
+        setResendApiKey(s.resend_api_key || "");
+        setEmailFrom(s.email_from || "");
+        setSmtpUser(s.smtp_user || "");
+        setSmtpPass(s.smtp_pass || "");
+        setSmtpHost(s.smtp_host || "smtp.gmail.com");
+        setSmtpPort(Number(s.smtp_port) || 465);
       }
     } catch (e: any) {
       setError("Failed to load settings");
@@ -252,6 +307,26 @@ export default function AdminSettingsPage() {
         updates.grok_model = groqModel.trim();
       }
 
+      // Email Gateway (Resend & SMTP)
+      if (resendApiKey !== undefined && !resendApiKey.includes("••••")) {
+        updates.resend_api_key = resendApiKey.trim();
+      }
+      if (emailFrom !== undefined) {
+        updates.email_from = emailFrom.trim();
+      }
+      if (smtpUser !== undefined) {
+        updates.smtp_user = smtpUser.trim();
+      }
+      if (smtpPass !== undefined && !smtpPass.includes("••••")) {
+        updates.smtp_pass = smtpPass.trim();
+      }
+      if (smtpHost !== undefined) {
+        updates.smtp_host = smtpHost.trim();
+      }
+      if (smtpPort !== undefined) {
+        updates.smtp_port = Number(smtpPort) || 465;
+      }
+
       const res = await fetch("/api/settings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -290,6 +365,24 @@ export default function AdminSettingsPage() {
         }
         if (data.settings.groq_model !== undefined || data.settings.grok_model !== undefined) {
           setGroqModel(data.settings.groq_model || data.settings.grok_model || "llama-3.3-70b-versatile");
+        }
+        if (data.settings.resend_api_key !== undefined) {
+          setResendApiKey(data.settings.resend_api_key);
+        }
+        if (data.settings.email_from !== undefined) {
+          setEmailFrom(data.settings.email_from);
+        }
+        if (data.settings.smtp_user !== undefined) {
+          setSmtpUser(data.settings.smtp_user);
+        }
+        if (data.settings.smtp_pass !== undefined) {
+          setSmtpPass(data.settings.smtp_pass);
+        }
+        if (data.settings.smtp_host !== undefined) {
+          setSmtpHost(data.settings.smtp_host);
+        }
+        if (data.settings.smtp_port !== undefined) {
+          setSmtpPort(Number(data.settings.smtp_port) || 465);
         }
 
         // Immediately purge client caches and broadcast update to all open tabs
@@ -596,6 +689,205 @@ export default function AdminSettingsPage() {
                     <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
                   )}
                   <span>{testResult.message}</span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* SECTION: OUTBOUND EMAIL GATEWAY & VERIFICATION CODES (RESEND & SMTP) */}
+          <div className="bg-slate-900 border border-indigo-500/30 rounded-3xl p-6 shadow-lg space-y-5 relative overflow-hidden">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2.5">
+                <Mail className="w-5 h-5 text-indigo-400" />
+                <span className="text-white font-bold text-sm">Outbound Email Gateway & Verification OTPs</span>
+                {resendApiKey || smtpUser ? (
+                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-950 text-emerald-400 border border-emerald-800 flex items-center gap-1">
+                    <CheckCircle className="w-3 h-3 text-emerald-400" /> Active Provider
+                  </span>
+                ) : (
+                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-amber-950/80 text-amber-400 border border-amber-800 flex items-center gap-1">
+                    <AlertCircle className="w-3 h-3 text-amber-400" /> Instant Fallback Mode
+                  </span>
+                )}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowEmailKeys(!showEmailKeys)}
+                className="inline-flex items-center gap-1.5 text-xs text-indigo-300 hover:text-indigo-200 font-bold bg-indigo-950/60 px-3 py-1.5 rounded-xl border border-indigo-800/60 transition-colors self-start sm:self-auto"
+              >
+                {showEmailKeys ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                <span>{showEmailKeys ? "Hide Credentials" : "Show Credentials"}</span>
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-400 leading-relaxed">
+              Configure how customer verification OTPs, login codes, and email confirmation alerts are delivered. You can use <strong>Resend API</strong> (fastest) or <strong>Gmail / Custom SMTP Relay</strong>. If unconfigured or if a provider temporarily limits delivery, the store automatically presents an <em>Instant Verification Code banner</em> on the customer&apos;s screen so they are never locked out of their account.
+            </p>
+
+            {/* Option 1: Resend HTTP API */}
+            <div className="p-4 rounded-2xl bg-slate-950/60 border border-slate-800/80 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-indigo-300 uppercase tracking-wider flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-indigo-400"></span> Option 1: Resend HTTP API (Recommended)
+                </span>
+                <a
+                  href="https://resend.com/api-keys"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[11px] text-indigo-400 hover:text-indigo-300 font-semibold inline-flex items-center gap-1"
+                >
+                  <span>Get Resend Key</span>
+                  <ExternalLink className="w-3 h-3" />
+                </a>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+                <div>
+                  <label className="block text-slate-300 font-bold mb-1">
+                    Resend API Key
+                  </label>
+                  <input
+                    type={showEmailKeys ? "text" : "password"}
+                    value={resendApiKey}
+                    onChange={(e) => setResendApiKey(e.target.value)}
+                    placeholder="re_xxxxxxxxxxxxxxxxxxxxxxxx"
+                    className="w-full px-3.5 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white font-mono text-xs focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                  />
+                  <span className="text-[10px] text-slate-500 mt-1 block">
+                    Starts with &quot;re_&quot; from resend.com
+                  </span>
+                </div>
+
+                <div>
+                  <label className="block text-slate-300 font-bold mb-1">
+                    Sender Email (&quot;From&quot; address)
+                  </label>
+                  <input
+                    type="text"
+                    value={emailFrom}
+                    onChange={(e) => setEmailFrom(e.target.value)}
+                    placeholder="onboarding@resend.dev or verify@yourdomain.com"
+                    className="w-full px-3.5 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white font-mono text-xs focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                  />
+                  <span className="text-[10px] text-slate-500 mt-1 block">
+                    Note: <code className="text-slate-400">onboarding@resend.dev</code> only sends to your own email. For public signups, use your verified domain or SMTP below.
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Option 2: SMTP Relay */}
+            <div className="p-4 rounded-2xl bg-slate-950/60 border border-slate-800/80 space-y-3">
+              <span className="text-xs font-bold text-sky-300 uppercase tracking-wider flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-sky-400"></span> Option 2: SMTP Relay (Gmail App Password or Custom Mail Host)
+              </span>
+
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 text-xs">
+                <div className="sm:col-span-2">
+                  <label className="block text-slate-300 font-bold mb-1">
+                    SMTP Host
+                  </label>
+                  <input
+                    type="text"
+                    value={smtpHost}
+                    onChange={(e) => setSmtpHost(e.target.value)}
+                    placeholder="smtp.gmail.com"
+                    className="w-full px-3.5 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white font-mono text-xs focus:outline-none focus:ring-2 focus:ring-sky-400"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-slate-300 font-bold mb-1">
+                    SMTP Port
+                  </label>
+                  <input
+                    type="number"
+                    value={smtpPort}
+                    onChange={(e) => setSmtpPort(Number(e.target.value))}
+                    placeholder="465"
+                    className="w-full px-3.5 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white font-mono text-xs focus:outline-none focus:ring-2 focus:ring-sky-400"
+                  />
+                  <span className="text-[10px] text-slate-500 mt-1 block">
+                    465 (SSL) or 587 (TLS)
+                  </span>
+                </div>
+
+                <div>
+                  <label className="block text-slate-300 font-bold mb-1">
+                    SMTP Username / Email
+                  </label>
+                  <input
+                    type="text"
+                    value={smtpUser}
+                    onChange={(e) => setSmtpUser(e.target.value)}
+                    placeholder="yourstore@gmail.com"
+                    className="w-full px-3.5 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white font-mono text-xs focus:outline-none focus:ring-2 focus:ring-sky-400"
+                  />
+                </div>
+
+                <div className="sm:col-span-4">
+                  <label className="block text-slate-300 font-bold mb-1">
+                    SMTP Password / App Password
+                  </label>
+                  <input
+                    type={showEmailKeys ? "text" : "password"}
+                    value={smtpPass}
+                    onChange={(e) => setSmtpPass(e.target.value)}
+                    placeholder="16-character Google App Password (e.g. abcd efgh ijkl mnop)"
+                    className="w-full px-3.5 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white font-mono text-xs focus:outline-none focus:ring-2 focus:ring-sky-400"
+                  />
+                  <span className="text-[10px] text-slate-500 mt-1 block">
+                    For Gmail, generate an <strong>App Password</strong> in Google Account Security &gt; 2-Step Verification &gt; App Passwords.
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Test Email Section */}
+            <div className="pt-2 border-t border-slate-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex-1 flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                <input
+                  type="email"
+                  value={testEmail}
+                  onChange={(e) => setTestEmail(e.target.value)}
+                  placeholder="Enter recipient email to test (e.g. you@gmail.com)"
+                  className="flex-1 px-3.5 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white font-medium text-xs focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                />
+                <button
+                  type="button"
+                  onClick={handleTestEmail}
+                  disabled={testingEmail}
+                  className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-indigo-950/60 hover:bg-indigo-900 border border-indigo-800 text-indigo-300 rounded-xl text-xs font-bold transition-all disabled:opacity-50 shrink-0"
+                >
+                  {testingEmail ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>Sending Test Email...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Mail className="w-3.5 h-3.5" />
+                      <span>Send Test Verification Email</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
+              {emailTestResult && (
+                <div
+                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-2 ${
+                    emailTestResult.success
+                      ? "bg-emerald-950 text-emerald-300 border border-emerald-800"
+                      : "bg-red-950 text-red-300 border border-red-800"
+                  }`}
+                >
+                  {emailTestResult.success ? (
+                    <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
+                  ) : (
+                    <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
+                  )}
+                  <span className="truncate max-w-xs">{emailTestResult.message}</span>
                 </div>
               )}
             </div>

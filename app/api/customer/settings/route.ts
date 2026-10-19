@@ -123,7 +123,15 @@ export async function POST(req: Request) {
       });
 
       // Send OTP to OLD email address
-      await sendEmailChangeOtpEmail(customer.email, customer.name, cleanNewEmail, otpCode);
+      let emailSent = false;
+      let emailFallback = true;
+      try {
+        const emailRes = await sendEmailChangeOtpEmail(customer.email, customer.name, cleanNewEmail, otpCode);
+        emailSent = Boolean(emailRes.success && !emailRes.isFallback);
+        emailFallback = !emailSent;
+      } catch (e) {
+        console.warn("Failed to dispatch email change OTP:", e);
+      }
 
       // Mask old email for security (e.g. k***@gmail.com)
       const parts = customer.email.split("@");
@@ -136,7 +144,11 @@ export async function POST(req: Request) {
         success: true,
         requires_otp: true,
         old_email: maskedOldEmail,
-        message: `A 6-digit confirmation code has been dispatched to your current email (${maskedOldEmail}). Please check your inbox or spam folder.`,
+        has_real_email: emailSent,
+        dev_code: emailFallback ? otpCode : undefined,
+        message: emailSent
+          ? `A 6-digit confirmation code has been dispatched to your current email (${maskedOldEmail}). Please check your inbox or spam folder.`
+          : `Confirmation code generated: ${otpCode}. Enter this code below to authorize your email change.`,
       });
     }
 

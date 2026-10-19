@@ -80,10 +80,14 @@ export async function POST(req: Request) {
     });
 
     // Send verification email if customer provided email
+    let emailSent = false;
+    let emailFallback = true;
     if (cleanEmail) {
       try {
         const { sendCustomerVerificationEmail } = await import("@/lib/email");
-        await sendCustomerVerificationEmail(cleanEmail, cleanName, verificationCode, "signup");
+        const emailRes = await sendCustomerVerificationEmail(cleanEmail, cleanName, verificationCode, "signup");
+        emailSent = Boolean(emailRes.success && !emailRes.isFallback);
+        emailFallback = !emailSent;
       } catch (err) {
         console.warn("Failed to dispatch sign-up verification email:", err);
       }
@@ -98,7 +102,11 @@ export async function POST(req: Request) {
       phone: newCustomer.phone,
       email: newCustomer.email,
       name: newCustomer.name,
-      message: `Account created! We've sent a 6-digit verification code to your email (${cleanEmail}). Please check your inbox or spam folder.`,
+      has_real_email: emailSent,
+      dev_code: emailFallback ? verificationCode : undefined,
+      message: emailSent
+        ? `Account created! We've sent a 6-digit verification code to your email (${cleanEmail}). Please check your inbox or spam folder.`
+        : `Account created! Your instant verification code is ${verificationCode}.`,
     });
   } catch (error: any) {
     console.error("Customer register error:", error);

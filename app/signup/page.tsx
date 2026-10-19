@@ -60,6 +60,7 @@ export default function CustomerSignUpPage() {
   // Verification Code State
   const [customerId, setCustomerId] = useState("");
   const [verificationCode, setVerificationCode] = useState("");
+  const [devCode, setDevCode] = useState<string | null>(null);
   const [resendCooldown, setResendCooldown] = useState(0);
 
   // UI status
@@ -129,7 +130,13 @@ export default function CustomerSignUpPage() {
       }
 
       setCustomerId(data.customer_id);
-      setVerificationCode(""); // User must enter code from their email
+      if (data.dev_code) {
+        setDevCode(data.dev_code);
+        setVerificationCode(data.dev_code);
+      } else {
+        setDevCode(null);
+        setVerificationCode("");
+      }
       setInfoNotice(data.message || `We sent a 6-digit verification code to ${cleanEmail}. Please check your inbox or spam folder.`);
       setResendCooldown(30);
       setStep("verify");
@@ -203,7 +210,11 @@ export default function CustomerSignUpPage() {
         throw new Error(data.message || "Failed to resend code.");
       }
 
-      setInfoNotice(data.message || "A new 6-digit code has been sent to your email.");
+      if (data.dev_code) {
+        setDevCode(data.dev_code);
+        setVerificationCode(data.dev_code);
+      }
+      setInfoNotice(data.message || "A new 6-digit code has been generated.");
       setResendCooldown(30);
     } catch (err: any) {
       setError(err?.message || "Failed to resend verification code.");
@@ -497,6 +508,22 @@ export default function CustomerSignUpPage() {
                   </p>
                 </div>
               </div>
+
+              {/* Instant Verification Code Card (When direct code is available) */}
+              {devCode && (
+                <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-center space-y-2">
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-500/20 text-emerald-300 font-bold text-[11px] uppercase tracking-wider rounded-full">
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>Instant Verification Code</span>
+                  </div>
+                  <div className="text-3xl font-mono font-black text-emerald-400 tracking-[0.3em]">
+                    {devCode}
+                  </div>
+                  <p className="text-[11px] text-slate-300">
+                    Code has been pre-filled below. Click &quot;Verify &amp; Activate Account&quot; to continue.
+                  </p>
+                </div>
+              )}
 
               <form onSubmit={handleVerifyCode} className="space-y-4">
                 <div>

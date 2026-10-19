@@ -34,33 +34,35 @@ export async function POST(req: Request) {
       verification_code_expires_at: expiresAt,
     });
 
-    const hasRealEmail = await isRealEmailConfigured();
     let emailSent = false;
+    let emailFallback = true;
 
     if (customer.email) {
       try {
-        await sendCustomerVerificationEmail(
+        const emailRes = await sendCustomerVerificationEmail(
           customer.email,
           customer.name,
           code,
           purpose === "login" ? "login" : "signup"
         );
-        emailSent = true;
+        emailSent = Boolean(emailRes.success && !emailRes.isFallback);
+        emailFallback = !emailSent;
       } catch (err) {
         console.warn("Failed to dispatch verification email:", err);
       }
     }
 
     console.log(
-      `[Customer Auth OTP] Sent code ${code} to ${customer.phone} / ${customer.email || "No email"} (Expires in 10m)`
+      `[Customer Auth OTP] Generated code ${code} for ${customer.phone} / ${customer.email || "No email"}`
     );
 
     return NextResponse.json({
       success: true,
-      message: customer.email
+      has_real_email: emailSent,
+      dev_code: emailFallback ? code : undefined,
+      message: emailSent
         ? `A 6-digit verification code was sent to your email (${customer.email}).`
-        : `Verification code generated for your account.`,
-      has_real_email: hasRealEmail,
+        : `Your instant verification code is ${code}.`,
     });
   } catch (error: any) {
     console.error("Send verification code error:", error);
