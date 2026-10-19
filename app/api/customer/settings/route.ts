@@ -144,11 +144,7 @@ export async function POST(req: Request) {
         success: true,
         requires_otp: true,
         old_email: maskedOldEmail,
-        has_real_email: emailSent,
-        dev_code: emailFallback ? otpCode : undefined,
-        message: emailSent
-          ? `A 6-digit confirmation code has been dispatched to your current email (${maskedOldEmail}). Please check your inbox or spam folder.`
-          : `Confirmation code generated: ${otpCode}. Enter this code below to authorize your email change.`,
+        message: `A 6-digit confirmation code has been dispatched to your registered email (${maskedOldEmail}). Please check your inbox or spam folder.`,
       });
     }
 

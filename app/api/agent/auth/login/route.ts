@@ -95,16 +95,11 @@ export async function POST(req: Request) {
       loginOtpCodes.set(agent.id, { code, expires });
       await db.updateAgent(agent.id, { login_otp: code, login_otp_expires: expires });
 
-      const hasRealEmail = await isRealEmailConfigured();
       await sendLoginOtpEmail(agent.email, agent.name, code);
 
       return NextResponse.json({
         success: true,
-        has_real_email: hasRealEmail,
-        dev_code: hasRealEmail ? undefined : code,
-        message: hasRealEmail
-          ? `A new 6-digit login verification code was sent to ${agent.email}.`
-          : `Code regenerated. (Email gateway is in simulation mode. Test code: ${code})`,
+        message: `A new 6-digit login verification code was sent to your registered email (${agent.email}).`,
       });
     }
 
@@ -181,14 +176,10 @@ export async function POST(req: Request) {
     return NextResponse.json({
       success: true,
       requires_verification: true,
-      has_real_email: hasRealEmail,
       agent_id: agent.id,
       agent_name: agent.name,
       masked_email: maskedEmail,
-      dev_code: hasRealEmail ? undefined : code,
-      message: hasRealEmail
-        ? `A 6-digit verification code has been dispatched to ${maskedEmail}.`
-        : `A 6-digit verification code was generated for ${maskedEmail}.`,
+      message: `A 6-digit verification code has been dispatched to your registered email (${maskedEmail}).`,
     });
   } catch (error: any) {
     console.error("[Agent Login Route Error]:", error);

@@ -73,7 +73,6 @@ export default function DeveloperPortalPage() {
   const [otpCode, setOtpCode] = useState("");
   const [sendingOtp, setSendingOtp] = useState(false);
   const [verifyingOtp, setVerifyingOtp] = useState(false);
-  const [simulatedOtp, setSimulatedOtp] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
 
@@ -158,10 +157,7 @@ export default function DeveloperPortalPage() {
       }
 
       setSuccessMsg(data.message);
-      if (data.simulated_code) {
-        setSimulatedOtp(data.simulated_code);
-        setOtpCode(data.simulated_code);
-      }
+      setOtpCode("");
       setStep("verify");
     } catch (err: any) {
       setErrorMsg(err?.message || "Failed to request code.");
@@ -240,7 +236,6 @@ export default function DeveloperPortalPage() {
     setCurrentAccount(null);
     setStep("input");
     setOtpCode("");
-    setSimulatedOtp(null);
   };
 
   if (loading) {
@@ -618,17 +613,6 @@ export default function DeveloperPortalPage() {
                   {/* STEP 2: 6-Digit Code Verification */}
                   {step === "verify" && (
                     <form onSubmit={handleVerifyOtp} className="space-y-4">
-                      {simulatedOtp && (
-                        <div className="p-3 bg-indigo-950/60 border border-indigo-700 rounded-2xl text-xs space-y-1">
-                          <div className="font-bold text-indigo-300 flex items-center gap-1.5">
-                            <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                            <span>Instant Verification Code:</span>
-                          </div>
-                          <div className="font-mono text-xl font-black text-amber-300 tracking-widest">
-                            {simulatedOtp}
-                          </div>
-                        </div>
-                      )}
 
                       <div>
                         <label className="block text-xs font-bold text-slate-300 mb-1 uppercase tracking-wider">

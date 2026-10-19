@@ -45,16 +45,11 @@ export async function POST(req: Request) {
       await db.updateAgent(agent_id, { withdrawal_otp: code, withdrawal_otp_expires: expires });
 
       const reqAmount = Number(body.amount) || 5.0;
-      const hasRealEmail = await isRealEmailConfigured();
       await sendWithdrawalOtpEmail(agent.email, agent.name, code, reqAmount);
 
       return NextResponse.json({
         success: true,
-        has_real_email: hasRealEmail,
-        dev_code: hasRealEmail ? undefined : code,
-        message: hasRealEmail
-          ? `A 6-digit verification code has been dispatched to ${agent.email}. Please check your inbox and spam folder.`
-          : `Payout verification code generated. (Email gateway in simulation mode. Test code: ${code})`,
+        message: `A 6-digit verification code has been sent to your registered email (${agent.email}). Please check your inbox and spam folder.`,
       });
     }
 

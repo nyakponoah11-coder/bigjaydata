@@ -102,11 +102,7 @@ export async function POST(req: Request) {
       phone: newCustomer.phone,
       email: newCustomer.email,
       name: newCustomer.name,
-      has_real_email: emailSent,
-      dev_code: emailFallback ? verificationCode : undefined,
-      message: emailSent
-        ? `Account created! We've sent a 6-digit verification code to your email (${cleanEmail}). Please check your inbox or spam folder.`
-        : `Account created! Your instant verification code is ${verificationCode}.`,
+      message: `Account created! We've sent a 6-digit verification code to your email (${cleanEmail}). Please check your inbox or spam folder.`,
     });
   } catch (error: any) {
     console.error("Customer register error:", error);

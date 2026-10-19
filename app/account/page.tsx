@@ -257,14 +257,10 @@ export default function CustomerAccountDashboard() {
         throw new Error(data.error || "Failed to request email change.");
       }
       setEmailOtpSent(true);
-      if (data.dev_code) {
-        setEmailOtp(data.dev_code);
-      }
+      setEmailOtp("");
       setEmailMsg({
         type: "success",
-        text: data.dev_code
-          ? `Confirmation code generated: ${data.dev_code}. It has been pre-filled below.`
-          : `A 6-digit verification code has been sent to your current email (${customer.email || "old email"}). Check your inbox/spam and enter the code below to confirm.`,
+        text: `A 6-digit verification code has been sent to your current email (${customer.email || "old email"}). Check your inbox/spam and enter the code below to confirm.`,
       });
     } catch (err: any) {
       setEmailMsg({ type: "error", text: err?.message || "Failed to send verification code." });

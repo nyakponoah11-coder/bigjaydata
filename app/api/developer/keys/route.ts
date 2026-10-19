@@ -65,13 +65,9 @@ export async function POST(req: Request) {
 
       return NextResponse.json({
         success: true,
-        message: isEmailReal && emailResult.success
-          ? `6-digit verification code has been sent to ${cleanEmail}.`
-          : `Verification code generated for ${cleanEmail}. Check your inbox.`,
+        message: `A 6-digit verification code has been sent to ${cleanEmail}. Please check your inbox and spam folder.`,
         email: cleanEmail,
         is_existing: !!existing,
-        // Simulation code fallback if outbound mail service isn't active
-        simulated_code: !isEmailReal || !emailResult.success ? otpCode : undefined,
       });
     }
 

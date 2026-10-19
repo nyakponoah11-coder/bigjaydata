@@ -69,11 +69,7 @@ export async function POST(req: Request) {
         customer_id: customer.id,
         phone: customer.phone,
         email: customer.email,
-        has_real_email: emailSent,
-        dev_code: emailFallback ? code : undefined,
-        message: emailSent
-          ? `Please enter the 6-digit verification code sent to your email (${customer.email}).`
-          : `Account verification required. Your instant code is ${code}.`,
+        message: `Please enter the 6-digit verification code sent to your registered email (${customer.email}).`,
       });
     }
 

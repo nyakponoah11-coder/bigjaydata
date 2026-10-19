@@ -58,11 +58,9 @@ export async function POST(req: Request) {
 
     return NextResponse.json({
       success: true,
-      has_real_email: emailSent,
-      dev_code: emailFallback ? code : undefined,
-      message: emailSent
-        ? `A 6-digit verification code was sent to your email (${customer.email}).`
-        : `Your instant verification code is ${code}.`,
+      message: customer.email
+        ? `A 6-digit verification code was sent to your registered email (${customer.email}). Please check your inbox and spam folder.`
+        : `A 6-digit verification code was sent to your registered email.`,
     });
   } catch (error: any) {
     console.error("Send verification code error:", error);

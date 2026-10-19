@@ -722,7 +722,7 @@ export default function AdminSettingsPage() {
             </div>
 
             <p className="text-xs text-slate-400 leading-relaxed">
-              Configure how customer verification OTPs, login codes, and email confirmation alerts are delivered. You can use <strong>Resend API</strong> (fastest) or <strong>Gmail / Custom SMTP Relay</strong>. If unconfigured or if a provider temporarily limits delivery, the store automatically presents an <em>Instant Verification Code banner</em> on the customer&apos;s screen so they are never locked out of their account.
+              Configure how customer verification OTPs, login codes, withdrawal security codes, and email confirmations are delivered directly to registered email addresses. You can use <strong>Resend API</strong> (fastest) or <strong>Gmail / Custom SMTP Relay</strong>. All verification codes are dispatched strictly to registered emails and are never displayed on the website.
             </p>
 
             {/* Option 1: Resend HTTP API */}

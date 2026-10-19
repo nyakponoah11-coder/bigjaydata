@@ -29,7 +29,6 @@ export default function AgentLoginPage() {
   const [pendingAgentId, setPendingAgentId] = useState("");
   const [maskedEmail, setMaskedEmail] = useState("");
   const [verificationCode, setVerificationCode] = useState("");
-  const [devCode, setDevCode] = useState<string | null>(null);
   const [hasRealEmail, setHasRealEmail] = useState(true);
   const [verifying, setVerifying] = useState(false);
   const [resending, setResending] = useState(false);
@@ -69,13 +68,7 @@ export default function AgentLoginPage() {
         setMaskedEmail(data.masked_email);
         setVerificationNotice(data.message);
         setHasRealEmail(data.has_real_email ?? true);
-        if (data.dev_code) {
-          setDevCode(data.dev_code);
-          setVerificationCode(data.dev_code);
-        } else {
-          setDevCode(null);
-          setVerificationCode("");
-        }
+        setVerificationCode("");
         setLoading(false);
         return;
       }
@@ -166,10 +159,7 @@ export default function AgentLoginPage() {
         throw new Error(data.message || "Failed to resend code");
       }
       setVerificationNotice(data.message);
-      if (data.dev_code) {
-        setDevCode(data.dev_code);
-        setVerificationCode(data.dev_code);
-      }
+      setVerificationCode("");
     } catch (err: any) {
       setError(err.message || "Failed to resend code");
     } finally {
@@ -235,9 +225,7 @@ export default function AgentLoginPage() {
       setForgotAgentId(data.agent_id);
       setForgotMaskedEmail(data.masked_email);
       setForgotMsg(data.message);
-      if (data.dev_code) {
-        setForgotCode(data.dev_code);
-      }
+      setForgotCode("");
       setForgotStep("verify");
     } catch (err: any) {
       setForgotError(err.message || "Could not request code");
@@ -326,22 +314,7 @@ export default function AgentLoginPage() {
                 </div>
               </div>
 
-              {devCode && (
-                <div className="p-3 bg-amber-950/60 border border-amber-800 text-amber-300 text-xs rounded-xl space-y-1">
-                  <div className="font-bold text-amber-200">
-                    Simulation Mode (No outbound email key configured)
-                  </div>
-                  <div>
-                    Your login verification code is:{" "}
-                    <strong className="font-mono text-white text-sm tracking-wider px-1.5 py-0.5 bg-slate-900 rounded">
-                      {devCode}
-                    </strong>
-                  </div>
-                  <div className="text-[10px] text-amber-400/80">Code has been prefilled for you below.</div>
-                </div>
-              )}
-
-              {verificationNotice && !devCode && (
+              {verificationNotice && (
                 <div className="p-3 bg-emerald-950/60 border border-emerald-800 text-emerald-300 text-xs rounded-xl flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
                   <span>{verificationNotice}</span>

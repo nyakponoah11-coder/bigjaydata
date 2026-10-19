@@ -57,11 +57,7 @@ export async function POST(req: Request) {
         success: true,
         agent_id: agent.id,
         masked_email: maskedEmail,
-        has_real_email: hasRealEmail,
-        dev_code: hasRealEmail ? undefined : code,
-        message: hasRealEmail
-          ? `A 6-digit password reset code has been sent to ${maskedEmail}. Please check your inbox and spam folder.`
-          : `Password reset code generated. (Email gateway in simulation mode. Test code: ${code})`,
+        message: `A 6-digit password reset code has been sent to your registered email (${maskedEmail}). Please check your inbox and spam folder.`,
       });
     }
 
