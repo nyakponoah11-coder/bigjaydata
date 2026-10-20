@@ -2,6 +2,9 @@ import { supabaseAdmin, isSupabaseConfigured } from "./supabase";
 import fs from "fs";
 import path from "path";
 
+import { isMaskedSecret, isValidPaystackSecret } from "./secrets";
+export { isMaskedSecret, isValidPaystackSecret } from "./secrets";
+
 export interface Product {
   id: string;
   network: string; // 'mtn' | 'telecel' | 'at' | string
@@ -853,15 +856,29 @@ export const db = {
 
   async updateSettings(updates: Partial<Settings>): Promise<Settings> {
     invalidateDbCache("settings");
-    // Sanitize: do not overwrite real API keys if masked bullets are passed
+        // Sanitize: do not overwrite real API keys if masked bullets are passed
     const safeUpdates: Partial<Settings> = { ...updates };
-    if (safeUpdates.gemini_api_key && safeUpdates.gemini_api_key.includes("••••")) {
+
+    // Paystack Secret Key: MUST be a valid sk_ key; never allow masked bullet dots or non-sk strings to overwrite
+    if (safeUpdates.paystack_secret_key !== undefined) {
+      if (!isValidPaystackSecret(safeUpdates.paystack_secret_key)) {
+        delete safeUpdates.paystack_secret_key;
+      } else {
+        safeUpdates.paystack_secret_key = safeUpdates.paystack_secret_key
+          .trim()
+          .replace(/['"]/g, "")
+          .replace(/^Bearer\s+/i, "")
+          .replace(/\s+/g, "");
+      }
+    }
+
+    if (safeUpdates.gemini_api_key && isMaskedSecret(safeUpdates.gemini_api_key)) {
       delete safeUpdates.gemini_api_key;
     }
-    if (safeUpdates.groq_api_key && safeUpdates.groq_api_key.includes("••••")) {
+    if (safeUpdates.groq_api_key && isMaskedSecret(safeUpdates.groq_api_key)) {
       delete safeUpdates.groq_api_key;
     }
-    if (safeUpdates.grok_api_key && safeUpdates.grok_api_key.includes("••••")) {
+    if (safeUpdates.grok_api_key && isMaskedSecret(safeUpdates.grok_api_key)) {
       delete safeUpdates.grok_api_key;
     }
     // Mirror groq & grok
@@ -873,23 +890,36 @@ export const db = {
     if (safeUpdates.groq_model && !safeUpdates.grok_model) {
       safeUpdates.grok_model = safeUpdates.groq_model;
     } else if (safeUpdates.grok_model && !safeUpdates.groq_model) {
-      safeUpdates.groq_model = safeUpdates.grok_model;
+      safeUpdates.groq_model = safeUpdates.groq_model;
     }
-    if (safeUpdates.openai_api_key && safeUpdates.openai_api_key.includes("••••")) {
+    if (safeUpdates.openai_api_key && isMaskedSecret(safeUpdates.openai_api_key)) {
       delete safeUpdates.openai_api_key;
     }
-    if (safeUpdates.paystack_secret_key && safeUpdates.paystack_secret_key.includes("••••")) {
-      delete safeUpdates.paystack_secret_key;
-    }
-    if (safeUpdates.resend_api_key && safeUpdates.resend_api_key.includes("••••")) {
+    if (safeUpdates.resend_api_key && isMaskedSecret(safeUpdates.resend_api_key)) {
       delete safeUpdates.resend_api_key;
     }
-    if (safeUpdates.smtp_pass && safeUpdates.smtp_pass.includes("••••")) {
+    if (safeUpdates.smtp_pass && isMaskedSecret(safeUpdates.smtp_pass)) {
       delete safeUpdates.smtp_pass;
     }
 
     if (isSupabaseConfigured && supabaseAdmin) {
       try {
+        // Save Paystack configuration to dedicated config row so it NEVER disappears
+        if (safeUpdates.paystack_public_key || safeUpdates.paystack_secret_key) {
+          try {
+            const currentPaystackConfig = {
+              paystack_public_key: safeUpdates.paystack_public_key || globalStore.__bmgh_settings?.paystack_public_key || "",
+              paystack_secret_key: safeUpdates.paystack_secret_key || globalStore.__bmgh_settings?.paystack_secret_key || "",
+            };
+            await supabaseAdmin.from("settings").upsert({
+              id: "paystack_config",
+              store_name: JSON.stringify(currentPaystackConfig),
+            });
+          } catch (pErr) {
+            console.warn("Paystack config backup row save error:", pErr);
+          }
+        }
+
         // Save Email configuration to dedicated config row so it NEVER disappears even if schema is old
         if (
           safeUpdates.resend_api_key !== undefined ||
@@ -988,11 +1018,24 @@ export const db = {
         if (data) {
           const prevChan = globalStore.__bmgh_settings?.whatsapp_channel_url || "";
           const prevAI = globalStore.__bmgh_settings?.ai_system_instructions || "";
+          const prevPaystackSec = globalStore.__bmgh_settings?.paystack_secret_key || "";
+          const prevPaystackPub = globalStore.__bmgh_settings?.paystack_public_key || "";
+          const prevDataMartKey = globalStore.__bmgh_settings?.datamart_api_key || "";
+
           globalStore.__bmgh_settings = {
             ...globalStore.__bmgh_settings!,
             ...(data as Settings),
             ...safeUpdates,
           };
+          if (!globalStore.__bmgh_settings.paystack_secret_key && prevPaystackSec && safeUpdates.paystack_secret_key === undefined) {
+            globalStore.__bmgh_settings.paystack_secret_key = prevPaystackSec;
+          }
+          if (!globalStore.__bmgh_settings.paystack_public_key && prevPaystackPub && safeUpdates.paystack_public_key === undefined) {
+            globalStore.__bmgh_settings.paystack_public_key = prevPaystackPub;
+          }
+          if (!globalStore.__bmgh_settings.datamart_api_key && prevDataMartKey && safeUpdates.datamart_api_key === undefined) {
+            globalStore.__bmgh_settings.datamart_api_key = prevDataMartKey;
+          }
           if (!globalStore.__bmgh_settings.whatsapp_channel_url && prevChan && safeUpdates.whatsapp_channel_url === undefined) {
             globalStore.__bmgh_settings.whatsapp_channel_url = prevChan;
           }

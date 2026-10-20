@@ -95,6 +95,39 @@ export function mapDatamartStatus(s: string | undefined | null): string {
 }
 
 /**
+ * Reads explicit delivery orderStatus from DataMart API payloads.
+ * Ignores top-level HTTP/wrapper "status": "success".
+ */
+export function extractDataMartOrderStatus(json: any): string | null {
+  if (!json) return null;
+  const d = json.data && typeof json.data === "object" ? json.data : json;
+  const rp = d.relatedPurchase || d.item;
+
+  const candidate =
+    d.orderStatus ??
+    d.order_status ??
+    d.deliveryStatus ??
+    d.delivery_status ??
+    rp?.orderStatus ??
+    rp?.order_status ??
+    rp?.deliveryStatus ??
+    rp?.delivery_status ??
+    (d.status && !["success", "ok", "true", "false", "error"].includes(String(d.status).toLowerCase()) ? d.status : null);
+
+  if (candidate === undefined || candidate === null) return null;
+  const str = String(candidate).toLowerCase().trim();
+  if (!str) return null;
+
+  // Never treat generic API envelope "success" / "ok" / "true" as a delivery status
+  if (["success", "ok", "true", "false"].includes(str)) {
+    return null;
+  }
+
+  return str;
+}
+
+
+/**
  * Maps application telco names to DataMart's official network enum:
  * YELLO | TELECEL | AT_PREMIUM
  */
@@ -327,17 +360,24 @@ export async function sendDataMartDelivery(params: DataMartDeliveryParams): Prom
 
     if (response.ok && (responseData?.status === "success" || responseData?.data?.purchaseId)) {
       const dataPayload = responseData.data || {};
-      const returnedStatus = (
-        dataPayload.orderStatus ||
-        dataPayload.deliveryStatus ||
-        dataPayload.status ||
-        responseData.orderStatus ||
-        "processing"
-      ).toLowerCase().trim();
+      const explicitStatus = extractDataMartOrderStatus(responseData);
+      // Newly submitted bundles start in "processing" state with telecom,
+      // unless DataMart explicitly reports it as already "delivered" or "failed"
+      let returnedStatus = "processing";
+      if (explicitStatus) {
+        const mapped = mapDatamartStatus(explicitStatus);
+        if (mapped === "delivered" && (explicitStatus === "delivered" || explicitStatus === "fulfilled")) {
+          returnedStatus = "delivered";
+        } else if (mapped === "failed") {
+          returnedStatus = "failed";
+        } else {
+          returnedStatus = "processing";
+        }
+      }
 
       return {
         success: true,
-        message: responseData.message || "Data bundle purchased successfully",
+        message: responseData.message || "Data bundle purchase initiated",
         datamart_id: dataPayload.purchaseId || dataPayload.orderReference || `DM-${Date.now()}`,
         order_reference: dataPayload.orderReference || dataPayload.reference,
         status: returnedStatus,
@@ -713,16 +753,18 @@ export async function checkDataMartOrderStatus(orderReference: string): Promise<
             data = { raw: text };
           }
 
-          if (response.ok && (data?.status === "success" || data?.data?.orderStatus || data?.orderStatus)) {
+          if (response.ok) {
             const payload = data.data || data;
-            const rawStatus = (payload.orderStatus || payload.status || data.orderStatus || "").toLowerCase().trim();
-            return {
-              success: true,
-              orderStatus: rawStatus,
-              data: payload,
-              message: data.message || "Order status fetched",
-              raw: data,
-            };
+            const rawStatus = extractDataMartOrderStatus(data);
+            if (rawStatus) {
+              return {
+                success: true,
+                orderStatus: rawStatus,
+                data: payload,
+                message: data.message || "Order status fetched",
+                raw: data,
+              };
+            }
           }
         } catch (reqErr) {
           // Try next candidate URL
@@ -875,7 +917,14 @@ export async function syncOrderWithDataMart(order: Order): Promise<Order> {
               );
 
               if (isRefMatch || isPhoneMatch) {
-                const rawStatus = String(item.status || rp.orderStatus || item.orderStatus || item.deliveryStatus || "completed").toLowerCase().trim();
+                // Prioritize explicit telecom delivery orderStatus over generic wallet transaction status
+                const rawStatus = String(
+                  rp.orderStatus ||
+                  rp.deliveryStatus ||
+                  item.orderStatus ||
+                  item.deliveryStatus ||
+                  (item.status && !["success", "completed"].includes(String(item.status).toLowerCase()) ? item.status : "processing")
+                ).toLowerCase().trim();
                 const deliveryStatus = mapDatamartStatus(rawStatus);
                 const foundRef = tRef || rpRef || tId;
 

@@ -1,4 +1,4 @@
-import { db } from "./db";
+import { db, isValidPaystackSecret } from "./db";
 
 export interface PaystackVerifyResult {
   success: boolean;
@@ -23,6 +23,13 @@ export async function verifyPaystackTransaction(paystackRef: string): Promise<Pa
       secretKey = secretKey.slice(7).trim();
     }
 
+    // If key in settings is not valid or masked, fallback to environment
+    if (!isValidPaystackSecret(secretKey)) {
+      if (isValidPaystackSecret(process.env.PAYSTACK_SECRET_KEY)) {
+        secretKey = process.env.PAYSTACK_SECRET_KEY!.trim().replace(/['"]/g, "").replace(/^Bearer\s+/i, "");
+      }
+    }
+
     if (!paystackRef || paystackRef.startsWith("demo_") || paystackRef.startsWith("test_")) {
       return {
         success: false,
@@ -41,7 +48,7 @@ export async function verifyPaystackTransaction(paystackRef: string): Promise<Pa
       };
     }
 
-    const isInvalidSecret = !secretKey || secretKey.length < 20 || secretKey.includes("sample") || secretKey.includes("placeholder");
+    const isInvalidSecret = !isValidPaystackSecret(secretKey);
 
     if (isInvalidSecret) {
       console.warn(`[Paystack] Paystack secret key is missing or dummy. Cannot verify ref: ${paystackRef}`);
@@ -136,9 +143,12 @@ function mapNetworkToPaystackBankCode(network: string): string {
 export async function disbursePaystackTransfer(params: PaystackTransferParams): Promise<PaystackTransferResult> {
   try {
     const settings = await db.getSettings();
-    const secretKey = settings.paystack_secret_key || process.env.PAYSTACK_SECRET_KEY || "";
+    let secretKey = (settings.paystack_secret_key || process.env.PAYSTACK_SECRET_KEY || "").trim().replace(/['"]/g, "").replace(/^Bearer\s+/i, "");
+    if (!isValidPaystackSecret(secretKey) && isValidPaystackSecret(process.env.PAYSTACK_SECRET_KEY)) {
+      secretKey = process.env.PAYSTACK_SECRET_KEY!.trim().replace(/['"]/g, "").replace(/^Bearer\s+/i, "");
+    }
 
-    if (!secretKey || secretKey.length < 20 || secretKey.includes("sample") || secretKey.includes("placeholder")) {
+    if (!isValidPaystackSecret(secretKey)) {
       return {
         success: false,
         message: "Paystack secret key is missing or invalid in Admin Settings. Please configure your live Paystack secret key.",
@@ -249,8 +259,11 @@ export async function disbursePaystackTransfer(params: PaystackTransferParams): 
 export async function checkPaystackBalance(): Promise<{ success: boolean; balanceGHS?: number; message?: string }> {
   try {
     const settings = await db.getSettings();
-    const secretKey = settings.paystack_secret_key || process.env.PAYSTACK_SECRET_KEY || "";
-    if (!secretKey) return { success: false, message: "Paystack secret key is missing" };
+    let secretKey = (settings.paystack_secret_key || process.env.PAYSTACK_SECRET_KEY || "").trim().replace(/['"]/g, "").replace(/^Bearer\s+/i, "");
+    if (!isValidPaystackSecret(secretKey) && isValidPaystackSecret(process.env.PAYSTACK_SECRET_KEY)) {
+      secretKey = process.env.PAYSTACK_SECRET_KEY!.trim().replace(/['"]/g, "").replace(/^Bearer\s+/i, "");
+    }
+    if (!isValidPaystackSecret(secretKey)) return { success: false, message: "Paystack secret key is missing or invalid" };
 
     const res = await fetch("https://api.paystack.co/balance", {
       headers: { Authorization: `Bearer ${secretKey}` },

@@ -2,7 +2,8 @@
 
 import React, { useState, useEffect } from "react";
 import AdminLayout from "@/components/AdminLayout";
-import { Settings } from "@/lib/db";
+import type { Settings } from "@/lib/db";
+import { isMaskedSecret, isValidPaystackSecret } from "@/lib/secrets";
 import {
   Save,
   CheckCircle,
@@ -191,10 +192,10 @@ export default function AdminSettingsPage() {
         body: JSON.stringify({
           test_email: testEmail.trim(),
           targetEmail: testEmail.trim(),
-          resend_api_key: resendApiKey && !resendApiKey.includes("••••") ? resendApiKey.trim() : undefined,
+          resend_api_key: !isMaskedSecret(resendApiKey) ? resendApiKey.trim() : undefined,
           email_from: emailFrom ? emailFrom.trim() : undefined,
           smtp_user: smtpUser ? smtpUser.trim() : undefined,
-          smtp_pass: smtpPass && !smtpPass.includes("••••") ? smtpPass.trim() : undefined,
+          smtp_pass: !isMaskedSecret(smtpPass) ? smtpPass.trim() : undefined,
           smtp_host: smtpHost ? smtpHost.trim() : undefined,
           smtp_port: smtpPort ? Number(smtpPort) : undefined,
         }),
@@ -232,7 +233,7 @@ export default function AdminSettingsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           public_key: paystackPublicKey.trim(),
-          secret_key: paystackSecretKey.trim(),
+          secret_key: isValidPaystackSecret(paystackSecretKey) ? paystackSecretKey.trim() : "",
         }),
       });
       const data = await res.json();
@@ -331,7 +332,7 @@ export default function AdminSettingsPage() {
       };
 
       // Only include secret key if entered/changed (don't overwrite with placeholder bullet dots)
-      if (paystackSecretKey && !paystackSecretKey.includes("••••")) {
+      if (paystackSecretKey && isValidPaystackSecret(paystackSecretKey)) {
         const cleanSecret = paystackSecretKey
           .trim()
           .replace(/['"]/g, "")
@@ -341,7 +342,7 @@ export default function AdminSettingsPage() {
       }
 
       // Gemini AI Key & Model
-      if (geminiApiKey !== undefined && !geminiApiKey.includes("••••")) {
+      if (geminiApiKey !== undefined && !isMaskedSecret(geminiApiKey)) {
         updates.gemini_api_key = geminiApiKey.trim();
       }
       if (geminiModel) {
@@ -349,7 +350,7 @@ export default function AdminSettingsPage() {
       }
 
       // Groq AI Key & Model
-      if (groqApiKey !== undefined && !groqApiKey.includes("••••")) {
+      if (groqApiKey !== undefined && !isMaskedSecret(groqApiKey)) {
         updates.groq_api_key = groqApiKey.trim();
         updates.grok_api_key = groqApiKey.trim();
       }
@@ -359,7 +360,7 @@ export default function AdminSettingsPage() {
       }
 
       // Email Gateway (Resend & SMTP)
-      if (resendApiKey !== undefined && !resendApiKey.includes("••••")) {
+      if (resendApiKey !== undefined && !isMaskedSecret(resendApiKey)) {
         updates.resend_api_key = resendApiKey.trim();
       }
       if (emailFrom !== undefined) {
@@ -368,7 +369,7 @@ export default function AdminSettingsPage() {
       if (smtpUser !== undefined) {
         updates.smtp_user = smtpUser.trim();
       }
-      if (smtpPass !== undefined && !smtpPass.includes("••••")) {
+      if (smtpPass !== undefined && !isMaskedSecret(smtpPass)) {
         const cleanPass = smtpPass.trim().replace(/['"]/g, "");
         const hostStr = (smtpHost || "").toLowerCase();
         const userStr = (smtpUser || "").toLowerCase();

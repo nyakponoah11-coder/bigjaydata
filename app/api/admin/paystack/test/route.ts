@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { db, isMaskedSecret, isValidPaystackSecret } from "@/lib/db";
 
 export async function POST(req: Request) {
   try {
@@ -8,11 +8,11 @@ export async function POST(req: Request) {
 
     const settings = await db.getSettings();
 
-    // If secret_key is masked or missing, read from database
-    if (!secret_key || secret_key.includes("••••")) {
+    // If secret_key is masked or missing or invalid, read from active settings or environment
+    if (!secret_key || isMaskedSecret(secret_key) || !isValidPaystackSecret(secret_key)) {
       secret_key = settings.paystack_secret_key || process.env.PAYSTACK_SECRET_KEY || "";
     }
-    if (!public_key) {
+    if (!public_key || isMaskedSecret(public_key)) {
       public_key = settings.paystack_public_key || process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY || "";
     }
 
@@ -37,9 +37,9 @@ export async function POST(req: Request) {
         { status: 400 }
       );
     }
-    if (!cleanSecKey) {
+    if (!cleanSecKey || isMaskedSecret(cleanSecKey) || !isValidPaystackSecret(cleanSecKey)) {
       return NextResponse.json(
-        { success: false, message: "Paystack Secret Key (starts with sk_) is required." },
+        { success: false, message: "A valid Paystack Secret Key (starts with sk_live_ or sk_test_) is required." },
         { status: 400 }
       );
     }
@@ -84,6 +84,7 @@ export async function POST(req: Request) {
         Authorization: `Bearer ${cleanSecKey}`,
         "Content-Type": "application/json",
       },
+      signal: AbortSignal.timeout(10000),
     });
 
     const resJson = await response.json();
