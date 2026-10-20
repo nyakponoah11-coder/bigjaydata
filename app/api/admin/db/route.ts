@@ -2,18 +2,46 @@ import { NextResponse } from "next/server";
 import { bigjdb, CORE_TABLES } from "@/lib/bigjdb";
 import { supabaseAdmin, isSupabaseConfigured } from "@/lib/supabase";
 
+async function getLiveTableStats() {
+  const stats = bigjdb.getStats();
+
+  if (isSupabaseConfigured && supabaseAdmin) {
+    const supa = supabaseAdmin;
+    // Check if any core tables are 0 in memory; if so, fetch exact count with head: true (zero payload egress)
+    const emptyTables = CORE_TABLES.filter((t) => (stats.tables[t]?.count || 0) === 0);
+    if (emptyTables.length > 0) {
+      await Promise.all(
+        emptyTables.map(async (table) => {
+          try {
+            const { count } = await supa.from(table).select("*", { count: "exact", head: true });
+            if (typeof count === "number" && count > 0) {
+              stats.tables[table] = {
+                count,
+                sizeBytes: count * 150,
+              };
+              stats.totalRecords += count;
+            }
+          } catch (_) {}
+        })
+      );
+    }
+  }
+
+  return stats;
+}
+
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
     const action = searchParams.get("action") || "stats";
 
     if (action === "stats") {
-      const stats = bigjdb.getStats();
+      const stats = await getLiveTableStats();
       return NextResponse.json({ ok: true, stats });
     }
 
     if (action === "getTables") {
-      const stats = bigjdb.getStats();
+      const stats = await getLiveTableStats();
       const tables = Object.entries(stats.tables).map(([name, meta]) => ({
         name,
         count: meta.count,
@@ -28,25 +56,28 @@ export async function GET(req: Request) {
       const page = Math.max(1, Number(searchParams.get("page") || 1));
       const pageSize = Math.min(200, Math.max(10, Number(searchParams.get("pageSize") || 40)));
 
-      const queryRes = bigjdb.query({
-        table,
-        limit: pageSize,
-        offset: (page - 1) * pageSize,
-        orderBy: { field: "created_at", ascending: false },
-      });
+      // Auto-load from Supabase if local table is empty and Supabase is connected
+      if (isSupabaseConfigured && supabaseAdmin && bigjdb.loadTable(table).length === 0) {
+        try {
+          const { data: supaData } = await supabaseAdmin.from(table).select("*").limit(500);
+          if (Array.isArray(supaData) && supaData.length > 0) {
+            bigjdb.upsert(table, supaData);
+          }
+        } catch (_) {}
+      }
 
-      let records = queryRes.data;
-      let totalCount = queryRes.count;
+      const allRecords = bigjdb.loadTable(table);
+      let filtered = allRecords;
 
       if (search) {
-        const allRecords = bigjdb.loadTable(table);
-        const filtered = allRecords.filter((r) => {
+        filtered = allRecords.filter((r) => {
           const str = JSON.stringify(r).toLowerCase();
           return str.includes(search);
         });
-        totalCount = filtered.length;
-        records = filtered.slice((page - 1) * pageSize, page * pageSize);
       }
+
+      const totalCount = filtered.length;
+      const records = filtered.slice((page - 1) * pageSize, page * pageSize);
 
       return NextResponse.json({
         ok: true,
@@ -75,12 +106,12 @@ export async function POST(req: Request) {
     const action = body.action || "stats";
 
     if (action === "stats") {
-      const stats = bigjdb.getStats();
+      const stats = await getLiveTableStats();
       return NextResponse.json({ ok: true, stats });
     }
 
     if (action === "getTables") {
-      const stats = bigjdb.getStats();
+      const stats = await getLiveTableStats();
       const tables = Object.entries(stats.tables).map(([name, meta]) => ({
         name,
         count: meta.count,
@@ -97,10 +128,10 @@ export async function POST(req: Request) {
       const page = Math.max(1, Number(body.page || 1));
       const pageSize = Math.min(200, Math.max(10, Number(body.pageSize || 40)));
 
-      // If in hybrid mode and local table has 0 records, optionally warm from Supabase
+      // If in hybrid mode and local table has 0 records, automatically warm from Supabase
       if (isSupabaseConfigured && supabaseAdmin && bigjdb.loadTable(table).length === 0) {
         try {
-          const { data: supaData } = await supabaseAdmin.from(table).select("*").limit(200);
+          const { data: supaData } = await supabaseAdmin.from(table).select("*").limit(500);
           if (Array.isArray(supaData) && supaData.length > 0) {
             bigjdb.upsert(table, supaData);
           }
