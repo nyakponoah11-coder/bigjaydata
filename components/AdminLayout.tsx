@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
+  Database,
   ShoppingCart,
   Package,
   Settings,
@@ -168,6 +169,7 @@ export default function AdminLayout({ children }: Props) {
     { label: "AI Instructions", href: "/admin/ai-instructions", icon: BrainCircuit, badge: "Training" },
     { label: "AI Customer Support", href: "/admin/ai-agent", icon: Bot, badge: "Live Desk" },
     { label: "Messages", href: "/admin/messages", icon: MessageSquare },
+    { label: "BigJDB Studio", href: "/admin/database", icon: Database, badge: "Engine" },
     { label: "Settings", href: "/admin/settings", icon: Settings },
   ];
 

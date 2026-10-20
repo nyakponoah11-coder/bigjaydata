@@ -7,6 +7,7 @@ import DirectPurchaseModal from "@/components/DirectPurchaseModal";
 import Link from "next/link";
 import {
   TrendingUp,
+  Database,
   ShoppingCart,
   Clock,
   AlertTriangle,
@@ -269,6 +270,33 @@ export default function AdminDashboardPage() {
             className="py-2.5 px-4 bg-amber-400 hover:bg-amber-300 text-slate-950 font-black rounded-xl text-xs flex items-center gap-2 transition-all hover:scale-105 shrink-0"
           >
             Manage Accounts
+            <ArrowRight className="w-4 h-4" />
+          </Link>
+        </div>
+
+                {/* BigJDB Standalone Database Engine Bar */}
+        <div className="bg-gradient-to-r from-teal-950/40 via-slate-900 to-slate-900 border border-teal-900/40 rounded-3xl p-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-teal-500 to-emerald-600 text-white flex items-center justify-center shadow-lg shadow-teal-500/20">
+              <Database className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="font-bold text-white text-sm">BigJDB Standalone Database Studio</h3>
+                <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-teal-500/10 text-teal-400 border border-teal-500/20">
+                  Egress Shield Active
+                </span>
+              </div>
+              <p className="text-xs text-slate-400 mt-0.5">
+                0.01ms microsecond embedded engine. Browse collections, edit records, 1-click sync Supabase, and export snapshots.
+              </p>
+            </div>
+          </div>
+          <Link
+            href="/admin/database"
+            className="py-2.5 px-4 bg-teal-600 hover:bg-teal-500 text-white font-bold rounded-xl text-xs flex items-center gap-2 transition-all hover:scale-105 shrink-0 shadow-lg shadow-teal-600/20"
+          >
+            Launch Studio
             <ArrowRight className="w-4 h-4" />
           </Link>
         </div>

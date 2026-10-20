@@ -4,6 +4,7 @@ import path from "path";
 
 import { isMaskedSecret, isValidPaystackSecret } from "./secrets";
 export { isMaskedSecret, isValidPaystackSecret } from "./secrets";
+export { bigjdb } from "./bigjdb";
 
 export interface Product {
   id: string;
