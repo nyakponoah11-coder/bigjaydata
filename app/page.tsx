@@ -9,7 +9,7 @@ import WhatsAppButton from "@/components/WhatsAppButton";
 import CommentsMarquee from "@/components/CommentsMarquee";
 import NetworkSelectionSection from "@/components/NetworkSelectionSection";
 import HowToBuyAccordion from "@/components/HowToBuyAccordion";
-import BackgroundVideo from "@/components/BackgroundVideo";
+import BackgroundImage from "@/components/BackgroundImage";
 import HeroActionButtons from "@/components/HeroActionButtons";
 import DownloadAppBanner from "@/components/DownloadAppBanner";
 import {
@@ -66,8 +66,8 @@ export default async function HomePage() {
 
   return (
     <div className="min-h-screen flex flex-col text-slate-100 relative">
-      {/* Background Video from Pinterest (Auto-playing, looped, and visible) */}
-      <BackgroundVideo />
+      {/* Background Image from Pinterest (Abstract Blue Galaxy Network Wallpaper) */}
+      <BackgroundImage />
 
       {/* Main Page Content Layer */}
       <div className="relative z-10 flex flex-col flex-1">
