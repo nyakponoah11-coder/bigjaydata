@@ -7,7 +7,8 @@ export async function POST(req: Request) {
     const body = await req.json();
     const { test_email, resend_api_key, email_from, smtp_user, smtp_pass, smtp_host, smtp_port } = body;
 
-    const targetEmail = String(test_email || "").trim().toLowerCase();
+    const rawTarget = test_email || body.targetEmail || body.target_email || body.testEmail || body.email || "";
+    const targetEmail = String(rawTarget).trim().toLowerCase();
     if (!targetEmail || !targetEmail.includes("@")) {
       return NextResponse.json(
         { success: false, message: "Please enter a valid email address to send the test verification code to." },
@@ -15,14 +16,17 @@ export async function POST(req: Request) {
       );
     }
 
+    const host = smtp_host || "smtp.gmail.com";
+    const cleanedPass = smtp_pass && host.includes("gmail") ? String(smtp_pass).replace(/\s+/g, "") : (smtp_pass || "");
+
     // Save temporary email settings to db if provided, so test uses the exact credentials
     if (resend_api_key !== undefined || smtp_user !== undefined) {
       await db.updateSettings({
-        resend_api_key: resend_api_key || "",
-        email_from: email_from || "",
-        smtp_user: smtp_user || "",
-        smtp_pass: smtp_pass || "",
-        smtp_host: smtp_host || "smtp.gmail.com",
+        resend_api_key: resend_api_key ? String(resend_api_key).trim() : "",
+        email_from: email_from ? String(email_from).trim() : "",
+        smtp_user: smtp_user ? String(smtp_user).trim() : "",
+        smtp_pass: cleanedPass,
+        smtp_host: host.trim(),
         smtp_port: Number(smtp_port) || 465,
       });
     }

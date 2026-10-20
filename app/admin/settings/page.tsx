@@ -38,6 +38,13 @@ export default function AdminSettingsPage() {
   const [email, setEmail] = useState("");
   const [paystackPublicKey, setPaystackPublicKey] = useState("");
   const [paystackSecretKey, setPaystackSecretKey] = useState("");
+  const [showPaystackSecret, setShowPaystackSecret] = useState(false);
+  const [testingPaystack, setTestingPaystack] = useState(false);
+  const [paystackTestResult, setPaystackTestResult] = useState<{
+    success: boolean;
+    message: string;
+    details?: any;
+  } | null>(null);
   const [datamartApiKey, setDatamartApiKey] = useState("");
   const [datamartApiUrl, setDatamartApiUrl] = useState("");
   const [announcementText, setAnnouncementText] = useState("");
@@ -182,6 +189,7 @@ export default function AdminSettingsPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          test_email: testEmail.trim(),
           targetEmail: testEmail.trim(),
           resend_api_key: resendApiKey && !resendApiKey.includes("••••") ? resendApiKey.trim() : undefined,
           email_from: emailFrom ? emailFrom.trim() : undefined,
@@ -203,6 +211,43 @@ export default function AdminSettingsPage() {
       });
     } finally {
       setTestingEmail(false);
+    }
+  };
+
+  const handleTestPaystack = async () => {
+    if (!paystackPublicKey.trim() && !paystackSecretKey.trim()) {
+      setPaystackTestResult({
+        success: false,
+        message: "Please enter your Paystack Public Key and Secret Key first.",
+      });
+      return;
+    }
+
+    setTestingPaystack(true);
+    setPaystackTestResult(null);
+
+    try {
+      const res = await fetch("/api/admin/paystack/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          public_key: paystackPublicKey.trim(),
+          secret_key: paystackSecretKey.trim(),
+        }),
+      });
+      const data = await res.json();
+      setPaystackTestResult({
+        success: Boolean(data.success),
+        message: data.message || (data.success ? "Paystack API keys are authentic and verified!" : "Verification failed"),
+        details: data.details,
+      });
+    } catch (err: any) {
+      setPaystackTestResult({
+        success: false,
+        message: err?.message || "Failed to contact Paystack diagnostic server",
+      });
+    } finally {
+      setTestingPaystack(false);
     }
   };
 
@@ -271,13 +316,14 @@ export default function AdminSettingsPage() {
     setNotice("");
 
     try {
+      const cleanPaystackPublic = paystackPublicKey.trim().replace(/['"]/g, "");
       const updates: Partial<Settings> = {
         store_name: storeName.trim(),
         support_phone: supportPhone.trim(),
         whatsapp_number: whatsappNumber.trim(),
         whatsapp_channel_url: whatsappChannelUrl.trim(),
         email: email.trim(),
-        paystack_public_key: paystackPublicKey.trim(),
+        paystack_public_key: cleanPaystackPublic,
         datamart_api_key: datamartApiKey.trim(),
         datamart_api_url: datamartApiUrl.trim(),
         announcement_text: announcementText.trim(),
@@ -286,7 +332,12 @@ export default function AdminSettingsPage() {
 
       // Only include secret key if entered/changed (don't overwrite with placeholder bullet dots)
       if (paystackSecretKey && !paystackSecretKey.includes("••••")) {
-        updates.paystack_secret_key = paystackSecretKey.trim();
+        const cleanSecret = paystackSecretKey
+          .trim()
+          .replace(/['"]/g, "")
+          .replace(/^Bearer\s+/i, "")
+          .replace(/\s+/g, "");
+        updates.paystack_secret_key = cleanSecret;
       }
 
       // Gemini AI Key & Model
@@ -318,7 +369,14 @@ export default function AdminSettingsPage() {
         updates.smtp_user = smtpUser.trim();
       }
       if (smtpPass !== undefined && !smtpPass.includes("••••")) {
-        updates.smtp_pass = smtpPass.trim();
+        const cleanPass = smtpPass.trim().replace(/['"]/g, "");
+        const hostStr = (smtpHost || "").toLowerCase();
+        const userStr = (smtpUser || "").toLowerCase();
+        if (hostStr.includes("gmail") || userStr.includes("gmail") || cleanPass.replace(/\s+/g, "").length === 16) {
+          updates.smtp_pass = cleanPass.replace(/\s+/g, "");
+        } else {
+          updates.smtp_pass = cleanPass;
+        }
       }
       if (smtpHost !== undefined) {
         updates.smtp_host = smtpHost.trim();
@@ -585,37 +643,139 @@ export default function AdminSettingsPage() {
 
           {/* SECTION 2: PAYSTACK PAYMENT GATEWAY */}
           <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-lg space-y-4">
-            <div className="flex items-center gap-2.5 text-white font-bold text-sm border-b border-slate-800 pb-3">
-              <CreditCard className="w-4 h-4 text-emerald-400" />
-              <span>Paystack Payment Configuration</span>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2.5 text-white font-bold text-sm">
+                <CreditCard className="w-4 h-4 text-emerald-400" />
+                <span>Paystack Payment Configuration</span>
+              </div>
+              <span className="text-[11px] text-slate-400">
+                Required for both Main Store and Agent Store checkouts
+              </span>
             </div>
+
+            <p className="text-xs text-slate-400 leading-relaxed">
+              Paystack requires both a <strong className="text-slate-200">Public Key</strong> (opens checkout modal for customers) and a <strong className="text-slate-200">Secret Key</strong> (authorizes the backend to verify payment and dispatch data bundles via DataMart).
+            </p>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
               <div>
                 <label className="block text-slate-400 font-semibold mb-1">
-                  Paystack Public Key (pk_...)
+                  Paystack Public Key (starts with pk_live_ or pk_test_)
                 </label>
                 <input
                   type="text"
                   value={paystackPublicKey}
                   onChange={(e) => setPaystackPublicKey(e.target.value)}
-                  placeholder="Enter Paystack Public Key"
-                  className="w-full px-3.5 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  placeholder="Enter Paystack Public Key (pk_...)"
+                  className={`w-full px-3.5 py-2.5 bg-slate-800 border rounded-xl text-white font-mono text-xs focus:outline-none focus:ring-2 ${
+                    paystackPublicKey.trim().startsWith("sk_")
+                      ? "border-amber-500/80 focus:ring-amber-500"
+                      : "border-slate-700 focus:ring-emerald-500"
+                  }`}
                 />
+                {paystackPublicKey.trim().startsWith("sk_") && (
+                  <p className="text-[10px] text-amber-400 mt-1 font-semibold flex items-center gap-1">
+                    <AlertCircle className="w-3 h-3 shrink-0" />
+                    Notice: This looks like a Secret Key (sk_). Please paste your Public Key (pk_...) here.
+                  </p>
+                )}
+                <span className="text-[10px] text-slate-500 mt-1 block">
+                  Found in Paystack Dashboard &rarr; Settings &rarr; API Keys & Webhooks.
+                </span>
               </div>
 
               <div>
-                <label className="block text-slate-400 font-semibold mb-1">
-                  Paystack Secret Key (sk_...)
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-slate-400 font-semibold">
+                    Paystack Secret Key (starts with sk_live_ or sk_test_)
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setShowPaystackSecret(!showPaystackSecret)}
+                    className="text-[11px] text-slate-400 hover:text-emerald-400 flex items-center gap-1 transition-colors"
+                  >
+                    {showPaystackSecret ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                    <span>{showPaystackSecret ? "Hide" : "Show"}</span>
+                  </button>
+                </div>
                 <input
-                  type="password"
+                  type={showPaystackSecret ? "text" : "password"}
                   value={paystackSecretKey}
                   onChange={(e) => setPaystackSecretKey(e.target.value)}
-                  placeholder="Enter Paystack Secret Key"
-                  className="w-full px-3.5 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  placeholder="Enter Paystack Secret Key (sk_...)"
+                  className={`w-full px-3.5 py-2.5 bg-slate-800 border rounded-xl text-white font-mono text-xs focus:outline-none focus:ring-2 ${
+                    paystackSecretKey.trim().startsWith("pk_")
+                      ? "border-amber-500/80 focus:ring-amber-500"
+                      : "border-slate-700 focus:ring-emerald-500"
+                  }`}
                 />
+                {paystackSecretKey.trim().startsWith("pk_") && (
+                  <p className="text-[10px] text-amber-400 mt-1 font-semibold flex items-center gap-1">
+                    <AlertCircle className="w-3 h-3 shrink-0" />
+                    Notice: This is a Public Key (pk_). Paystack requires your Secret Key (sk_...) here to verify payments!
+                  </p>
+                )}
+                <span className="text-[10px] text-slate-500 mt-1 block">
+                  Keep secret. Used by server to verify transactions before sending to DataMart.
+                </span>
               </div>
+            </div>
+
+            {/* Paystack Test Tool */}
+            <div className="mt-4 pt-4 border-t border-slate-800 space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs font-bold text-slate-300">
+                    Paystack Diagnostic Test
+                  </p>
+                  <p className="text-[11px] text-slate-400">
+                    Test your keys against Paystack API to verify payment verification will succeed without errors.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleTestPaystack}
+                  disabled={testingPaystack || (!paystackPublicKey.trim() && !paystackSecretKey.trim())}
+                  className="px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-lg transition-all flex items-center justify-center gap-2 shrink-0"
+                >
+                  {testingPaystack ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Verifying with Paystack...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Zap className="w-4 h-4" />
+                      <span>Test Paystack Keys</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
+              {paystackTestResult && (
+                <div
+                  className={`p-3.5 rounded-2xl border text-xs flex items-start gap-2.5 animate-fade-in ${
+                    paystackTestResult.success
+                      ? "bg-emerald-950/70 border-emerald-800 text-emerald-300"
+                      : "bg-red-950/70 border-red-800 text-red-300"
+                  }`}
+                >
+                  {paystackTestResult.success ? (
+                    <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                  ) : (
+                    <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+                  )}
+                  <div className="space-y-1">
+                    <p className="font-semibold">{paystackTestResult.message}</p>
+                    {paystackTestResult.details?.mode && (
+                      <p className="text-[11px] text-slate-300">
+                        Environment Mode: <strong className="uppercase text-emerald-400">{paystackTestResult.details.mode}</strong>
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 

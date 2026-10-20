@@ -13,7 +13,15 @@ export interface PaystackVerifyResult {
 export async function verifyPaystackTransaction(paystackRef: string): Promise<PaystackVerifyResult> {
   try {
     const settings = await db.getSettings();
-    const secretKey = settings.paystack_secret_key || process.env.PAYSTACK_SECRET_KEY || "";
+    let secretKey = (settings.paystack_secret_key || process.env.PAYSTACK_SECRET_KEY || "").trim();
+
+    // Sanitize secret key: strip quotes, whitespace, accidental 'Bearer '
+    if ((secretKey.startsWith('"') && secretKey.endsWith('"')) || (secretKey.startsWith("'") && secretKey.endsWith("'"))) {
+      secretKey = secretKey.slice(1, -1).trim();
+    }
+    if (secretKey.toLowerCase().startsWith("bearer ")) {
+      secretKey = secretKey.slice(7).trim();
+    }
 
     if (!paystackRef || paystackRef.startsWith("demo_") || paystackRef.startsWith("test_")) {
       return {
@@ -21,6 +29,15 @@ export async function verifyPaystackTransaction(paystackRef: string): Promise<Pa
         amount: 0,
         reference: paystackRef || "",
         message: "Demo or test reference cannot be verified for live orders",
+      };
+    }
+
+    if (secretKey.startsWith("pk_")) {
+      return {
+        success: false,
+        amount: 0,
+        reference: paystackRef,
+        message: "Invalid Key Configuration: A Public Key (starts with pk_) was entered in the Secret Key field in Admin Settings. Please paste your Paystack Secret Key (starts with sk_).",
       };
     }
 
@@ -58,11 +75,15 @@ export async function verifyPaystackTransaction(paystackRef: string): Promise<Pa
         raw: resJson.data,
       };
     } else {
+      let failMsg = resJson?.message || "Paystack verification failed";
+      if (failMsg === "Invalid key" || response.status === 401) {
+        failMsg = "Invalid key: Paystack rejected the Secret Key. Please verify you copied your Secret Key (starts with sk_) from Paystack Dashboard > Settings > API Keys.";
+      }
       return {
         success: false,
         amount: 0,
         reference: paystackRef,
-        message: resJson?.message || "Paystack verification failed",
+        message: failMsg,
         raw: resJson,
       };
     }

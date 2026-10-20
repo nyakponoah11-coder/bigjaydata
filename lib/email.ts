@@ -93,9 +93,10 @@ export async function sendAgentEmail({ to, subject, html, text }: EmailPayload):
 
   // 2. Try SMTP (Nodemailer) if configured
   const smtpUser = process.env.SMTP_USER?.trim() || process.env.EMAIL_USER?.trim() || settings?.smtp_user?.trim();
-  const smtpPass = process.env.SMTP_PASS?.trim() || process.env.EMAIL_PASS?.trim() || settings?.smtp_pass?.trim();
   const smtpHost = process.env.SMTP_HOST?.trim() || settings?.smtp_host?.trim() || "smtp.gmail.com";
   const smtpPort = Number(process.env.SMTP_PORT || settings?.smtp_port) || 465;
+  const rawSmtpPass = process.env.SMTP_PASS?.trim() || process.env.EMAIL_PASS?.trim() || settings?.smtp_pass?.trim();
+  const smtpPass = rawSmtpPass ? (smtpHost.includes("gmail") ? rawSmtpPass.replace(/\s+/g, "") : rawSmtpPass.trim()) : "";
 
   if (smtpUser && smtpPass) {
     try {
