@@ -8,9 +8,15 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const network = searchParams.get("network");
     const products = await db.getProducts(network || undefined);
-    return NextResponse.json({ success: true, products }, {
+    return NextResponse.json({
+      success: true,
+      products,
+      cached: true,
+      source: "bigjdb_cache",
+    }, {
       headers: {
         "Cache-Control": "public, max-age=120, s-maxage=300, stale-while-revalidate=600",
+        "X-Cache-Source": "bigjdb-memory",
       },
     });
   } catch (error: any) {

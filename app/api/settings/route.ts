@@ -28,10 +28,13 @@ export async function GET() {
         settings: safeSettings,
         agent_store_enabled: config.is_enabled,
         registration_fee: config.registration_fee || 0,
+        cached: true,
+        source: "bigjdb_cache",
       },
       {
         headers: {
           "Cache-Control": "public, max-age=60, s-maxage=120, stale-while-revalidate=300",
+          "X-Cache-Source": "bigjdb-memory",
         },
       }
     );
