@@ -1036,18 +1036,18 @@ export default function AdminSettingsPage() {
 
               {emailTestResult && (
                 <div
-                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-2 ${
+                  className={`w-full p-3 rounded-2xl text-xs font-semibold flex items-start gap-2.5 animate-fade-in ${
                     emailTestResult.success
-                      ? "bg-emerald-950 text-emerald-300 border border-emerald-800"
-                      : "bg-red-950 text-red-300 border border-red-800"
+                      ? "bg-emerald-950/80 text-emerald-300 border border-emerald-800"
+                      : "bg-red-950/80 text-red-300 border border-red-800"
                   }`}
                 >
                   {emailTestResult.success ? (
-                    <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
                   ) : (
-                    <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
+                    <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
                   )}
-                  <span className="truncate max-w-xs">{emailTestResult.message}</span>
+                  <span className="leading-relaxed break-words flex-1">{emailTestResult.message}</span>
                 </div>
               )}
             </div>

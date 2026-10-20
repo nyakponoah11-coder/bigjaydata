@@ -101,18 +101,30 @@ export async function sendAgentEmail({ to, subject, html, text }: EmailPayload):
   if (smtpUser && smtpPass) {
     try {
       const isSecure = smtpPort === 465;
-      const transporter = nodemailer.createTransport({
-        host: smtpHost,
-        port: smtpPort,
-        secure: isSecure,
-        auth: {
-          user: smtpUser,
-          pass: smtpPass,
-        },
-        tls: {
-          rejectUnauthorized: false,
-        },
-      });
+      const isGmail = smtpHost.toLowerCase().includes("gmail") || smtpUser.toLowerCase().includes("gmail");
+
+      const transportConfig: any = isGmail
+        ? {
+            service: "gmail",
+            auth: {
+              user: smtpUser,
+              pass: smtpPass,
+            },
+          }
+        : {
+            host: smtpHost,
+            port: smtpPort,
+            secure: isSecure,
+            auth: {
+              user: smtpUser,
+              pass: smtpPass,
+            },
+            tls: {
+              rejectUnauthorized: false,
+            },
+          };
+
+      const transporter = nodemailer.createTransport(transportConfig);
 
       let senderFrom = process.env.EMAIL_FROM?.trim() || settings?.email_from?.trim();
       if (!senderFrom || !senderFrom.includes("@")) {
@@ -133,6 +145,15 @@ export async function sendAgentEmail({ to, subject, html, text }: EmailPayload):
       return { success: true, message: "Email sent successfully via SMTP", messageId: info.messageId, isFallback: false };
     } catch (err: any) {
       console.error("[Email Gateway - SMTP Exception]", err?.message);
+      let userFriendlyMsg = err?.message || "Failed to deliver email via SMTP.";
+      if (err?.message?.includes("535") || err?.code === "EAUTH") {
+        userFriendlyMsg = `Gmail Authentication Failed (535): Invalid username or App Password. Google rejected login for "${smtpUser}". Ensure the 16-character App Password was generated inside this exact Google account and that 2-Step Verification is enabled.`;
+      }
+      return {
+        success: false,
+        isFallback: false,
+        message: userFriendlyMsg,
+      };
     }
   }
 
