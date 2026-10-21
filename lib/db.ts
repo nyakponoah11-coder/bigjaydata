@@ -412,7 +412,7 @@ function loadFromDisk(): any {
 const diskData = loadFromDisk();
 
 const initialAgentBaseProducts: AgentBaseProduct[] = [
-  { id: "abp-mtn-1", network: "mtn", size: "1GB", base_price: 0.02, suggested_price: 0.05, is_active: true, created_at: new Date().toISOString() },
+  { id: "abp-mtn-1", network: "mtn", size: "1GB", base_price: 4.5, suggested_price: 5.5, is_active: true, created_at: new Date().toISOString() },
   { id: "abp-mtn-2", network: "mtn", size: "2GB", base_price: 9.0, suggested_price: 11.0, is_active: true, created_at: new Date().toISOString() },
   { id: "abp-mtn-3", network: "mtn", size: "3GB", base_price: 13.5, suggested_price: 16.5, is_active: true, created_at: new Date().toISOString() },
   { id: "abp-mtn-5", network: "mtn", size: "5GB", base_price: 22.0, suggested_price: 26.5, is_active: true, created_at: new Date().toISOString() },
@@ -647,13 +647,14 @@ export function invalidateDbCache(keyPrefix?: string): void {
     Object.keys(memCacheTimestamps).forEach((k) => delete memCacheTimestamps[k]);
     return;
   }
-  const cleanPrefix = keyPrefix.endsWith("*") ? keyPrefix.slice(0, -1) : keyPrefix;
+  const cleanPrefix = keyPrefix.replace(/[*:_]+$/, "");
   Object.keys(memCacheTimestamps).forEach((k) => {
     if (
       k === keyPrefix ||
-      k.startsWith(cleanPrefix) ||
+      k === cleanPrefix ||
       k.startsWith(cleanPrefix + ":") ||
-      k.startsWith(cleanPrefix + "_")
+      k.startsWith(cleanPrefix + "_") ||
+      k.startsWith(cleanPrefix)
     ) {
       delete memCacheTimestamps[k];
     }
@@ -2534,7 +2535,8 @@ export const db = {
 
   async updateAgentBaseProduct(id: string, updates: Partial<AgentBaseProduct>): Promise<AgentBaseProduct | null> {
     invalidateServerCache("agent_base_products");
-    invalidateServerCache("agent_products_*");
+    invalidateServerCache("agent_products");
+    invalidateServerCache("agents");
     const list = await this.getAgentBaseProducts();
     const idx = list.findIndex((x) => x.id === id);
     if (idx === -1) return null;
@@ -3515,12 +3517,18 @@ export const db = {
     // 4. CRITICAL FIX: Direct Agent custom_prices override ALWAYS WINS!
     const current = matchedAgent || allAgents.find((a) => isTargetAgent(a.id) || isTargetAgent(a.store_slug));
     if (current?.custom_prices) {
+      let customMap: Record<string, any> = {};
+      try {
+        customMap = typeof current.custom_prices === "string" ? JSON.parse(current.custom_prices) : (current.custom_prices || {});
+      } catch {
+        customMap = {};
+      }
       baseProducts.forEach((bp) => {
         if (matchedAgent?.deleted_products?.includes(bp.id)) return;
         const directPrice =
-          current.custom_prices?.[bp.id] ??
-          current.custom_prices?.[`${bp.network.toLowerCase()}_${bp.size.toLowerCase()}`] ??
-          current.custom_prices?.[`${bp.network.toLowerCase()}_${bp.size.toLowerCase().replace(/\s+/g, "")}`];
+          customMap[bp.id] ??
+          customMap[`${bp.network.toLowerCase()}_${bp.size.toLowerCase()}`] ??
+          customMap[`${bp.network.toLowerCase()}_${bp.size.toLowerCase().replace(/\s+/g, "")}`];
         if (directPrice !== undefined && Number(directPrice) > 0) {
           const item = productMap.get(bp.id);
           if (item) {
@@ -3641,9 +3649,22 @@ export const db = {
 
     for (const update of productsToUpdate) {
       const { base_product_id, selling_price, is_active } = update;
-      const bp = baseMap.get(base_product_id);
+      
+      let bp = baseMap.get(base_product_id);
+      let item = list.find((p) => isTargetAgent(p.agent_id) && (p.base_product_id === base_product_id || p.id === base_product_id));
+      if (!bp && item) {
+        bp = baseMap.get(item.base_product_id);
+      }
+      if (!bp) {
+        const cleanReqKey = String(base_product_id).toLowerCase().replace(/[\s-_]+/g, "");
+        bp = baseProducts.find((b) => {
+          const key1 = `${b.network.toLowerCase()}${b.size.toLowerCase().replace(/\s+/g, "")}`;
+          return b.id === base_product_id || key1 === cleanReqKey;
+        });
+      }
 
-      let item = list.find((p) => isTargetAgent(p.agent_id) && p.base_product_id === base_product_id);
+      const canonicalBaseId = bp ? bp.id : (item ? item.base_product_id : base_product_id);
+
       const numPrice = Number(selling_price);
       const validSellingPrice =
         !isNaN(numPrice) && numPrice > 0
@@ -3672,6 +3693,7 @@ export const db = {
           item.base_price = bp.base_price;
           item.network = bp.network;
           item.size = bp.size;
+          item.base_product_id = bp.id;
         }
         item.selling_price = validSellingPrice;
         item.is_active = validActive;
@@ -3679,15 +3701,24 @@ export const db = {
       updatedItems.push(item);
 
       if (targetAgent) {
-        if (!targetAgent.custom_prices) {
+        if (!targetAgent.custom_prices || typeof targetAgent.custom_prices !== "object") {
+          try {
+            targetAgent.custom_prices = typeof targetAgent.custom_prices === "string" ? JSON.parse(targetAgent.custom_prices) : {};
+          } catch {
+            targetAgent.custom_prices = {};
+          }
+        }
+        if (!targetAgent.custom_prices || typeof targetAgent.custom_prices !== "object") {
           targetAgent.custom_prices = {};
         }
-        targetAgent.custom_prices[base_product_id] = validSellingPrice;
+        const customPricesMap = targetAgent.custom_prices as Record<string, number>;
+        customPricesMap[canonicalBaseId] = validSellingPrice;
+        customPricesMap[base_product_id] = validSellingPrice;
         if (bp) {
           const key1 = `${bp.network.toLowerCase()}_${bp.size.toLowerCase()}`;
           const key2 = `${bp.network.toLowerCase()}_${bp.size.toLowerCase().replace(/\s+/g, "")}`;
-          targetAgent.custom_prices[key1] = validSellingPrice;
-          targetAgent.custom_prices[key2] = validSellingPrice;
+          customPricesMap[key1] = validSellingPrice;
+          customPricesMap[key2] = validSellingPrice;
         }
       }
     }
@@ -3739,9 +3770,13 @@ export const db = {
       }
     }
 
+    invalidateDbCache("agent_products");
+    invalidateDbCache("agents");
     invalidateDbCache(`agent_products:${canonicalId}`);
     invalidateDbCache(`agent_products:${canonicalSlug}`);
     invalidateDbCache(`agent_products:${cleanId}`);
+    invalidateDbCache(`agents:${canonicalId}`);
+    invalidateDbCache(`agents:${canonicalSlug}`);
 
     return updatedItems;
   },

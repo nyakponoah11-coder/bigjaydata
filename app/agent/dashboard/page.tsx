@@ -306,7 +306,10 @@ export default function AgentDashboardPage() {
         } catch {}
         const pricesMap: Record<string, string> = {};
         sorted.forEach((p: any) => {
-          pricesMap[p.base_product_id] = String(p.selling_price);
+          const key = p.base_product_id || p.id;
+          pricesMap[key] = String(p.selling_price);
+          if (p.base_product_id) pricesMap[p.base_product_id] = String(p.selling_price);
+          if (p.id) pricesMap[p.id] = String(p.selling_price);
         });
         setEditPrices(pricesMap);
       }
@@ -424,56 +427,59 @@ export default function AgentDashboardPage() {
 
   // Update Product Retail Price
   const handleSaveProductPrice = async (p: any) => {
-    const rawVal = editPrices[p.base_product_id] !== undefined ? editPrices[p.base_product_id] : String(p.selling_price);
+    const key = p.base_product_id || p.id;
+    const rawVal = editPrices[key] !== undefined ? editPrices[key] : (editPrices[p.base_product_id] !== undefined ? editPrices[p.base_product_id] : String(p.selling_price));
     const newPrice = parseFloat(rawVal);
     if (isNaN(newPrice) || newPrice < p.base_price) {
-      setError(`Selling price cannot be less than base price (GHS ${p.base_price.toFixed(2)})`);
+      setError(`Selling price cannot be less than base price (GHS ${Number(p.base_price).toFixed(2)})`);
       return;
     }
 
     try {
-      setSavingProductId(p.base_product_id);
+      setSavingProductId(key);
       setError("");
       const res = await fetch("/api/agent/products", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           agent_id: agent.id,
-          base_product_id: p.base_product_id,
+          base_product_id: key,
           selling_price: newPrice,
           is_active: p.is_active,
         }),
       });
       const data = await res.json();
-      if (data.success) {
-        setNotice("Retail price updated successfully!");
-        setRecentlySavedId(p.base_product_id);
-        setProducts((prev) => {
-          const updated = sortProductList(
-            prev.map((item) =>
-              item.base_product_id === p.base_product_id ? { ...item, selling_price: newPrice } : item
-            )
-          );
-          try {
-            localStorage.setItem(`bmgh_agent_prods_${agent.id}`, JSON.stringify(updated));
-            invalidateCache(`store_products_${agent.id}`);
-            invalidateCache(`store_products_${agent.store_slug}`);
-            localStorage.removeItem(`bmgh_sess_store_${agent.store_slug.toLowerCase()}`);
-            localStorage.removeItem(`bmgh_sess_store_${agent.id.toLowerCase()}`);
-          } catch {}
-          return updated;
-        });
-        setEditPrices((prev) => ({
-          ...prev,
-          [p.base_product_id]: String(newPrice),
-        }));
-        setTimeout(() => {
-          setNotice("");
-          setRecentlySavedId(null);
-        }, 3000);
+      if (!res.ok || !data.success) {
+        throw new Error(data.message || `Failed to update product price (HTTP ${res.status})`);
       }
-    } catch (err) {
-      setError("Failed to update product");
+      setNotice("Retail price updated successfully!");
+      setRecentlySavedId(key);
+      setProducts((prev) => {
+        const updated = sortProductList(
+          prev.map((item) =>
+            (item.base_product_id === key || item.id === key) ? { ...item, selling_price: newPrice } : item
+          )
+        );
+        try {
+          localStorage.setItem(`bmgh_agent_prods_${agent.id}`, JSON.stringify(updated));
+          invalidateCache(`store_products_${agent.id}`);
+          invalidateCache(`store_products_${agent.store_slug}`);
+          localStorage.removeItem(`bmgh_sess_store_${agent.store_slug.toLowerCase()}`);
+          localStorage.removeItem(`bmgh_sess_store_${agent.id.toLowerCase()}`);
+        } catch {}
+        return updated;
+      });
+      setEditPrices((prev) => ({
+        ...prev,
+        [key]: String(newPrice),
+        ...(p.base_product_id ? { [p.base_product_id]: String(newPrice) } : {}),
+      }));
+      setTimeout(() => {
+        setNotice("");
+        setRecentlySavedId(null);
+      }, 3000);
+    } catch (err: any) {
+      setError(err?.message || "Failed to update product");
     } finally {
       setSavingProductId(null);
     }
@@ -489,18 +495,28 @@ export default function AgentDashboardPage() {
       setNotice("");
 
       const payload: Array<{ base_product_id: string; selling_price: number; is_active: boolean }> = [];
+      const invalidItems: string[] = [];
       for (const p of products) {
-        const customVal = editPrices[p.base_product_id];
+        const key = p.base_product_id || p.id;
+        const customVal = editPrices[key] !== undefined ? editPrices[key] : editPrices[p.base_product_id];
         if (customVal !== undefined && customVal !== "") {
           const numPrice = parseFloat(customVal);
-          if (!isNaN(numPrice) && numPrice >= p.base_price) {
-            payload.push({
-              base_product_id: p.base_product_id,
-              selling_price: numPrice,
-              is_active: p.is_active,
-            });
+          if (isNaN(numPrice)) continue;
+          if (numPrice < p.base_price) {
+            invalidItems.push(`${(p.network || "").toUpperCase()} ${p.size || p.name}: GHS ${numPrice} < base GHS ${Number(p.base_price).toFixed(2)}`);
+            continue;
           }
+          payload.push({
+            base_product_id: key,
+            selling_price: numPrice,
+            is_active: p.is_active !== false,
+          });
         }
+      }
+
+      if (invalidItems.length > 0) {
+        setError(`Cannot save prices: ${invalidItems.slice(0, 3).join(", ")}${invalidItems.length > 3 ? ` and ${invalidItems.length - 3} more` : ""}. Selling price must be at least the wholesale base cost.`);
+        return;
       }
 
       if (payload.length === 0) {
@@ -518,14 +534,14 @@ export default function AgentDashboardPage() {
         }),
       });
       const data = await res.json();
-      if (!data.success) {
+      if (!res.ok || !data.success) {
         throw new Error(data.message || "Failed to update prices");
       }
 
       setProducts((prev) => {
         const updated = sortProductList(
           prev.map((item) => {
-            const found = payload.find((x) => x.base_product_id === item.base_product_id);
+            const found = payload.find((x) => x.base_product_id === item.base_product_id || x.base_product_id === item.id);
             if (found) {
               return { ...item, selling_price: found.selling_price };
             }

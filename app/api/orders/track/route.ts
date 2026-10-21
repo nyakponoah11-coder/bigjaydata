@@ -49,7 +49,7 @@ export async function GET(request: Request) {
 
     if (order) {
       // Sync with DataMart if active or forceSync requested
-      const isTerminal = ["cancelled", "refunded"].includes(order.delivery_status);
+      const isTerminal = ["cancelled", "refunded", "delivered", "completed"].includes((order.delivery_status || "").toLowerCase().trim());
       if (!isTerminal || forceSync) {
         try {
           order = await syncOrderWithDataMart(order);
@@ -66,7 +66,7 @@ export async function GET(request: Request) {
     // Concurrently sync any non-terminal orders with DataMart
     const syncedOrders = await Promise.all(
       phoneOrders.map(async (ord) => {
-        const isTerminal = ["cancelled", "refunded"].includes(ord.delivery_status);
+        const isTerminal = ["cancelled", "refunded", "delivered", "completed"].includes((ord.delivery_status || "").toLowerCase().trim());
         if (!isTerminal || forceSync) {
           try {
             return await syncOrderWithDataMart(ord);

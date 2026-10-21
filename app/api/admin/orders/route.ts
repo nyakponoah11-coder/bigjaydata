@@ -59,7 +59,7 @@ export async function PATCH(request: Request) {
     if (sync_all_active) {
       const allOrders = await db.getOrders();
       const active = allOrders.filter(
-        (o) => !["cancelled", "refunded"].includes(o.delivery_status)
+        (o) => !["cancelled", "refunded", "delivered", "completed"].includes((o.delivery_status || "").toLowerCase().trim())
       );
       let updatedCount = 0;
       for (const ord of active) {

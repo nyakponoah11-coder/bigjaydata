@@ -101,17 +101,22 @@ export function mapDatamartStatus(s: string | undefined | null): string {
 export function extractDataMartOrderStatus(json: any): string | null {
   if (!json) return null;
   const d = json.data && typeof json.data === "object" ? json.data : json;
-  const rp = d.relatedPurchase || d.item;
+  const rp = d.relatedPurchase || d.item || d.purchase;
 
   const candidate =
     d.orderStatus ??
     d.order_status ??
     d.deliveryStatus ??
     d.delivery_status ??
+    json.orderStatus ??
+    json.order_status ??
+    json.deliveryStatus ??
+    json.delivery_status ??
     rp?.orderStatus ??
     rp?.order_status ??
     rp?.deliveryStatus ??
     rp?.delivery_status ??
+    rp?.status ??
     (d.status && !["success", "ok", "true", "false", "error"].includes(String(d.status).toLowerCase()) ? d.status : null);
 
   if (candidate === undefined || candidate === null) return null;
@@ -119,7 +124,7 @@ export function extractDataMartOrderStatus(json: any): string | null {
   if (!str) return null;
 
   // Never treat generic API envelope "success" / "ok" / "true" as a delivery status
-  if (["success", "ok", "true", "false"].includes(str)) {
+  if (["ok", "true", "false", "error"].includes(str)) {
     return null;
   }
 
@@ -366,10 +371,12 @@ export async function sendDataMartDelivery(params: DataMartDeliveryParams): Prom
       let returnedStatus = "processing";
       if (explicitStatus) {
         const mapped = mapDatamartStatus(explicitStatus);
-        if (mapped === "delivered" && (explicitStatus === "delivered" || explicitStatus === "fulfilled")) {
+        if (mapped === "delivered") {
           returnedStatus = "delivered";
         } else if (mapped === "failed") {
           returnedStatus = "failed";
+        } else if (mapped === "refunded") {
+          returnedStatus = "refunded";
         } else {
           returnedStatus = "processing";
         }
@@ -793,6 +800,12 @@ export async function checkDataMartOrderStatus(orderReference: string): Promise<
 export async function syncOrderWithDataMart(order: Order): Promise<Order> {
   if (!order) return order;
 
+  const currentStatus = ((order.delivery_status || order.status || "") as string).toLowerCase().trim();
+  // If order is already confirmed delivered or completed, never let automated sync revert it to processing
+  if (currentStatus === "delivered" || currentStatus === "completed") {
+    return order;
+  }
+
   // If order was passed from a lightweight bulk query lacking datamart_response, fetch it on-demand
   if (!order.datamart_response && order.reference) {
     try {
@@ -833,6 +846,14 @@ export async function syncOrderWithDataMart(order: Order): Promise<Order> {
       const mappedStatus = mapDatamartStatus(rawStatus);
 
       console.log(`[DataMart Sync] Order ${order.reference} synced with DataMart: ${rawStatus} -> ${mappedStatus}`);
+
+      // Guard against demoting delivered orders
+      if (
+        (currentStatus === "delivered" || currentStatus === "completed") &&
+        (mappedStatus === "processing" || mappedStatus === "pending")
+      ) {
+        return order;
+      }
 
       const updatedPayload = {
         ...(order.datamart_response || {}),
@@ -917,15 +938,34 @@ export async function syncOrderWithDataMart(order: Order): Promise<Order> {
               );
 
               if (isRefMatch || isPhoneMatch) {
-                // Prioritize explicit telecom delivery orderStatus over generic wallet transaction status
-                const rawStatus = String(
-                  rp.orderStatus ||
-                  rp.deliveryStatus ||
-                  item.orderStatus ||
-                  item.deliveryStatus ||
-                  (item.status && !["success", "completed"].includes(String(item.status).toLowerCase()) ? item.status : "processing")
-                ).toLowerCase().trim();
+                // Check all possible delivery status fields on relatedPurchase and transaction item
+                const rpStatus = rp.orderStatus || rp.deliveryStatus || rp.status || rp.delivery_status;
+                const itemStatus = item.orderStatus || item.deliveryStatus || item.delivery_status;
+                
+                let detectedStatus = rpStatus || itemStatus;
+                if (!detectedStatus) {
+                  const txStatus = String(item.status || "").toLowerCase().trim();
+                  // In DataMart, a successful purchase transaction indicates completed telecom fulfillment
+                  if (txStatus === "success" || txStatus === "completed") {
+                    detectedStatus = "delivered";
+                  } else if (txStatus === "failed" || txStatus === "rejected") {
+                    detectedStatus = "failed";
+                  } else {
+                    detectedStatus = "processing";
+                  }
+                }
+
+                const rawStatus = String(detectedStatus).toLowerCase().trim();
                 const deliveryStatus = mapDatamartStatus(rawStatus);
+
+                // Guard: NEVER downgrade an already delivered order
+                if (
+                  (currentStatus === "delivered" || currentStatus === "completed") &&
+                  (deliveryStatus === "processing" || deliveryStatus === "pending")
+                ) {
+                  return order;
+                }
+
                 const foundRef = tRef || rpRef || tId;
 
                 const updatedPayload = {
