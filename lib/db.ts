@@ -2344,11 +2344,11 @@ export const db = {
       }
     }
 
-    const baseMap = new Map<string, AgentBaseProduct>();
+    const compMap = new Map<string, AgentBaseProduct>();
     mergedList.forEach((bp) => {
       const compKey = `${(bp.network || "").toLowerCase().trim()}_${(bp.size || "").toLowerCase().trim().replace(/\s+/g, "")}`;
       if (!deletedKeys.has(bp.id.toLowerCase()) && !deletedKeys.has(compKey)) {
-        baseMap.set(bp.id, bp);
+        compMap.set(compKey, { ...bp });
       }
     });
 
@@ -2364,22 +2364,22 @@ export const db = {
             if (deletedKeys.has(b.id?.toLowerCase()) || deletedKeys.has(compKey)) {
               return;
             }
-            const existing = baseMap.get(b.id);
+            const existing = compMap.get(compKey);
             if (existing) {
               existing.base_price = Number(b.base_price);
               if (b.suggested_price) existing.suggested_price = Number(b.suggested_price);
               if (b.is_active !== undefined) existing.is_active = b.is_active !== false;
+              if (b.id) existing.id = b.id;
             } else {
-              const item: AgentBaseProduct = {
-                id: b.id,
-                network: b.network,
-                size: b.size,
+              compMap.set(compKey, {
+                id: b.id || `abp-${b.network.toLowerCase().trim()}-${b.size.toLowerCase().trim().replace(/\s+/g, "")}`,
+                network: b.network.toLowerCase().trim(),
+                size: b.size.trim(),
                 base_price: Number(b.base_price),
                 suggested_price: b.suggested_price ? Number(b.suggested_price) : Number(b.base_price) + 1.0,
                 is_active: b.is_active !== false,
                 created_at: b.created_at || new Date().toISOString(),
-              };
-              baseMap.set(b.id, item);
+              });
             }
           });
         }
@@ -2403,22 +2403,22 @@ export const db = {
                 if (deletedKeys.has(b.id?.toLowerCase()) || deletedKeys.has(compKey)) {
                   return;
                 }
-                const existing = baseMap.get(b.id);
+                const existing = compMap.get(compKey);
                 if (existing) {
                   existing.base_price = Number(b.base_price);
                   if (b.suggested_price) existing.suggested_price = Number(b.suggested_price);
                   if (b.is_active !== undefined) existing.is_active = b.is_active !== false;
+                  if (b.id) existing.id = b.id;
                 } else {
-                  const item: AgentBaseProduct = {
-                    id: b.id,
-                    network: b.network,
-                    size: b.size,
+                  compMap.set(compKey, {
+                    id: b.id || `abp-${b.network.toLowerCase().trim()}-${b.size.toLowerCase().trim().replace(/\s+/g, "")}`,
+                    network: b.network.toLowerCase().trim(),
+                    size: b.size.trim(),
                     base_price: Number(b.base_price),
                     suggested_price: b.suggested_price ? Number(b.suggested_price) : Number(b.base_price) + 1.0,
                     is_active: b.is_active !== false,
                     created_at: b.created_at || new Date().toISOString(),
-                  };
-                  baseMap.set(b.id, item);
+                  });
                 }
               });
             }
@@ -2429,15 +2429,7 @@ export const db = {
       }
     }
 
-    const uniqueMap = new Map<string, AgentBaseProduct>();
-    Array.from(baseMap.values()).forEach((p) => {
-      const compKey = `${(p.network || "").toLowerCase().trim()}_${(p.size || "").toLowerCase().trim().replace(/\s+/g, "")}`;
-      if (!deletedKeys.has(p.id.toLowerCase()) && !deletedKeys.has(compKey)) {
-        uniqueMap.set(compKey, p);
-      }
-    });
-    const finalResult = Array.from(uniqueMap.values());
-
+    const finalResult = Array.from(compMap.values());
     globalStore.__bmgh_agent_base_products = finalResult;
     markCacheFresh("agent_base_products");
     return finalResult;
@@ -2447,15 +2439,30 @@ export const db = {
     const cleanNetwork = p.network.toLowerCase().trim();
     const cleanSize = p.size.trim();
     const compKey = `${cleanNetwork}_${cleanSize.toLowerCase().replace(/\s+/g, "")}`;
+    const canonicalId = `abp-${cleanNetwork}-${cleanSize.toLowerCase().replace(/\s+/g, "")}`;
 
-    // 1. Remove from deleted base products in case it was previously deleted
-    if (globalStore.__bmgh_deleted_base_products) {
-      globalStore.__bmgh_deleted_base_products = globalStore.__bmgh_deleted_base_products.filter(
-        (k) => {
-          const lk = k.toLowerCase().trim();
-          return lk !== compKey && !lk.startsWith(compKey);
-        }
-      );
+    // 1. Permanently remove from deleted base products in memory AND Supabase
+    if (!globalStore.__bmgh_deleted_base_products) {
+      globalStore.__bmgh_deleted_base_products = [];
+    }
+    globalStore.__bmgh_deleted_base_products = globalStore.__bmgh_deleted_base_products.filter(
+      (k) => {
+        const lk = k.toLowerCase().trim();
+        return lk !== compKey && lk !== canonicalId && !lk.startsWith(compKey);
+      }
+    );
+
+    if (isSupabaseConfigured && supabaseAdmin) {
+      try {
+        await supabaseAdmin.from("settings").upsert({
+          id: "deleted_agent_base_products_config",
+          store_name: "DeletedAgentBaseProducts",
+          support_phone: "+233551234567",
+          whatsapp_number: "233551234567",
+          email: "support@bundlemartgh.com",
+          announcement_text: JSON.stringify(globalStore.__bmgh_deleted_base_products),
+        });
+      } catch (err) {}
     }
 
     invalidateDbCache("agent_base_products");
@@ -2469,7 +2476,7 @@ export const db = {
 
     const existing = list.find((bp) => {
       const k = `${(bp.network || "").toLowerCase().trim()}_${(bp.size || "").toLowerCase().trim().replace(/\s+/g, "")}`;
-      return k === compKey;
+      return k === compKey || bp.id === canonicalId;
     });
 
     let newProduct: AgentBaseProduct;
@@ -2486,7 +2493,7 @@ export const db = {
         base_price: Number(p.base_price),
         suggested_price: p.suggested_price ? Number(p.suggested_price) : Number(p.base_price) + 1.0,
         is_active: p.is_active !== false,
-        id: "abp-" + crypto.randomUUID().slice(0, 8),
+        id: canonicalId,
         created_at: new Date().toISOString(),
       };
       list.push(newProduct);
@@ -2494,10 +2501,13 @@ export const db = {
 
     globalStore.__bmgh_agent_base_products = list;
 
-    // Immediately register or update this base product in all agents' catalogs
+    // Immediately register or update this base product in all agents' catalogs without erasing existing catalog!
     try {
       const agents = await this.getAgents();
-      if (!globalStore.__bmgh_agent_products) globalStore.__bmgh_agent_products = [];
+      if (!globalStore.__bmgh_agent_products || globalStore.__bmgh_agent_products.length === 0) {
+        const disk = loadFromDisk();
+        globalStore.__bmgh_agent_products = Array.isArray(disk?.agent_products) ? [...disk.agent_products] : [];
+      }
       agents.forEach((ag) => {
         const hasProd = globalStore.__bmgh_agent_products!.find(
           (ap) =>
@@ -2559,16 +2569,18 @@ export const db = {
         console.warn("Agent base products Supabase save error:", err);
       }
 
-      try {
-        await supabaseAdmin.from("settings").upsert({
-          id: "agent_products_registry_config",
-          store_name: "AgentProductsRegistry",
-          support_phone: "+233551234567",
-          whatsapp_number: "233551234567",
-          email: "support@bundlemartgh.com",
-          announcement_text: JSON.stringify(globalStore.__bmgh_agent_products || []),
-        });
-      } catch {}
+      if (globalStore.__bmgh_agent_products && globalStore.__bmgh_agent_products.length > 0) {
+        try {
+          await supabaseAdmin.from("settings").upsert({
+            id: "agent_products_registry_config",
+            store_name: "AgentProductsRegistry",
+            support_phone: "+233551234567",
+            whatsapp_number: "233551234567",
+            email: "support@bundlemartgh.com",
+            announcement_text: JSON.stringify(globalStore.__bmgh_agent_products),
+          });
+        } catch {}
+      }
     }
 
     return newProduct;
@@ -2579,21 +2591,39 @@ export const db = {
     invalidateServerCache("agent_products");
     invalidateServerCache("agents");
     const list = await this.getAgentBaseProducts();
-    const idx = list.findIndex((x) => x.id === id);
+    let idx = list.findIndex((x) => x.id === id);
+    if (idx === -1) {
+      const cleanTarget = id.toLowerCase().replace(/[\s-_]+/g, "");
+      idx = list.findIndex((x) => {
+        const k = `${x.network.toLowerCase()}${x.size.toLowerCase().replace(/\s+/g, "")}`;
+        return x.id.toLowerCase() === id.toLowerCase() || k === cleanTarget;
+      });
+    }
     if (idx === -1) return null;
+
     list[idx] = { ...list[idx], ...updates };
+    const targetBP = list[idx];
+    const targetCompKey = `${(targetBP.network || "").toLowerCase().trim()}_${(targetBP.size || "").toLowerCase().trim().replace(/\s+/g, "")}`;
+
+    // Remove from deleted list if present
+    if (globalStore.__bmgh_deleted_base_products) {
+      globalStore.__bmgh_deleted_base_products = globalStore.__bmgh_deleted_base_products.filter(
+        (k) => k.toLowerCase().trim() !== targetCompKey && k.toLowerCase().trim() !== targetBP.id.toLowerCase()
+      );
+    }
+
     globalStore.__bmgh_agent_base_products = list;
     saveToDisk();
 
     if (isSupabaseConfigured && supabaseAdmin) {
       try {
         await supabaseAdmin.from("agent_base_products").upsert({
-          id: list[idx].id,
-          network: list[idx].network,
-          size: list[idx].size,
-          base_price: list[idx].base_price,
-          suggested_price: list[idx].suggested_price,
-          is_active: list[idx].is_active,
+          id: targetBP.id,
+          network: targetBP.network,
+          size: targetBP.size,
+          base_price: targetBP.base_price,
+          suggested_price: targetBP.suggested_price,
+          is_active: targetBP.is_active,
         });
       } catch {}
 
@@ -2609,19 +2639,33 @@ export const db = {
       } catch (err) {
         console.warn("Agent base products Supabase update error:", err);
       }
+
+      try {
+        await supabaseAdmin.from("settings").upsert({
+          id: "deleted_agent_base_products_config",
+          store_name: "DeletedAgentBaseProducts",
+          support_phone: "+233551234567",
+          whatsapp_number: "233551234567",
+          email: "support@bundlemartgh.com",
+          announcement_text: JSON.stringify(globalStore.__bmgh_deleted_base_products || []),
+        });
+      } catch (err) {}
     }
 
     // Also update base price in any custom agent products
     if (updates.base_price !== undefined) {
       const newBasePrice = Number(updates.base_price);
-      const targetBP = list[idx];
-      const targetCompKey = `${(targetBP.network || "").toLowerCase().trim()}_${(targetBP.size || "").toLowerCase().trim().replace(/\s+/g, "")}`;
+      if (!globalStore.__bmgh_agent_products || globalStore.__bmgh_agent_products.length === 0) {
+        const disk = loadFromDisk();
+        globalStore.__bmgh_agent_products = Array.isArray(disk?.agent_products) ? [...disk.agent_products] : [];
+      }
       if (globalStore.__bmgh_agent_products && globalStore.__bmgh_agent_products.length > 0) {
         let changed = false;
         globalStore.__bmgh_agent_products.forEach((ap) => {
           const apCompKey = `${(ap.network || "").toLowerCase().trim()}_${(ap.size || "").toLowerCase().trim().replace(/\s+/g, "")}`;
-          if (ap.base_product_id === id || apCompKey === targetCompKey) {
+          if (ap.base_product_id === id || ap.base_product_id === targetBP.id || apCompKey === targetCompKey) {
             ap.base_price = newBasePrice;
+            ap.base_product_id = targetBP.id;
             changed = true;
           }
         });
@@ -2638,6 +2682,13 @@ export const db = {
                 announcement_text: JSON.stringify(globalStore.__bmgh_agent_products),
               });
             } catch {}
+
+            try {
+              await supabaseAdmin
+                .from("agent_products")
+                .update({ base_price: newBasePrice })
+                .eq("base_product_id", targetBP.id);
+            } catch {}
           }
         }
       }
@@ -2648,19 +2699,25 @@ export const db = {
     invalidateDbCache("agents");
     invalidateServerCache("agent_base_products");
     invalidateServerCache("agent_products");
-    invalidateServerCache("agents");
-
-    return list[idx];
+    return targetBP;
   },
 
   async deleteAgentBaseProduct(id: string): Promise<boolean> {
     const list = await this.getAgentBaseProducts();
-    const targetProduct = list.find((x) => x.id === id);
-    const filtered = list.filter((x) => x.id !== id);
+    const cleanReq = id.toLowerCase().replace(/[\s-_]+/g, "");
+    const targetProduct = list.find((x) => {
+      const k = `${x.network.toLowerCase()}${x.size.toLowerCase().replace(/\s+/g, "")}`;
+      return x.id.toLowerCase() === id.toLowerCase() || k === cleanReq;
+    });
+    const canonicalId = targetProduct ? targetProduct.id : id;
+    const filtered = list.filter((x) => x.id !== canonicalId && (!targetProduct || x.id !== targetProduct.id));
     globalStore.__bmgh_agent_base_products = filtered;
 
     if (!globalStore.__bmgh_deleted_base_products) {
       globalStore.__bmgh_deleted_base_products = [];
+    }
+    if (canonicalId && !globalStore.__bmgh_deleted_base_products.includes(canonicalId)) {
+      globalStore.__bmgh_deleted_base_products.push(canonicalId);
     }
     if (id && !globalStore.__bmgh_deleted_base_products.includes(id)) {
       globalStore.__bmgh_deleted_base_products.push(id);
@@ -2842,6 +2899,41 @@ export const db = {
               cloaked_url: a.cloaked_url,
               created_at: a.created_at,
             }));
+
+          // Merge custom_prices from agents_registry_config or memory so agent prices are never wiped out
+          try {
+            const { data: regRow } = await supabaseAdmin
+              .from("settings")
+              .select("announcement_text")
+              .eq("id", "agents_registry_config")
+              .maybeSingle();
+            if (regRow?.announcement_text) {
+              const regAgents = JSON.parse(regRow.announcement_text);
+              if (Array.isArray(regAgents)) {
+                list.forEach((ag) => {
+                  const matchedReg = regAgents.find((ra: any) => ra.id === ag.id || ra.store_slug === ag.store_slug);
+                  if (matchedReg?.custom_prices && typeof matchedReg.custom_prices === "object" && Object.keys(matchedReg.custom_prices).length > 0) {
+                    ag.custom_prices = {
+                      ...matchedReg.custom_prices,
+                      ...(ag.custom_prices && Object.keys(ag.custom_prices).length > 0 ? ag.custom_prices : {}),
+                    };
+                  }
+                });
+              }
+            }
+          } catch {}
+
+          if (globalStore.__bmgh_agents && Array.isArray(globalStore.__bmgh_agents)) {
+            list.forEach((ag) => {
+              const memAg = globalStore.__bmgh_agents!.find((ma) => ma.id === ag.id || ma.store_slug === ag.store_slug);
+              if (memAg?.custom_prices && typeof memAg.custom_prices === "object" && Object.keys(memAg.custom_prices).length > 0) {
+                ag.custom_prices = {
+                  ...memAg.custom_prices,
+                  ...(ag.custom_prices && Object.keys(ag.custom_prices).length > 0 ? ag.custom_prices : {}),
+                };
+              }
+            });
+          }
 
           globalStore.__bmgh_agents = list;
           markCacheFresh("agents");
@@ -3534,7 +3626,21 @@ export const db = {
     let hasChanges = false;
     baseProducts.forEach((bp) => {
       if (matchedAgent?.deleted_products?.includes(bp.id)) return;
-      const existing = productMap.get(bp.id);
+      const bpCompKey = `${(bp.network || "").toLowerCase().trim()}_${(bp.size || "").toLowerCase().trim().replace(/\s+/g, "")}`;
+      let existing = productMap.get(bp.id);
+      if (!existing) {
+        // Try finding by network and size compKey
+        for (const [key, item] of productMap.entries()) {
+          const itemCompKey = `${(item.network || "").toLowerCase().trim()}_${(item.size || "").toLowerCase().trim().replace(/\s+/g, "")}`;
+          if (itemCompKey === bpCompKey) {
+            existing = item;
+            productMap.delete(key);
+            productMap.set(bp.id, existing);
+            break;
+          }
+        }
+      }
+
       if (!existing) {
         const added: AgentCustomProduct = {
           id: "acp-" + crypto.randomUUID().slice(0, 8),
@@ -3549,6 +3655,7 @@ export const db = {
         productMap.set(bp.id, added);
         hasChanges = true;
       } else {
+        existing.base_product_id = bp.id;
         if (existing.base_price !== bp.base_price) {
           existing.base_price = bp.base_price;
           hasChanges = true;
@@ -3573,12 +3680,23 @@ export const db = {
       }
       baseProducts.forEach((bp) => {
         if (matchedAgent?.deleted_products?.includes(bp.id)) return;
+        const bpCompKey = `${bp.network.toLowerCase().trim()}_${bp.size.toLowerCase().trim().replace(/\s+/g, "")}`;
         const directPrice =
           customMap[bp.id] ??
+          customMap[bpCompKey] ??
           customMap[`${bp.network.toLowerCase()}_${bp.size.toLowerCase()}`] ??
-          customMap[`${bp.network.toLowerCase()}_${bp.size.toLowerCase().replace(/\s+/g, "")}`];
+          customMap[`${bp.network.toLowerCase()}${bp.size.toLowerCase().replace(/\s+/g, "")}`];
         if (directPrice !== undefined && Number(directPrice) > 0) {
-          const item = productMap.get(bp.id);
+          let item = productMap.get(bp.id);
+          if (!item) {
+            for (const [, pItem] of productMap.entries()) {
+              const pCompKey = `${(pItem.network || "").toLowerCase().trim()}_${(pItem.size || "").toLowerCase().trim().replace(/\s+/g, "")}`;
+              if (pCompKey === bpCompKey) {
+                item = pItem;
+                break;
+              }
+            }
+          }
           if (item) {
             if (item.selling_price !== Number(directPrice)) {
               item.selling_price = Number(directPrice);

@@ -345,6 +345,7 @@ export default function AdminAgentStorePage() {
       setBaseProducts((prev) => prev.filter((p) => p.id !== deleteProductModal.productId));
       setNotice(`Deleted ${deleteProductModal.network.toUpperCase()} ${deleteProductModal.size} price successfully`);
       setDeleteProductModal({ open: false, productId: "", network: "", size: "", basePrice: 0, loading: false });
+      await fetchData();
       setTimeout(() => setNotice(""), 4000);
     } catch (err: any) {
       setError(err?.message || "Failed to delete price");
