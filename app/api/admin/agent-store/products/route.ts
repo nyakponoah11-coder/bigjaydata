@@ -24,7 +24,16 @@ export async function POST(req: Request) {
       is_active: is_active !== false,
     });
 
-    return NextResponse.json({ success: true, product: newProduct });
+    return NextResponse.json(
+      { success: true, product: newProduct },
+      {
+        headers: {
+          "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+          Pragma: "no-cache",
+          Expires: "0",
+        },
+      }
+    );
   } catch (error: any) {
     return NextResponse.json(
       { success: false, message: error?.message || "Failed to create base product" },
@@ -47,7 +56,16 @@ export async function PUT(req: Request) {
       return NextResponse.json({ success: false, message: "Product not found" }, { status: 404 });
     }
 
-    return NextResponse.json({ success: true, product: updated });
+    return NextResponse.json(
+      { success: true, product: updated },
+      {
+        headers: {
+          "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+          Pragma: "no-cache",
+          Expires: "0",
+        },
+      }
+    );
   } catch (error: any) {
     return NextResponse.json(
       { success: false, message: error?.message || "Failed to update base product" },
@@ -66,7 +84,16 @@ export async function DELETE(req: Request) {
     }
 
     const deleted = await db.deleteAgentBaseProduct(id);
-    return NextResponse.json({ success: deleted });
+    return NextResponse.json(
+      { success: deleted },
+      {
+        headers: {
+          "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+          Pragma: "no-cache",
+          Expires: "0",
+        },
+      }
+    );
   } catch (error: any) {
     return NextResponse.json(
       { success: false, message: error?.message || "Failed to delete base product" },

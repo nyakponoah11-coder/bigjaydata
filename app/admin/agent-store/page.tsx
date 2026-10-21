@@ -112,18 +112,23 @@ export default function AdminAgentStorePage() {
   const fetchData = async () => {
     try {
       setLoading(true);
-      const res = await fetch("/api/admin/agent-store");
+      setError("");
+      const res = await fetch(`/api/admin/agent-store?t=${Date.now()}`, {
+        cache: "no-store",
+        headers: { Pragma: "no-cache" },
+      });
       const data = await res.json();
-      if (data.success) {
-        setConfig(data.config || { is_enabled: true, registration_fee: 0 });
-        setRegFeeInput(String(data.config?.registration_fee || 0));
-        setBaseProducts(data.baseProducts || []);
-        setAgents(data.agents || []);
-        setWithdrawals(data.withdrawals || []);
-        setOrders(data.orders || []);
+      if (!res.ok || !data.success) {
+        throw new Error(data.message || "Failed to load agent store details");
       }
+      setConfig(data.config || { is_enabled: true, registration_fee: 0 });
+      setRegFeeInput(String(data.config?.registration_fee || 0));
+      setBaseProducts(data.baseProducts || []);
+      setAgents(data.agents || []);
+      setWithdrawals(data.withdrawals || []);
+      setOrders(data.orders || []);
     } catch (err: any) {
-      setError("Failed to load agent store details");
+      setError(err?.message || "Failed to load agent store details");
     } finally {
       setLoading(false);
     }
@@ -259,26 +264,36 @@ export default function AdminAgentStorePage() {
     e.preventDefault();
     try {
       setSavingProduct(true);
+      setError("");
+      const numBase = parseFloat(newBasePrice);
+      const numSuggested = parseFloat(newSuggestedPrice || newBasePrice);
+      if (isNaN(numBase) || numBase <= 0) {
+        setError("Please enter a valid base price");
+        return;
+      }
       const res = await fetch("/api/admin/agent-store/products", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           network: newNetwork,
-          size: newSize,
-          base_price: parseFloat(newBasePrice),
-          suggested_price: parseFloat(newSuggestedPrice || newBasePrice),
+          size: newSize.trim(),
+          base_price: numBase,
+          suggested_price: !isNaN(numSuggested) && numSuggested > 0 ? numSuggested : numBase + 1.0,
         }),
       });
       const data = await res.json();
-      if (data.success) {
-        setBaseProducts((prev) => [...prev, data.product]);
-        setIsAddModalOpen(false);
-        setNewSize("");
-        setNewBasePrice("");
-        setNewSuggestedPrice("");
+      if (!res.ok || !data.success) {
+        throw new Error(data.message || "Failed to save base product");
       }
-    } catch (err) {
-      setError("Failed to save product");
+      setNotice(`Base product ${newNetwork.toUpperCase()} ${newSize} saved successfully!`);
+      setIsAddModalOpen(false);
+      setNewSize("");
+      setNewBasePrice("");
+      setNewSuggestedPrice("");
+      await fetchData();
+      setTimeout(() => setNotice(""), 3500);
+    } catch (err: any) {
+      setError(err?.message || "Failed to save product");
     } finally {
       setSavingProduct(false);
     }
@@ -286,6 +301,7 @@ export default function AdminAgentStorePage() {
 
   const handleUpdateProductPrice = async (id: string) => {
     try {
+      setError("");
       const numBase = parseFloat(editBasePrice);
       const numSuggested = parseFloat(editSuggestedPrice);
       if (isNaN(numBase) || numBase <= 0) {
@@ -302,14 +318,13 @@ export default function AdminAgentStorePage() {
         }),
       });
       const data = await res.json();
-      if (data.success) {
-        setBaseProducts((prev) => prev.map((p) => (p.id === id ? data.product : p)));
-        setEditingId(null);
-        setNotice("Base price and suggested price updated successfully");
-        setTimeout(() => setNotice(""), 3500);
-      } else {
-        setError(data.message || "Failed to update price");
+      if (!res.ok || !data.success) {
+        throw new Error(data.message || "Failed to update price");
       }
+      setNotice("Base price and suggested price updated successfully");
+      setEditingId(null);
+      await fetchData();
+      setTimeout(() => setNotice(""), 3500);
     } catch (err: any) {
       setError(err?.message || "Failed to update price");
     }

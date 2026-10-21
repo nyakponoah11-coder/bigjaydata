@@ -2420,7 +2420,7 @@ export const db = {
     Array.from(baseMap.values()).forEach((p) => {
       const compKey = `${(p.network || "").toLowerCase().trim()}_${(p.size || "").toLowerCase().trim().replace(/\s+/g, "")}`;
       if (!deletedKeys.has(p.id.toLowerCase()) && !deletedKeys.has(compKey)) {
-        uniqueMap.set(p.id, p);
+        uniqueMap.set(compKey, p);
       }
     });
     const finalResult = Array.from(uniqueMap.values());
@@ -2432,12 +2432,28 @@ export const db = {
   },
 
   async createAgentBaseProduct(p: Omit<AgentBaseProduct, "id" | "created_at">): Promise<AgentBaseProduct> {
-    invalidateDbCache("agent_base_products");
-    invalidateDbCache("agent_products");
-    const list = await this.getAgentBaseProducts();
     const cleanNetwork = p.network.toLowerCase().trim();
     const cleanSize = p.size.trim();
     const compKey = `${cleanNetwork}_${cleanSize.toLowerCase().replace(/\s+/g, "")}`;
+
+    // 1. Remove from deleted base products in case it was previously deleted
+    if (globalStore.__bmgh_deleted_base_products) {
+      globalStore.__bmgh_deleted_base_products = globalStore.__bmgh_deleted_base_products.filter(
+        (k) => {
+          const lk = k.toLowerCase().trim();
+          return lk !== compKey && !lk.startsWith(compKey);
+        }
+      );
+    }
+
+    invalidateDbCache("agent_base_products");
+    invalidateDbCache("agent_products");
+    invalidateDbCache("agents");
+    invalidateServerCache("agent_base_products");
+    invalidateServerCache("agent_products");
+    invalidateServerCache("agents");
+
+    const list = await this.getAgentBaseProducts();
 
     const existing = list.find((bp) => {
       const k = `${(bp.network || "").toLowerCase().trim()}_${(bp.size || "").toLowerCase().trim().replace(/\s+/g, "")}`;
@@ -2455,6 +2471,9 @@ export const db = {
         ...p,
         network: cleanNetwork,
         size: cleanSize,
+        base_price: Number(p.base_price),
+        suggested_price: p.suggested_price ? Number(p.suggested_price) : Number(p.base_price) + 1.0,
+        is_active: p.is_active !== false,
         id: "abp-" + crypto.randomUUID().slice(0, 8),
         created_at: new Date().toISOString(),
       };
@@ -2462,15 +2481,17 @@ export const db = {
     }
 
     globalStore.__bmgh_agent_base_products = list;
-    invalidateDbCache("agent_base_products");
 
-    // Immediately register this base product in all agents' catalogs
+    // Immediately register or update this base product in all agents' catalogs
     try {
       const agents = await this.getAgents();
       if (!globalStore.__bmgh_agent_products) globalStore.__bmgh_agent_products = [];
       agents.forEach((ag) => {
         const hasProd = globalStore.__bmgh_agent_products!.find(
-          (ap) => (ap.agent_id === ag.id || ap.agent_id === ag.store_slug) && ap.base_product_id === newProduct.id
+          (ap) =>
+            (ap.agent_id === ag.id || ap.agent_id === ag.store_slug) &&
+            (ap.base_product_id === newProduct.id ||
+              `${(ap.network || "").toLowerCase().trim()}_${(ap.size || "").toLowerCase().trim().replace(/\s+/g, "")}` === compKey)
         );
         if (!hasProd) {
           globalStore.__bmgh_agent_products!.push({
@@ -2487,11 +2508,19 @@ export const db = {
           hasProd.base_price = newProduct.base_price;
           hasProd.network = newProduct.network;
           hasProd.size = newProduct.size;
+          hasProd.base_product_id = newProduct.id;
         }
       });
     } catch {}
 
     saveToDisk();
+
+    invalidateDbCache("agent_base_products");
+    invalidateDbCache("agent_products");
+    invalidateDbCache("agents");
+    invalidateServerCache("agent_base_products");
+    invalidateServerCache("agent_products");
+    invalidateServerCache("agents");
 
     if (isSupabaseConfigured && supabaseAdmin) {
       try {
@@ -2573,10 +2602,13 @@ export const db = {
     // Also update base price in any custom agent products
     if (updates.base_price !== undefined) {
       const newBasePrice = Number(updates.base_price);
+      const targetBP = list[idx];
+      const targetCompKey = `${(targetBP.network || "").toLowerCase().trim()}_${(targetBP.size || "").toLowerCase().trim().replace(/\s+/g, "")}`;
       if (globalStore.__bmgh_agent_products && globalStore.__bmgh_agent_products.length > 0) {
         let changed = false;
         globalStore.__bmgh_agent_products.forEach((ap) => {
-          if (ap.base_product_id === id) {
+          const apCompKey = `${(ap.network || "").toLowerCase().trim()}_${(ap.size || "").toLowerCase().trim().replace(/\s+/g, "")}`;
+          if (ap.base_product_id === id || apCompKey === targetCompKey) {
             ap.base_price = newBasePrice;
             changed = true;
           }
@@ -2598,6 +2630,13 @@ export const db = {
         }
       }
     }
+
+    invalidateDbCache("agent_base_products");
+    invalidateDbCache("agent_products");
+    invalidateDbCache("agents");
+    invalidateServerCache("agent_base_products");
+    invalidateServerCache("agent_products");
+    invalidateServerCache("agents");
 
     return list[idx];
   },

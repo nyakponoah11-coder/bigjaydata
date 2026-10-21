@@ -2,6 +2,9 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { sendSuspensionEmail, sendPasswordResetEmail } from "@/lib/email";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
@@ -67,14 +70,23 @@ export async function GET(req: Request) {
       };
     });
 
-    return NextResponse.json({
-      success: true,
-      config,
-      baseProducts,
-      agents: synchronizedAgents,
-      withdrawals,
-      orders,
-    });
+    return NextResponse.json(
+      {
+        success: true,
+        config,
+        baseProducts,
+        agents: synchronizedAgents,
+        withdrawals,
+        orders,
+      },
+      {
+        headers: {
+          "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+          Pragma: "no-cache",
+          Expires: "0",
+        },
+      }
+    );
   } catch (error: any) {
     console.error("[Admin Agent Store API] GET error:", error);
     return NextResponse.json(
