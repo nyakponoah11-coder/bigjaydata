@@ -100,12 +100,15 @@ export default async function DirectStoreSlugPage({
     notFound();
   }
 
-  const agent = await db.getAgentBySlug(cleanSlug);
+  const [agent, agentStoreConfig] = await Promise.all([
+    db.getAgentBySlug(cleanSlug),
+    db.getAgentStoreConfig(),
+  ]);
+
   if (!agent) {
     notFound();
   }
 
-  const agentStoreConfig = await db.getAgentStoreConfig();
   if (!agentStoreConfig.is_enabled) {
     return (
       <div className="min-h-screen bg-gradient-to-b from-[#070b14] via-[#0b1021] to-[#050811] text-slate-100 flex flex-col justify-between p-4 sm:p-6 selection:bg-indigo-500 selection:text-white">
@@ -165,20 +168,6 @@ export default async function DirectStoreSlugPage({
     );
   }
 
-  const config = await db.getAgentStoreConfig();
-  if (!config.is_enabled && !agent.is_active) {
-    return (
-      <div className="min-h-screen bg-slate-950 text-white flex items-center justify-center p-6 text-center">
-        <div className="max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-8">
-          <h1 className="text-xl font-bold">Store Temporarily Offline</h1>
-          <p className="text-xs text-slate-400 mt-2">
-            This storefront is currently undergoing scheduled maintenance. Please check back shortly.
-          </p>
-        </div>
-      </div>
-    );
-  }
-
   if (!agent.is_active) {
     return (
       <div className="min-h-screen bg-slate-950 text-white flex items-center justify-center p-6 text-center">
@@ -192,7 +181,10 @@ export default async function DirectStoreSlugPage({
     );
   }
 
-  const allCustomProducts = await db.getAgentProducts(agent.id);
+  const [allCustomProducts, settings] = await Promise.all([
+    db.getAgentProducts(agent.id),
+    db.getSettings(),
+  ]);
   const activeProducts = allCustomProducts
     .filter((p) => p.is_active)
     .map((p) => ({
@@ -202,7 +194,6 @@ export default async function DirectStoreSlugPage({
       price: p.selling_price,
     }));
 
-  const settings = await db.getSettings();
   const paystackPublicKey = settings.paystack_public_key || process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY || "";
 
   return (

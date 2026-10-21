@@ -492,7 +492,21 @@ const globalStore = globalThis as unknown as {
   __bmgh_deleted_base_products?: string[];
 };
 
-function saveToDisk() {
+let saveDiskTimer: NodeJS.Timeout | null = null;
+
+function saveToDisk(immediate = false) {
+  if (typeof window === "undefined") {
+    if (immediate) {
+      if (saveDiskTimer) clearTimeout(saveDiskTimer);
+      doSaveToDisk();
+    } else {
+      if (saveDiskTimer) clearTimeout(saveDiskTimer);
+      saveDiskTimer = setTimeout(doSaveToDisk, 150);
+    }
+  }
+}
+
+function doSaveToDisk() {
   try {
     if (typeof window === "undefined") {
       if (!fs.existsSync(DATA_DIR)) {
@@ -537,7 +551,9 @@ function saveToDisk() {
         deleted_agents: globalStore.__bmgh_deleted_agents || existingDisk.deleted_agents || [],
         deleted_base_products: globalStore.__bmgh_deleted_base_products || existingDisk.deleted_base_products || [],
       };
-      fs.writeFileSync(STORE_FILE, JSON.stringify(dataToSave, null, 2), "utf-8");
+      fs.writeFile(STORE_FILE, JSON.stringify(dataToSave, null, 2), "utf-8", (err) => {
+        if (err) console.warn("Background disk save warning:", err);
+      });
     }
   } catch (err) {
     console.warn("Failed to save local store to disk:", err);
@@ -837,7 +853,6 @@ export const db = {
 
           globalStore.__bmgh_settings = merged;
           markCacheFresh("settings");
-          saveToDisk();
           return merged;
         }
       } catch (err) {
@@ -1080,7 +1095,6 @@ export const db = {
         if (!error && Array.isArray(data) && data.length > 0) {
           globalStore.__bmgh_products = data as Product[];
           markCacheFresh("products");
-          saveToDisk();
           let list = data as Product[];
           if (network) {
             list = list.filter((p) => p.network.toLowerCase() === network.toLowerCase());
@@ -1277,7 +1291,6 @@ export const db = {
           if (!filter?.search) {
             globalStore.__bmgh_orders = normalizedData;
             markCacheFresh("orders");
-            saveToDisk();
           }
           let results = normalizedData;
           if (filter?.delivery_status && filter.delivery_status !== "all") {
@@ -2427,7 +2440,6 @@ export const db = {
 
     globalStore.__bmgh_agent_base_products = finalResult;
     markCacheFresh("agent_base_products");
-    saveToDisk();
     return finalResult;
   },
 
@@ -2833,7 +2845,6 @@ export const db = {
 
           globalStore.__bmgh_agents = list;
           markCacheFresh("agents");
-          saveToDisk();
           return list;
         }
       } catch {}
@@ -2854,7 +2865,6 @@ export const db = {
               );
               globalStore.__bmgh_agents = cleaned;
               markCacheFresh("agents");
-              saveToDisk();
               return cleaned;
             }
           } catch {}
@@ -2869,7 +2879,6 @@ export const db = {
     );
     globalStore.__bmgh_agents = current;
     markServerCache("agents");
-    saveToDisk();
     return current;
   },
 
@@ -3614,19 +3623,17 @@ export const db = {
       ...result,
     ];
 
-    saveToDisk();
-
     if (hasChanges && isSupabaseConfigured && supabaseAdmin) {
-      try {
-        await supabaseAdmin.from("settings").upsert({
+      Promise.resolve(
+        supabaseAdmin.from("settings").upsert({
           id: "agent_products_registry_config",
           store_name: "AgentProductsRegistry",
           support_phone: "+233551234567",
           whatsapp_number: "233551234567",
           email: "support@bundlemartgh.com",
           announcement_text: JSON.stringify(globalStore.__bmgh_agent_products),
-        });
-      } catch {}
+        })
+      ).catch(() => {});
     }
 
     markCacheFresh(cacheKey);
@@ -4086,7 +4093,6 @@ export const db = {
 
     globalStore.__bmgh_agent_orders = finalFullList;
     markCacheFresh(cacheKey);
-    saveToDisk();
 
     if (targetAgentId) {
       return finalFullList.filter(
@@ -4780,7 +4786,6 @@ export const db = {
             wallet_balance: Number(c.wallet_balance || 0),
           }));
           markCacheFresh("customers");
-          saveToDisk();
           return globalStore.__bmgh_customers;
         }
       } catch (err) {
@@ -5067,7 +5072,6 @@ export const db = {
           if (!customerId) {
             globalStore.__bmgh_customer_transactions = list;
             markCacheFresh("customer_transactions");
-            saveToDisk();
           }
           return list;
         }

@@ -20,9 +20,29 @@ export const isSupabaseConfigured = Boolean(
   (supabaseAnonKey || supabaseServiceRoleKey)
 );
 
+// Global fetch with a 4s timeout to prevent external DB lag from locking the site
+const timeoutFetch = (url: any, options: any = {}) => {
+  let signal = typeof AbortSignal !== "undefined" && AbortSignal.timeout ? AbortSignal.timeout(4000) : undefined;
+  if (options?.signal && (AbortSignal as any)?.any && signal) {
+    try {
+      signal = (AbortSignal as any).any([options.signal, signal]);
+    } catch {
+      signal = options.signal;
+    }
+  } else if (options?.signal && !signal) {
+    signal = options.signal;
+  }
+  return fetch(url, {
+    ...options,
+    ...(signal ? { signal } : {}),
+  });
+};
+
 // Public client for frontend use
 export const supabase = isSupabaseConfigured
-  ? createClient(supabaseUrl, supabaseAnonKey || supabaseServiceRoleKey)
+  ? createClient(supabaseUrl, supabaseAnonKey || supabaseServiceRoleKey, {
+      global: { fetch: timeoutFetch },
+    })
   : null;
 
 // Server-side service role client for backend operations
@@ -32,6 +52,7 @@ export const supabaseAdmin = isSupabaseConfigured
         persistSession: false,
         autoRefreshToken: false,
       },
+      global: { fetch: timeoutFetch },
     })
   : null;
 

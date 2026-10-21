@@ -30,11 +30,13 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0; // Dynamic on every request to reflect admin settings immediately
 
 export default async function HomePage() {
-  const config = await db.getAgentStoreConfig();
+  const [config, headersList] = await Promise.all([
+    db.getAgentStoreConfig(),
+    headers(),
+  ]);
 
   // White-Label Bounce-Back Protection:
   // If the visitor accesses through the fastdata/custom agent domain, NEVER let them see BundleMart!
-  const headersList = await headers();
   const host = (headersList.get("host") || "").toLowerCase();
   const customDomain = config.custom_domain?.toLowerCase().trim();
   const isWhiteLabelHost =
@@ -50,8 +52,10 @@ export default async function HomePage() {
     redirect(`/${targetSlug}`);
   }
 
-  const settings = await db.getSettings();
-  const products = await db.getProducts();
+  const [settings, products] = await Promise.all([
+    db.getSettings(),
+    db.getProducts(),
+  ]);
 
   // Group products by network dynamically
   const networksMap = new Map<string, typeof products>();
