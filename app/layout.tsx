@@ -12,7 +12,10 @@ export const metadata: Metadata = {
     icon: "/logo.png",
     apple: "/logo.png",
   },
-  manifest: "/manifest.webmanifest",
+  openGraph: {
+    title: "BundleMartGh",
+    description: "Instant mobile data bundles portal in Ghana with automated delivery for MTN, Telecel, and AT.",
+  },
   applicationName: "My Bundle",
   appleWebApp: {
     capable: true,

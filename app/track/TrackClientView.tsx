@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Order } from "@/lib/db";
 import { Search, Loader2, ArrowRight, Clock, CheckCircle2, AlertTriangle, ShieldCheck, Copy, Check, Zap, RefreshCw } from "lucide-react";
 import { loadDeviceSession, saveDeviceSession } from "@/lib/device-session";
+import DeliveryTrackerCard from "@/components/DeliveryTrackerCard";
 
 export default function TrackClientView({ storeName }: { storeName: string }) {
   const [query, setQuery] = useState("");
@@ -192,6 +193,11 @@ export default function TrackClientView({ storeName }: { storeName: string }) {
         </p>
       </div>
 
+      {/* Live Telecom Dispatch Pipeline Tracker */}
+      <div className="max-w-2xl mx-auto">
+        <DeliveryTrackerCard />
+      </div>
+
       {/* Search Input Box */}
       <div className="bg-white p-4 sm:p-6 rounded-3xl border border-slate-200 shadow-lg max-w-2xl mx-auto">
         <form onSubmit={handleSearch} className="flex flex-col sm:flex-row gap-3">
@@ -251,9 +257,12 @@ export default function TrackClientView({ storeName }: { storeName: string }) {
           ) : (
             orders.map((o) => {
               const paymentStatus = o.payment_status || (o.paystack_ref ? "paid" : "paid");
-              const deliveryStatus = o.delivery_status || (o.status === "delivered" ? "delivered" : o.status === "failed" ? "failed" : "pending");
-              
-              const isPaid = paymentStatus === "paid" || paymentStatus === "completed";
+              const isPaid = paymentStatus === "paid" || paymentStatus === "completed" || !!o.paystack_ref;
+              let rawDs = (o.delivery_status || o.status || "processing").toLowerCase().trim();
+              if (isPaid && (rawDs === "failed" || rawDs === "pending")) {
+                rawDs = "processing";
+              }
+              const deliveryStatus = rawDs;
               const deliveryBadge = getCustomerDeliveryBadge(deliveryStatus);
               const isDelivered = deliveryStatus === "delivered" || deliveryStatus === "completed";
               const isSyncingThis = syncingRef === o.reference;

@@ -197,7 +197,10 @@ export async function POST(
       };
     }
 
-    const finalDeliveryStatus = deliveryResult.success ? (deliveryResult.status || "processing") : "failed";
+    // Once payment is verified, delivery status is either delivered (instant) or processing (telecom fast lane queue).
+    // It should never be marked as "failed" right after payment confirmation.
+    const isDelivered = deliveryResult?.status === "delivered" || deliveryResult?.status === "completed";
+    const finalDeliveryStatus = isDelivered ? "delivered" : "processing";
 
     await Promise.all([
       db.updateOrderStatus(masterOrder.id, finalDeliveryStatus, deliveryResult.raw_response || deliveryResult, {

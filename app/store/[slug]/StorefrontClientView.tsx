@@ -4,6 +4,7 @@ import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import DeliveryTrackerCard from "@/components/DeliveryTrackerCard";
 import AnnouncementBanner from "@/components/AnnouncementBanner";
+import { getDeliveryStatusConfig } from "@/lib/delivery-status";
 import { getCachedAgentStore, saveAgentStoreSession } from "@/lib/device-session";
 import { createSmartInterval, cachedAsync } from "@/lib/localCache";
 import {
@@ -641,9 +642,14 @@ export default function StorefrontClientView({
                   </span>
                   <span className="text-slate-400 ml-2">to {trackedOrder.phone}</span>
                 </div>
-                <span className="font-extrabold uppercase px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 text-[10px]">
-                  {trackedOrder.delivery_status || trackedOrder.status}
-                </span>
+                {(() => {
+                  const stCfg = getDeliveryStatusConfig(trackedOrder.delivery_status || trackedOrder.status);
+                  return (
+                    <span className={`font-extrabold uppercase px-2.5 py-0.5 rounded-full text-[10px] ${stCfg.badgeClass}`}>
+                      {stCfg.label}
+                    </span>
+                  );
+                })()}
               </div>
             )}
             {trackingError && (

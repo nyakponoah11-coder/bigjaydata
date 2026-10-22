@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Order, Settings } from "@/lib/db";
 import confetti from "canvas-confetti";
 import { saveDeviceSession } from "@/lib/device-session";
+import { getDeliveryStatusConfig } from "@/lib/delivery-status";
 import {
   CheckCircle2,
   Clock,
@@ -50,11 +51,33 @@ export default function ReceiptClientView({ initialOrder, reference, settings, b
     }
   }, [order?.status, order]);
 
+  // Automated background polling while order is in transit or processing
+  useEffect(() => {
+    if (!order) return;
+    const currentDs = (order.delivery_status || order.status || "").toLowerCase().trim();
+    const isDone = currentDs === "delivered" || currentDs === "completed" || currentDs === "refunded" || currentDs === "cancelled";
+    if (isDone) return;
+
+    // Immediately trigger a background check, then poll every 3.5 seconds
+    const initialTimer = setTimeout(() => {
+      refreshStatus();
+    }, 1000);
+
+    const interval = setInterval(() => {
+      refreshStatus();
+    }, 3500);
+
+    return () => {
+      clearTimeout(initialTimer);
+      clearInterval(interval);
+    };
+  }, [order?.delivery_status, order?.status, reference]);
+
   // Polling helper if status is pending
   const refreshStatus = async () => {
     setIsRefreshing(true);
     try {
-      const res = await fetch(`/api/orders/track?q=${encodeURIComponent(reference)}`);
+      const res = await fetch(`/api/orders/track?q=${encodeURIComponent(reference)}&sync=true`);
       const data = await res.json();
       if (data.success && data.orders && data.orders.length > 0) {
         setOrder(data.orders[0]);
@@ -107,9 +130,12 @@ export default function ReceiptClientView({ initialOrder, reference, settings, b
 
   const ds = (order.delivery_status || order.status || "").toLowerCase().trim();
   const isDelivered = ds === "delivered" || ds === "completed";
-  const isFailed = ds === "failed" || ds === "cancelled" || ds === "rejected" || ds === "declined";
   const isRefunded = ds === "refunded";
+  const isPaid = order.payment_status === "paid" || !!order.paystack_ref;
+  // If payment succeeded, order is in transit unless explicitly cancelled or refunded
+  const isFailed = (ds === "failed" || ds === "cancelled" || ds === "rejected" || ds === "declined") && !isPaid;
   const isPending = !isDelivered && !isFailed && !isRefunded;
+  const statusConfig = getDeliveryStatusConfig(order.delivery_status || order.status);
 
   return (
     <div className="space-y-6">
@@ -180,13 +206,12 @@ export default function ReceiptClientView({ initialOrder, reference, settings, b
             </div>
           ) : isPending ? (
             <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 text-xs sm:text-sm flex items-start gap-3">
-              <Clock className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+              <Clock className="w-5 h-5 text-amber-600 shrink-0 mt-0.5 animate-spin" />
               <div>
                 <strong className="block font-bold mb-0.5 text-amber-800">
                   ⏳ Delivery In Progress
                 </strong>
-                Our automated dispatch is crediting your line. This typically takes 15 to 60 seconds.
-                Click <em>"Refresh Status"</em> below to check for instant completion.
+                Our automated telecom fast lane is crediting your line. This status updates automatically in real time without needing to refresh.
               </div>
             </div>
           ) : (
@@ -196,7 +221,7 @@ export default function ReceiptClientView({ initialOrder, reference, settings, b
                 <strong className="block font-bold mb-0.5 text-rose-800">
                   🙏 Apologies for the Delay
                 </strong>
-                The telco gateway reported a momentary delay. Please don't worry—your payment is confirmed and our 24/7 human team has been alerted to push your data manually immediately. You can also tap WhatsApp support below.
+                The telco gateway reported a momentary delay. Please don&apos;t worry—your payment is confirmed and our 24/7 human team has been alerted to push your data manually immediately. You can also tap WhatsApp support below.
               </div>
             </div>
           )}
@@ -265,30 +290,16 @@ export default function ReceiptClientView({ initialOrder, reference, settings, b
             <div className="py-3 flex justify-between items-center">
               <span className="text-slate-500 font-medium">Delivery Status</span>
               <span
-                className={`inline-flex items-center gap-1.5 font-bold text-xs px-3 py-1 rounded-full ${
-                  isDelivered
-                    ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
-                    : isPending
-                    ? "bg-sky-100 text-sky-800 border border-sky-200"
-                    : "bg-rose-100 text-rose-800 border border-rose-200"
-                }`}
+                className={`inline-flex items-center gap-1.5 font-bold text-xs px-3 py-1 rounded-full ${statusConfig.badgeClass}`}
               >
-                {isDelivered ? (
-                  <>
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                    Data Delivered to Line
-                  </>
-                ) : isPending ? (
-                  <>
-                    <Clock className="w-3.5 h-3.5 text-sky-600 animate-spin" />
-                    Delivery In Progress
-                  </>
+                {statusConfig.iconType === "delivered" ? (
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                ) : statusConfig.iconType === "processing" ? (
+                  <Clock className="w-3.5 h-3.5 text-amber-600 animate-spin" />
                 ) : (
-                  <>
-                    <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />
-                    Delivery Delayed (Queued for Manual Dispatch)
-                  </>
+                  <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />
                 )}
+                {statusConfig.label}
               </span>
             </div>
             <div className="py-3 flex justify-between items-center">

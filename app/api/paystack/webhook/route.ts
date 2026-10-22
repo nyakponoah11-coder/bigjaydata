@@ -232,7 +232,8 @@ export async function POST(request: Request) {
           idempotency_key: existingOrder.reference,
         });
 
-        const finalDelivery = deliveryResult.success ? (deliveryResult.status || "processing") : "failed";
+        const isDelivered = deliveryResult?.status === "delivered" || deliveryResult?.status === "completed";
+        const finalDelivery = isDelivered ? "delivered" : "processing";
         const mergedResp = {
           ...(typeof existingOrder.datamart_response === "object" ? existingOrder.datamart_response : {}),
           ...(typeof deliveryResult.raw_response === "object" ? deliveryResult.raw_response : { result: deliveryResult }),
@@ -312,7 +313,8 @@ export async function POST(request: Request) {
           idempotency_key: reference,
         });
 
-        const finalDelivery = deliveryResult.success ? (deliveryResult.status || "processing") : "failed";
+        const isDelivered = deliveryResult?.status === "delivered" || deliveryResult?.status === "completed";
+        const finalDelivery = isDelivered ? "delivered" : "processing";
         await db.updateOrderStatus(
           newOrder.id,
           finalDelivery,

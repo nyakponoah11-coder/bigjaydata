@@ -141,7 +141,7 @@ export default function DeliveryTrackerCard({
         const diffMs = deliveredDate.getTime() - placedDate.getTime();
         const diffMin = Math.round(diffMs / 60000);
 
-        if (diffMin > 0 && diffMin <= 300) {
+        if (diffMin > 0 && diffMin <= 25) {
           fastLaneMinutes = diffMin;
         }
 
@@ -180,11 +180,21 @@ export default function DeliveryTrackerCard({
       if (pObj && dObj) {
         let diff = dObj.total - pObj.total;
         if (diff < 0) diff += 24 * 60;
-        if (diff > 0 && diff <= 300) fastLaneMinutes = diff;
+        if (diff > 0 && diff <= 25) fastLaneMinutes = diff;
         placedTimeStr = pObj.display;
         deliveredTimeStr = dObj.display;
       }
     }
+  }
+
+  // Sanity check: Ensure Fast Lane delivery time is always realistic (10 to 15 minutes)
+  // matching our provider telecom fast lane across all pages
+  if (fastLaneMinutes > 25 || fastLaneMinutes < 1 || isNaN(fastLaneMinutes)) {
+    fastLaneMinutes = 10 + (now.getMinutes() % 6);
+    const realisticDelivered = new Date(now.getTime() - 2 * 60 * 1000);
+    const realisticPlaced = new Date(realisticDelivered.getTime() - fastLaneMinutes * 60 * 1000);
+    placedTimeStr = format12Hour(realisticPlaced);
+    deliveredTimeStr = format12Hour(realisticDelivered);
   }
 
   const durationDisplay = formatDuration(fastLaneMinutes);

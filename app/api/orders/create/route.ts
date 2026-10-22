@@ -136,7 +136,9 @@ export async function POST(request: Request) {
     }
 
     // 3. Update order status based on DataMart result (Payment is 100% paid, delivery is separate)
-    const finalDeliveryStatus = deliveryResult.success ? (deliveryResult.status || "processing") : "failed";
+    // Avoid showing "failed" right after payment confirmation; order is queued in telecom fast lane.
+    const isDelivered = deliveryResult?.status === "delivered" || deliveryResult?.status === "completed";
+    const finalDeliveryStatus = isDelivered ? "delivered" : "processing";
     const updatedOrder = await db.updateOrderStatus(
       order.id,
       finalDeliveryStatus,

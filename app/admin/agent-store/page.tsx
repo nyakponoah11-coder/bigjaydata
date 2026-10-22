@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import AdminLayout from "@/components/AdminLayout";
+import { getDeliveryStatusConfig } from "@/lib/delivery-status";
 import {
   Store,
   Power,
@@ -1124,9 +1125,14 @@ export default function AdminAgentStorePage() {
                             +GHS {Number(o.agent_profit).toFixed(2)}
                           </td>
                           <td className="py-3 px-4">
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-emerald-500/20 text-emerald-400">
-                              {o.delivery_status || o.status}
-                            </span>
+                            {(() => {
+                              const stCfg = getDeliveryStatusConfig(o.delivery_status || o.status);
+                              return (
+                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${stCfg.badgeClass}`}>
+                                  {stCfg.label}
+                                </span>
+                              );
+                            })()}
                           </td>
                         </tr>
                       );

@@ -40,6 +40,8 @@ import {
 } from "lucide-react";
 import { encodeAgentToken } from "@/lib/agent-link";
 import { invalidateCache } from "@/lib/localCache";
+import DeliveryTrackerCard from "@/components/DeliveryTrackerCard";
+import { getDeliveryStatusConfig } from "@/lib/delivery-status";
 
 function parsePackageSize(sizeStr: string): number {
   if (!sizeStr) return 0;
@@ -1008,6 +1010,9 @@ export default function AgentDashboardPage() {
               </div>
             </div>
 
+            {/* Telecom Fast Lane Dispatch Tracker */}
+            <DeliveryTrackerCard />
+
             {/* Recent Orders Overview */}
             <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl">
               <div className="flex items-center justify-between mb-4">
@@ -1038,26 +1043,29 @@ export default function AgentDashboardPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-800/60 font-medium">
-                      {orders.slice(0, 5).map((o) => (
-                        <tr key={o.id}>
-                          <td className="py-2.5 px-3 text-slate-400">
-                            {new Date(o.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                          </td>
-                          <td className="py-2.5 px-3 font-bold text-white">
-                            {o.network.toUpperCase()} {o.package_size}
-                          </td>
-                          <td className="py-2.5 px-3 font-mono text-slate-300">{o.phone}</td>
-                          <td className="py-2.5 px-3 font-mono text-white">GHS {Number(o.amount).toFixed(2)}</td>
-                          <td className="py-2.5 px-3 font-mono font-black text-emerald-400">
-                            +GHS {Number(o.agent_profit).toFixed(2)}
-                          </td>
-                          <td className="py-2.5 px-3">
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-400">
-                              {o.delivery_status || o.status}
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
+                      {orders.slice(0, 5).map((o) => {
+                        const stCfg = getDeliveryStatusConfig(o.delivery_status || o.status);
+                        return (
+                          <tr key={o.id}>
+                            <td className="py-2.5 px-3 text-slate-400">
+                              {new Date(o.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                            </td>
+                            <td className="py-2.5 px-3 font-bold text-white">
+                              {o.network.toUpperCase()} {o.package_size}
+                            </td>
+                            <td className="py-2.5 px-3 font-mono text-slate-300">{o.phone}</td>
+                            <td className="py-2.5 px-3 font-mono text-white">GHS {Number(o.amount).toFixed(2)}</td>
+                            <td className="py-2.5 px-3 font-mono font-black text-emerald-400">
+                              +GHS {Number(o.agent_profit).toFixed(2)}
+                            </td>
+                            <td className="py-2.5 px-3">
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${stCfg.badgeClass}`}>
+                                {stCfg.label}
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -1359,9 +1367,14 @@ export default function AgentDashboardPage() {
                           +GHS {Number(o.agent_profit).toFixed(2)}
                         </td>
                         <td className="py-3 px-3">
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-emerald-500/20 text-emerald-400">
-                            {o.delivery_status || o.status}
-                          </span>
+                          {(() => {
+                            const stCfg = getDeliveryStatusConfig(o.delivery_status || o.status);
+                            return (
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${stCfg.badgeClass}`}>
+                                {stCfg.label}
+                              </span>
+                            );
+                          })()}
                         </td>
                       </tr>
                     ))

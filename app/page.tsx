@@ -12,6 +12,7 @@ import HowToBuyAccordion from "@/components/HowToBuyAccordion";
 import BackgroundImage from "@/components/BackgroundImage";
 import HeroActionButtons from "@/components/HeroActionButtons";
 import DownloadAppBanner from "@/components/DownloadAppBanner";
+import DeliveryTrackerCard from "@/components/DeliveryTrackerCard";
 import {
   Zap,
   ShieldCheck,
@@ -125,6 +126,11 @@ export default async function HomePage() {
 
       {/* MOBILE APP / APK INSTALL BANNER (ANDROID & IPHONE) */}
       <DownloadAppBanner storeName={settings.store_name} />
+
+      {/* REAL-TIME TELECOM FAST LANE DISPATCH TRACKER */}
+      <div className="max-w-4xl mx-auto w-full px-4 sm:px-6 lg:px-8 mt-6">
+        <DeliveryTrackerCard />
+      </div>
 
       {/* LAPTOP-FRIENDLY & SOLID BLACK NETWORK CARDS */}
       <NetworkSelectionSection
