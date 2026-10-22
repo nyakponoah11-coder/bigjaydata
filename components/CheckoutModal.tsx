@@ -324,6 +324,11 @@ export default function CheckoutModal({ product, isOpen, onClose, settings }: Pr
         currency: "GHS",
         ref: reference,
         metadata: {
+          phone: cleanPhone,
+          phone_number: cleanPhone,
+          network: product.network.toLowerCase(),
+          package_size: product.size,
+          package: product.size,
           custom_fields: [
             { display_name: "Phone Number", variable_name: "phone_number", value: cleanPhone },
             { display_name: "Network", variable_name: "network", value: product.network.toUpperCase() },

@@ -463,6 +463,12 @@ export default function StorefrontClientView({
         currency: "GHS",
         ref: reference,
         metadata: {
+          phone: clean,
+          phone_number: clean,
+          network: activeProduct.network.toLowerCase(),
+          package_size: activeProduct.size,
+          package: activeProduct.size,
+          store_slug: agent.store_slug,
           custom_fields: [
             { display_name: "Phone Number", variable_name: "phone_number", value: clean },
             { display_name: "Network", variable_name: "network", value: activeProduct.network.toUpperCase() },

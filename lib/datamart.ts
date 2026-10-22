@@ -74,9 +74,7 @@ export function mapDatamartStatus(s: string | undefined | null): string {
     v === "delivered" ||
     v === "completed" ||
     v === "fulfilled" ||
-    v === "done" ||
-    v === "successful" ||
-    v === "success"
+    v === "done"
   ) {
     return "delivered";
   }
@@ -116,7 +114,6 @@ export function extractDataMartOrderStatus(json: any): string | null {
     rp?.order_status ??
     rp?.deliveryStatus ??
     rp?.delivery_status ??
-    rp?.status ??
     (d.status && !["success", "ok", "true", "false", "error"].includes(String(d.status).toLowerCase()) ? d.status : null);
 
   if (candidate === undefined || candidate === null) return null;
@@ -124,7 +121,7 @@ export function extractDataMartOrderStatus(json: any): string | null {
   if (!str) return null;
 
   // Never treat generic API envelope "success" / "ok" / "true" as a delivery status
-  if (["ok", "true", "false", "error"].includes(str)) {
+  if (["ok", "true", "false", "error", "success", "successful"].includes(str)) {
     return null;
   }
 
@@ -939,18 +936,17 @@ export async function syncOrderWithDataMart(order: Order): Promise<Order> {
 
               if (isRefMatch || isPhoneMatch) {
                 // Check all possible delivery status fields on relatedPurchase and transaction item
-                const rpStatus = rp.orderStatus || rp.deliveryStatus || rp.status || rp.delivery_status;
+                const rpStatus = rp.orderStatus || rp.deliveryStatus || rp.delivery_status;
                 const itemStatus = item.orderStatus || item.deliveryStatus || item.delivery_status;
                 
                 let detectedStatus = rpStatus || itemStatus;
                 if (!detectedStatus) {
                   const txStatus = String(item.status || "").toLowerCase().trim();
-                  // In DataMart, a successful purchase transaction indicates completed telecom fulfillment
-                  if (txStatus === "success" || txStatus === "completed") {
-                    detectedStatus = "delivered";
-                  } else if (txStatus === "failed" || txStatus === "rejected") {
+                  // A purchase transaction on DataMart indicates submission to telco gateway
+                  if (txStatus === "failed" || txStatus === "rejected") {
                     detectedStatus = "failed";
                   } else {
+                    // While in transit, keep as processing until explicit telco confirmation
                     detectedStatus = "processing";
                   }
                 }

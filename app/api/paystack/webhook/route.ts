@@ -9,7 +9,7 @@ export async function POST(request: Request) {
     const signature = request.headers.get("x-paystack-signature");
 
     const settings = await db.getSettings();
-    const secretKey = settings.paystack_secret_key || process.env.PAYSTACK_SECRET_KEY || "";
+    let secretKey = (settings.paystack_secret_key || process.env.PAYSTACK_SECRET_KEY || "").trim().replace(/['"]/g, "").replace(/^Bearer\s+/i, "");
 
     // Verify HMAC SHA512 signature only if secret key is a real production key
     const isMockSecret = !secretKey || secretKey.length < 20 || secretKey.includes("sample") || secretKey.includes("placeholder") || secretKey.includes("test_sample");
@@ -56,21 +56,64 @@ export async function POST(request: Request) {
       }
 
       if (metadata && typeof metadata === "object") {
-        phone = metadata.phone || metadata.phoneNumber || metadata.recipient_phone || "";
-        network = metadata.network || "";
-        package_size = metadata.package_size || metadata.package || metadata.size || "";
-        storeSlug = metadata.store_slug || "";
+        phone =
+          metadata.phone ||
+          metadata.phone_number ||
+          metadata.phoneNumber ||
+          metadata.recipient_phone ||
+          metadata.mobile ||
+          "";
+        network = metadata.network || metadata.telco || "";
+        package_size = metadata.package_size || metadata.package || metadata.size || metadata.capacity || "";
+        storeSlug = metadata.store_slug || metadata.slug || metadata.agent || "";
 
         const customFields = metadata.custom_fields;
         if (Array.isArray(customFields)) {
           for (const field of customFields) {
-            const varName = (field.variable_name || field.name || "").toLowerCase();
-            if (varName === "phone" || varName === "phonenumber") phone = field.value || phone;
-            if (varName === "network") network = field.value || network;
-            if (varName === "package_size" || varName === "package" || varName === "size") package_size = field.value || package_size;
-            if (varName === "store_slug" || varName === "slug") storeSlug = field.value || storeSlug;
+            const rawVar = (field.variable_name || field.name || field.display_name || "").toLowerCase().replace(/[\s-_]/g, "");
+            const val = field.value || "";
+            if (rawVar.includes("phone") || rawVar.includes("recipient") || rawVar.includes("mobile")) {
+              phone = phone || val;
+            }
+            if (rawVar.includes("network") || rawVar.includes("telco")) {
+              network = network || val;
+            }
+            if (rawVar.includes("package") || rawVar.includes("size") || rawVar.includes("capacity")) {
+              package_size = package_size || val;
+            }
+            if (rawVar.includes("slug") || rawVar.includes("store")) {
+              storeSlug = storeSlug || val;
+            }
           }
         }
+      }
+
+      // Robust fallback: Recover phone from customer email if email is cleanPhone@customer...
+      if (!phone && data.customer) {
+        if (data.customer.phone) {
+          phone = data.customer.phone;
+        } else if (data.customer.email && data.customer.email.includes("@customer.")) {
+          const emailPrefix = data.customer.email.split("@")[0].replace(/[^0-9]/g, "");
+          if (emailPrefix.length >= 9) {
+            phone = emailPrefix;
+          }
+        }
+      }
+
+      // Normalize phone number
+      if (phone) {
+        phone = phone.replace(/[^0-9]/g, "");
+        if (phone.startsWith("233") && phone.length === 12) {
+          phone = "0" + phone.slice(3);
+        }
+      }
+
+      // Fallback network detection from Ghana mobile phone prefix if missing
+      if (!network && phone && phone.length >= 3) {
+        const p3 = phone.slice(0, 3);
+        if (["024", "054", "055", "059", "025"].includes(p3)) network = "mtn";
+        else if (["020", "050"].includes(p3)) network = "telecel";
+        else if (["027", "057", "026", "056"].includes(p3)) network = "at";
       }
 
       // Check if order already exists in DB
@@ -106,9 +149,9 @@ export async function POST(request: Request) {
           ),
           db.updateAgentOrderStatus(reference, finalDelivery, deliveryResult.raw_response || deliveryResult),
         ]);
-      } else if (phone && network && package_size) {
+      } else if (phone && package_size) {
         // Background creation if checkout closed before client trigger
-        console.log(`[Paystack Webhook] Creating and dispatching new order ${reference}...`);
+        console.log(`[Paystack Webhook] Creating and dispatching new order ${reference} (phone: ${phone}, net: ${network}, pkg: ${package_size})...`);
 
         let resolvedAgent = null;
         let webhookAgentProfit = 0;
