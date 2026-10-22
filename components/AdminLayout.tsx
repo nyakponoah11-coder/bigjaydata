@@ -25,6 +25,8 @@ import {
   Code,
   Users,
   UserCheck,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 
 interface Props {
@@ -35,6 +37,7 @@ export default function AdminLayout({ children }: Props) {
   const pathname = usePathname();
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
@@ -73,7 +76,7 @@ export default function AdminLayout({ children }: Props) {
       localStorage.setItem("bundlemart_admin_auth", data.token || "authenticated");
       setIsAuthenticated(true);
     } catch (err: any) {
-      setError(err?.message || "Invalid admin password. Default is bundlemart2026");
+      setError(err?.message || "Invalid admin password. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -122,18 +125,25 @@ export default function AdminLayout({ children }: Props) {
               <label className="block text-xs font-semibold text-slate-300 mb-1.5 uppercase tracking-wide">
                 Admin Password
               </label>
-              <input
-                type="password"
-                required
-                autoFocus
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
-                className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
-              />
-              <p className="text-[11px] text-slate-500 mt-1">
-                Default password: <span className="font-mono text-emerald-400">bundlemart2026</span>
-              </p>
+              <div className="relative">
+                <input
+                  type={showPassword ? "text" : "password"}
+                  required
+                  autoFocus
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Enter admin password"
+                  className="w-full pl-4 pr-11 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 placeholder:text-slate-500"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200 transition-colors p-1"
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                >
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
             </div>
 
             <button

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 
-const VALID_PASSKEYS = ["stony2026", "developer2026", "bigj2026", "bundlemart2026"];
+const VALID_PASSKEYS = ["stony2026", "developer2026", "bigj2026"];
 
 export async function GET() {
   try {

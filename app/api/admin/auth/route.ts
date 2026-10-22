@@ -6,9 +6,9 @@ export async function POST(request: Request) {
     const envPassword = process.env.ADMIN_PASSWORD?.trim();
     const inputPassword = password ? String(password).trim() : "";
 
-    // Accept configured environment password, as well as the standard defaults
-    const validPasswords = Array.from(new Set([envPassword, "bigj2026", "bundlemart2026"].filter(Boolean)));
-    const isMatch = validPasswords.includes(inputPassword);
+    // Accept configured environment password or master project password
+    const validPasswords = Array.from(new Set([envPassword, "bigj2026"].filter(Boolean)));
+    const isMatch = Boolean(inputPassword && validPasswords.includes(inputPassword));
 
     if (isMatch) {
       return NextResponse.json({
