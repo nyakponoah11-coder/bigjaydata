@@ -4209,6 +4209,31 @@ export const db = {
       (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
     );
 
+    // Dynamic profit reconciliation: Ensure any agent orders with missing or 0 profit are accurately healed based on base catalog pricing
+    let baseProductsList: AgentBaseProduct[] | null = null;
+    const norm = (s: string) => (s || "").toLowerCase().replace(/[\s\-_]/g, "");
+
+    finalFullList.forEach((o) => {
+      if ((!o.agent_profit || o.agent_profit <= 0) && Number(o.amount) > 0) {
+        if (!baseProductsList) {
+          baseProductsList = Array.isArray(globalStore.__bmgh_agent_base_products)
+            ? globalStore.__bmgh_agent_base_products
+            : initialAgentBaseProducts;
+        }
+        const bp = baseProductsList.find(
+          (b) =>
+            (b.network || "").toLowerCase().trim() === (o.network || "").toLowerCase().trim() &&
+            norm(b.size) === norm(o.package_size)
+        );
+        if (bp && Number(bp.base_price) > 0 && Number(o.amount) > Number(bp.base_price)) {
+          o.base_price = Number(bp.base_price);
+          o.agent_profit = Math.max(0, Number((Number(o.amount) - o.base_price).toFixed(2)));
+        } else if (Number(o.base_price) > 0 && Number(o.amount) > Number(o.base_price)) {
+          o.agent_profit = Math.max(0, Number((Number(o.amount) - Number(o.base_price)).toFixed(2)));
+        }
+      }
+    });
+
     globalStore.__bmgh_agent_orders = finalFullList;
     markCacheFresh(cacheKey);
 
@@ -4227,12 +4252,40 @@ export const db = {
       const existingList = globalStore.__bmgh_agent_orders || [];
       const match = existingList.find((o) => o.reference === orderData.reference);
       if (match) {
+        if ((!match.agent_profit || match.agent_profit <= 0) && (orderData.agent_profit || 0) > 0) {
+          match.agent_profit = orderData.agent_profit;
+          match.base_price = orderData.base_price;
+          saveToDisk();
+        }
         return match;
+      }
+    }
+
+    const norm = (s: string) => (s || "").toLowerCase().replace(/[\s\-_]/g, "");
+    let calculatedProfit = Number(orderData.agent_profit) || 0;
+    let calculatedBase = Number(orderData.base_price) || 0;
+
+    if (calculatedProfit <= 0 && Number(orderData.amount) > 0) {
+      const baseProductsList = Array.isArray(globalStore.__bmgh_agent_base_products)
+        ? globalStore.__bmgh_agent_base_products
+        : initialAgentBaseProducts;
+      const bp = baseProductsList.find(
+        (b) =>
+          (b.network || "").toLowerCase().trim() === (orderData.network || "").toLowerCase().trim() &&
+          norm(b.size) === norm(orderData.package_size)
+      );
+      if (bp && Number(bp.base_price) > 0 && Number(orderData.amount) > Number(bp.base_price)) {
+        calculatedBase = Number(bp.base_price);
+        calculatedProfit = Math.max(0, Number((Number(orderData.amount) - calculatedBase).toFixed(2)));
+      } else if (calculatedBase > 0 && Number(orderData.amount) > calculatedBase) {
+        calculatedProfit = Math.max(0, Number((Number(orderData.amount) - calculatedBase).toFixed(2)));
       }
     }
 
     const newOrder: AgentOrder = {
       ...orderData,
+      base_price: calculatedBase,
+      agent_profit: calculatedProfit,
       id: "agord-" + crypto.randomUUID().slice(0, 8),
       created_at: new Date().toISOString(),
     };
@@ -4251,7 +4304,7 @@ export const db = {
     // Strictly credit the agent's wallet ONLY when payment is confirmed successful
     const ps = (newOrder.payment_status || "").toLowerCase().trim();
     const st = (newOrder.status || "").toLowerCase().trim();
-    const isPaymentConfirmed = ps === "paid" || ps === "completed" || ps === "success" || st === "delivered";
+    const isPaymentConfirmed = ps === "paid" || ps === "completed" || ps === "success" || st === "delivered" || st === "processing";
 
     if (isPaymentConfirmed && newOrder.agent_profit > 0 && agent) {
       agent.wallet_balance = Number(((agent.wallet_balance || 0) + newOrder.agent_profit).toFixed(2));

@@ -116,13 +116,109 @@ export async function POST(request: Request) {
         else if (["027", "057", "026", "056"].includes(p3)) network = "at";
       }
 
+      // Normalization helper
+      const norm = (s: string) => (s || "").toLowerCase().replace(/[\s\-_]/g, "");
+
       // Check if order already exists in DB
       const existingOrder = await db.getOrderByReference(reference);
+
+      // Resolve agent for profit crediting
+      let resolvedAgent: any = null;
+      if (storeSlug) {
+        try {
+          resolvedAgent = await db.getAgentBySlug(storeSlug);
+        } catch {}
+      }
+      if (!resolvedAgent && existingOrder?.datamart_response?.agent_id) {
+        try {
+          resolvedAgent = await db.getAgentById(existingOrder.datamart_response.agent_id);
+        } catch {}
+      }
+      if (!resolvedAgent && existingOrder?.datamart_response?.store_slug) {
+        try {
+          resolvedAgent = await db.getAgentBySlug(existingOrder.datamart_response.store_slug);
+        } catch {}
+      }
+      if (!resolvedAgent && reference) {
+        try {
+          const prefix = reference.split("-")[0]?.toLowerCase();
+          if (prefix && prefix !== "bmgh") {
+            const allAgents = await db.getAgents();
+            resolvedAgent =
+              allAgents.find((a) => {
+                const slugPrefix = a.store_slug.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 4);
+                return slugPrefix === prefix || a.store_slug.toLowerCase() === prefix;
+              }) || null;
+          }
+        } catch {}
+      }
+
+      const activeNet = network || existingOrder?.network || "";
+      const activePkg = package_size || existingOrder?.package_size || "";
+      const activePhone = phone || existingOrder?.phone || "";
+      const activeAmt = amount || Number(existingOrder?.amount || 0);
+
+      let webhookBaseCost = 0;
+      let webhookAgentProfit = 0;
+      if (resolvedAgent && activeAmt > 0) {
+        try {
+          const agentProducts = await db.getAgentProducts(resolvedAgent.id);
+          const matched = agentProducts.find(
+            (p) =>
+              (p.network || "").toLowerCase().trim() === activeNet.toLowerCase().trim() &&
+              norm(p.size) === norm(activePkg)
+          );
+          if (matched && Number(matched.base_price) > 0) {
+            webhookBaseCost = Number(matched.base_price);
+          } else {
+            const baseProducts = await db.getAgentBaseProducts();
+            const bp = baseProducts.find(
+              (b) =>
+                (b.network || "").toLowerCase().trim() === activeNet.toLowerCase().trim() &&
+                norm(b.size) === norm(activePkg)
+            );
+            if (bp && Number(bp.base_price) > 0) {
+              webhookBaseCost = Number(bp.base_price);
+            }
+          }
+
+          if (!webhookBaseCost && activeAmt > 0) {
+            webhookBaseCost = Math.max(1, Number((activeAmt * 0.85).toFixed(2)));
+          }
+          webhookAgentProfit = Math.max(0, Number((activeAmt - webhookBaseCost).toFixed(2)));
+        } catch (calcErr) {
+          console.warn("[Paystack Webhook] Agent profit calculation warning:", calcErr);
+        }
+      }
 
       if (existingOrder) {
         // Avoid duplicate dispatch if already fulfilled
         if (existingOrder.status === "delivered") {
           console.log(`[Paystack Webhook] Order ${reference} already marked delivered.`);
+
+          // Ensure agent order exists and has profit credited even if marked delivered
+          if (resolvedAgent) {
+            try {
+              const existingAgOrders = await db.getAgentOrders(resolvedAgent.id);
+              const hasAg = existingAgOrders.some((o) => o.reference === reference);
+              if (!hasAg) {
+                await db.createAgentOrder({
+                  agent_id: resolvedAgent.id,
+                  reference,
+                  network: activeNet.toLowerCase(),
+                  package_size: activePkg,
+                  phone: activePhone,
+                  amount: activeAmt,
+                  base_price: webhookBaseCost,
+                  agent_profit: webhookAgentProfit,
+                  paystack_ref: paystackRef,
+                  payment_status: "paid",
+                  delivery_status: "delivered",
+                  status: "delivered",
+                });
+              }
+            } catch (err) {}
+          }
           return NextResponse.json({ status: "success", message: "Order already delivered" });
         }
 
@@ -137,11 +233,23 @@ export async function POST(request: Request) {
         });
 
         const finalDelivery = deliveryResult.success ? (deliveryResult.status || "processing") : "failed";
+        const mergedResp = {
+          ...(typeof existingOrder.datamart_response === "object" ? existingOrder.datamart_response : {}),
+          ...(typeof deliveryResult.raw_response === "object" ? deliveryResult.raw_response : { result: deliveryResult }),
+          ...(resolvedAgent
+            ? {
+                agent_id: resolvedAgent.id,
+                agent_profit: webhookAgentProfit,
+                store_slug: resolvedAgent.store_slug,
+                source: "agent",
+              }
+            : {}),
+        };
         await Promise.all([
           db.updateOrderStatus(
             existingOrder.id,
             finalDelivery,
-            deliveryResult.raw_response || deliveryResult,
+            mergedResp,
             {
               payment_status: "paid",
               delivery_status: finalDelivery,
@@ -149,37 +257,41 @@ export async function POST(request: Request) {
           ),
           db.updateAgentOrderStatus(reference, finalDelivery, deliveryResult.raw_response || deliveryResult),
         ]);
-      } else if (phone && package_size) {
-        // Background creation if checkout closed before client trigger
-        console.log(`[Paystack Webhook] Creating and dispatching new order ${reference} (phone: ${phone}, net: ${network}, pkg: ${package_size})...`);
 
-        let resolvedAgent = null;
-        let webhookAgentProfit = 0;
-        let webhookBaseCost = amount;
-        if (storeSlug) {
+        if (resolvedAgent) {
           try {
-            resolvedAgent = await db.getAgentBySlug(storeSlug);
-            if (resolvedAgent) {
-              const agentProducts = await db.getAgentProducts(resolvedAgent.id);
-              const matched = agentProducts.find(
-                (p) =>
-                  p.network.toLowerCase() === network.toLowerCase() &&
-                  p.size.toLowerCase() === package_size.toLowerCase()
-              );
-              webhookBaseCost = matched ? matched.base_price : amount;
-              webhookAgentProfit = Math.max(0, Number((amount - webhookBaseCost).toFixed(2)));
+            const existingAgOrders = await db.getAgentOrders(resolvedAgent.id);
+            const hasAg = existingAgOrders.some((o) => o.reference === reference);
+            if (!hasAg) {
+              await db.createAgentOrder({
+                agent_id: resolvedAgent.id,
+                reference,
+                network: activeNet.toLowerCase(),
+                package_size: activePkg,
+                phone: activePhone,
+                amount: activeAmt,
+                base_price: webhookBaseCost,
+                agent_profit: webhookAgentProfit,
+                paystack_ref: paystackRef,
+                payment_status: "paid",
+                delivery_status: finalDelivery,
+                status: finalDelivery,
+              });
             }
-          } catch (agentLookupErr) {
-            console.warn("[Paystack Webhook] Agent lookup warning:", agentLookupErr);
+          } catch (agentErr) {
+            console.error("[Paystack Webhook] Agent order creation on existing order error:", agentErr);
           }
         }
+      } else if (activePhone && activePkg) {
+        // Background creation if checkout closed before client trigger
+        console.log(`[Paystack Webhook] Creating and dispatching new order ${reference} (phone: ${activePhone}, net: ${activeNet}, pkg: ${activePkg})...`);
 
         const newOrder = await db.createOrder({
           reference,
-          network: network.toLowerCase(),
-          package_size,
-          phone,
-          amount,
+          network: activeNet.toLowerCase(),
+          package_size: activePkg,
+          phone: activePhone,
+          amount: activeAmt,
           paystack_ref: paystackRef,
           payment_status: "paid",
           delivery_status: "processing",
@@ -187,15 +299,15 @@ export async function POST(request: Request) {
           datamart_response: {
             status: "pending",
             source: "paystack_webhook",
-            store_slug: storeSlug,
+            store_slug: storeSlug || (resolvedAgent ? resolvedAgent.store_slug : ""),
             ...(resolvedAgent ? { agent_id: resolvedAgent.id, agent_profit: webhookAgentProfit } : {}),
           },
         });
 
         const deliveryResult = await sendDataMartDelivery({
-          network,
-          package_size,
-          phone,
+          network: activeNet,
+          package_size: activePkg,
+          phone: activePhone,
           reference,
           idempotency_key: reference,
         });
@@ -216,10 +328,10 @@ export async function POST(request: Request) {
             await db.createAgentOrder({
               agent_id: resolvedAgent.id,
               reference,
-              network: network.toLowerCase(),
-              package_size,
-              phone,
-              amount,
+              network: activeNet.toLowerCase(),
+              package_size: activePkg,
+              phone: activePhone,
+              amount: activeAmt,
               base_price: webhookBaseCost,
               agent_profit: webhookAgentProfit,
               paystack_ref: paystackRef,

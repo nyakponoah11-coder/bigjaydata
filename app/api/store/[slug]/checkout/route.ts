@@ -47,16 +47,35 @@ export async function POST(
       );
     }
 
-    // 1. Check if master order already processed by Paystack webhook
-    let existingOrder = await db.getOrderByReference(reference);
-    if (existingOrder && (existingOrder.delivery_status === "delivered" || existingOrder.status === "delivered")) {
-      return NextResponse.json({
-        success: true,
-        reference,
-        order: existingOrder,
-        delivery: existingOrder.datamart_response,
-      });
+    const paidAmount = Number(amount);
+    const norm = (s: string) => (s || "").toLowerCase().replace(/[\s\-_]/g, "");
+
+    // 1. Calculate agent profit = customer selling price - admin base cost
+    const agentProducts = await db.getAgentProducts(agent.id);
+    const matched = agentProducts.find(
+      (p) =>
+        (p.network || "").toLowerCase().trim() === (network || "").toLowerCase().trim() &&
+        norm(p.size) === norm(package_size)
+    );
+
+    let baseCost = matched ? Number(matched.base_price) : 0;
+    if (!baseCost) {
+      const baseProducts = await db.getAgentBaseProducts();
+      const bp = baseProducts.find(
+        (b) =>
+          (b.network || "").toLowerCase().trim() === (network || "").toLowerCase().trim() &&
+          norm(b.size) === norm(package_size)
+      );
+      if (bp && Number(bp.base_price) > 0) {
+        baseCost = Number(bp.base_price);
+      }
     }
+
+    if (!baseCost && paidAmount > 0) {
+      baseCost = Math.max(1, Number((paidAmount * 0.85).toFixed(2)));
+    }
+
+    const agentProfit = Math.max(0, Number((paidAmount - baseCost).toFixed(2)));
 
     // 2. Paystack verification with automatic fallback for test/configuration modes
     let finalPaystackRef = paystack_ref || `PST-${Date.now()}`;
@@ -95,37 +114,55 @@ export async function POST(
       isVerified = true;
     }
 
-    const paidAmount = Number(amount);
+    // 3. Check if master order already processed by Paystack webhook
+    let existingOrder = await db.getOrderByReference(reference);
 
-    // 2. Calculate agent profit = customer selling price - admin base cost
-    const agentProducts = await db.getAgentProducts(agent.id);
-    const matched = agentProducts.find(
-      (p) =>
-        p.network.toLowerCase() === network.toLowerCase() &&
-        p.size.toLowerCase() === package_size.toLowerCase()
-    );
+    // 4. Ensure Agent Order is recorded and wallet is credited
+    const agentOrders = await db.getAgentOrders(agent.id);
+    let agentOrder = agentOrders.find((o) => o.reference === reference);
+    if (!agentOrder) {
+      agentOrder = await db.createAgentOrder({
+        agent_id: agent.id,
+        reference,
+        network: (network || "").toLowerCase(),
+        package_size,
+        phone,
+        amount: paidAmount,
+        base_price: baseCost,
+        agent_profit: agentProfit,
+        paystack_ref: finalPaystackRef,
+        payment_status: "paid",
+        delivery_status: existingOrder ? (existingOrder.delivery_status || "processing") : "processing",
+        status: existingOrder ? (existingOrder.status || "processing") : "processing",
+      });
+    }
 
-    const baseCost = matched ? matched.base_price : paidAmount;
-    const agentProfit = Math.max(0, Number((paidAmount - baseCost).toFixed(2)));
+    // If already delivered by webhook, link profit metadata to master order if missing and return
+    if (existingOrder && (existingOrder.delivery_status === "delivered" || existingOrder.status === "delivered")) {
+      if (!existingOrder.datamart_response?.agent_id || !existingOrder.datamart_response?.agent_profit) {
+        const mergedDatamart = {
+          ...(typeof existingOrder.datamart_response === "object" ? existingOrder.datamart_response : {}),
+          agent_id: agent.id,
+          agent_profit: agentProfit,
+          store_slug: agent.store_slug,
+          source: "agent",
+        };
+        await db.updateOrderStatus(existingOrder.id, existingOrder.delivery_status, mergedDatamart, {
+          payment_status: "paid",
+          delivery_status: existingOrder.delivery_status,
+        });
+      }
+      return NextResponse.json({
+        success: true,
+        reference,
+        order: existingOrder,
+        agent_order: agentOrder,
+        delivery: existingOrder.datamart_response,
+      });
+    }
 
-    // 3. Create Agent Order and credit wallet
-    const agentOrder = await db.createAgentOrder({
-      agent_id: agent.id,
-      reference,
-      network: network.toLowerCase(),
-      package_size,
-      phone,
-      amount: paidAmount,
-      base_price: baseCost,
-      agent_profit: agentProfit,
-      paystack_ref: finalPaystackRef,
-      payment_status: "paid",
-      delivery_status: "processing",
-      status: "processing",
-    });
-
-    // 4. Create Master Order in system database
-    let masterOrder = await db.getOrderByReference(reference);
+    // 5. Create Master Order in system database if not present
+    let masterOrder = existingOrder || (await db.getOrderByReference(reference));
     if (!masterOrder) {
       masterOrder = await db.createOrder({
         reference,
@@ -141,7 +178,7 @@ export async function POST(
       });
     }
 
-    // 5. Dispatch bundle via DataMart API
+    // 6. Dispatch bundle via DataMart API
     let deliveryResult;
     try {
       deliveryResult = await sendDataMartDelivery({
