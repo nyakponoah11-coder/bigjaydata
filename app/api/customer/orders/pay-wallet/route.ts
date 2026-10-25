@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import { db } from "@/lib/db";
 import { sendDataMartDelivery } from "@/lib/datamart";
 
@@ -12,6 +13,21 @@ export async function POST(req: Request) {
         { success: false, message: "Missing required order parameters." },
         { status: 400 }
       );
+    }
+
+    // Verify customer session from cookie if available
+    const cookieStore = await cookies();
+    const sessionCookie = cookieStore.get("bmgh_customer_session")?.value;
+    if (sessionCookie) {
+      try {
+        const parsed = JSON.parse(sessionCookie);
+        if (parsed?.id && parsed.id !== customer_id) {
+          return NextResponse.json(
+            { success: false, message: "Unauthorized session for this customer account." },
+            { status: 403 }
+          );
+        }
+      } catch {}
     }
 
     const cleanPhone = String(phone).replace(/[^0-9]/g, "");
@@ -37,7 +53,31 @@ export async function POST(req: Request) {
       );
     }
 
-    const orderAmount = Number(amount);
+    // Strict server-side price validation against official catalog base products
+    const norm = (s: string) => (s || "").toLowerCase().replace(/[\s\-_]/g, "");
+    const baseProducts = await db.getAgentBaseProducts();
+    const matched = baseProducts.find(
+      (b) =>
+        (b.network || "").toLowerCase().trim() === (network || "").toLowerCase().trim() &&
+        norm(b.size) === norm(package_size)
+    );
+
+    let requiredAmount = Number(amount);
+    if (matched && Number(matched.base_price) > 0) {
+      const canonicalBase = Number(matched.base_price);
+      if (requiredAmount < canonicalBase - 0.05) {
+        return NextResponse.json(
+          {
+            success: false,
+            message: `Invalid bundle price. ${network.toUpperCase()} ${package_size} costs GHS ${canonicalBase.toFixed(2)}.`,
+          },
+          { status: 400 }
+        );
+      }
+      requiredAmount = Math.max(requiredAmount, canonicalBase);
+    }
+
+    const orderAmount = Number(requiredAmount);
     if (orderAmount <= 0) {
       return NextResponse.json(
         { success: false, message: "Invalid bundle price amount." },

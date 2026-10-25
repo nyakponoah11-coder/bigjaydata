@@ -12,8 +12,11 @@ export function proxy(request: NextRequest) {
     );
   }
 
-  // 2. Protect all /api/admin/* endpoints (except /api/admin/auth)
-  if (pathname.startsWith("/api/admin/") && !pathname.startsWith("/api/admin/auth")) {
+  // 2. Protect all /api/admin/* and /api/datamart/* endpoints
+  if (
+    (pathname.startsWith("/api/admin/") && !pathname.startsWith("/api/admin/auth")) ||
+    pathname.startsWith("/api/datamart/")
+  ) {
     const sessionCookie = request.cookies.get("bmgh_admin_session")?.value;
     const authHeader =
       request.headers.get("authorization") ||
@@ -39,5 +42,5 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/api/admin/:path*", "/api/db/:path*"],
+  matcher: ["/api/admin/:path*", "/api/db/:path*", "/api/datamart/:path*"],
 };

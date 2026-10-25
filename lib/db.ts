@@ -5207,13 +5207,16 @@ export const db = {
     const creditAmount = Number(amount);
     if (isNaN(creditAmount) || creditAmount <= 0) throw new Error("Invalid deposit amount");
 
-    // Check duplicate reference in transactions
-    const txs = await this.getCustomerTransactions(customerId);
-    const existing = txs.find(
+    // Check duplicate reference across ALL transactions to prevent replay across accounts
+    const allTxs = await this.getCustomerTransactions();
+    const existing = allTxs.find(
       (t) => t.reference === reference || (paystackRef && t.paystack_ref === paystackRef)
     );
     if (existing) {
-      return { success: true, customer: cust, new_balance: cust.wallet_balance };
+      if (existing.customer_id === customerId) {
+        return { success: true, customer: cust, new_balance: cust.wallet_balance };
+      }
+      throw new Error("This payment reference has already been credited to another account.");
     }
 
     const newBalance = Number(((cust.wallet_balance || 0) + creditAmount).toFixed(2));

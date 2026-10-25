@@ -1,11 +1,15 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { requireAdminAuth } from "@/lib/admin-auth";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 export async function GET(req: Request) {
   try {
+    const authError = await requireAdminAuth(req);
+    if (authError) return authError;
+
     const [config, products, accounts, allOrders] = await Promise.all([
       db.getDeveloperApiConfig(),
       db.getDeveloperApiProducts(),
@@ -34,6 +38,9 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
+    const authError = await requireAdminAuth(req);
+    if (authError) return authError;
+
     const body = await req.json();
     const { action } = body;
 

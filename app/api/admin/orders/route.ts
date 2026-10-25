@@ -2,12 +2,16 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { sendCustomerSMS } from "@/lib/sms";
 import { sendDataMartDelivery, syncOrderWithDataMart } from "@/lib/datamart";
+import { requireAdminAuth } from "@/lib/admin-auth";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 export async function GET(request: Request) {
   try {
+    const authError = await requireAdminAuth(request);
+    if (authError) return authError;
+
     const { searchParams } = new URL(request.url);
     const date = searchParams.get("date") || undefined;
     const network = searchParams.get("network") || undefined;
@@ -41,6 +45,9 @@ export async function GET(request: Request) {
 
 export async function PATCH(request: Request) {
   try {
+    const authError = await requireAdminAuth(request);
+    if (authError) return authError;
+
     const body = await request.json();
     const {
       order_id,

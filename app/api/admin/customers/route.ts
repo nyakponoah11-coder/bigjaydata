@@ -50,8 +50,13 @@ function cleanPhone(raw: any): { local: string; international: string; network: 
   return { local, international, network };
 }
 
-export async function GET() {
+import { requireAdminAuth } from "@/lib/admin-auth";
+
+export async function GET(req: Request) {
   try {
+    const authError = await requireAdminAuth(req);
+    if (authError) return authError;
+
     const [orders, agentOrders, agents, messages, voucherClaims] = await Promise.all([
       db.getOrders().catch(() => []),
       db.getAgentOrders().catch(() => []),

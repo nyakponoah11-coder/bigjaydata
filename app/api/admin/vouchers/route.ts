@@ -1,8 +1,12 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { requireAdminAuth } from "@/lib/admin-auth";
 
-export async function GET() {
+export async function GET(req: Request) {
   try {
+    const authError = await requireAdminAuth(req);
+    if (authError) return authError;
+
     const [vouchers, claims, customers, allOrders] = await Promise.all([
       db.getVouchers(),
       db.getVoucherClaims(),
@@ -51,6 +55,9 @@ export async function GET() {
 
 export async function POST(req: Request) {
   try {
+    const authError = await requireAdminAuth(req);
+    if (authError) return authError;
+
     const body = await req.json();
     const {
       code,
@@ -162,6 +169,9 @@ export async function POST(req: Request) {
 
 export async function PATCH(req: Request) {
   try {
+    const authError = await requireAdminAuth(req);
+    if (authError) return authError;
+
     const body = await req.json();
     const { id, is_active, all, expires_at } = body;
 
@@ -190,6 +200,9 @@ export async function PATCH(req: Request) {
 
 export async function DELETE(req: Request) {
   try {
+    const authError = await requireAdminAuth(req);
+    if (authError) return authError;
+
     const { searchParams } = new URL(req.url);
     const id = searchParams.get("id");
 

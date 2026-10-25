@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { requireAdminAuth } from "@/lib/admin-auth";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -15,6 +16,9 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    const authError = await requireAdminAuth(request);
+    if (authError) return authError;
+
     const body = await request.json();
     const { network, size, price, cost_price, is_active } = body;
 
@@ -41,6 +45,9 @@ export async function POST(request: Request) {
 
 export async function PATCH(request: Request) {
   try {
+    const authError = await requireAdminAuth(request);
+    if (authError) return authError;
+
     const body = await request.json();
     const { id, ...updates } = body;
 
@@ -62,6 +69,9 @@ export async function PATCH(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
+    const authError = await requireAdminAuth(request);
+    if (authError) return authError;
+
     const { searchParams } = new URL(request.url);
     const id = searchParams.get("id");
 

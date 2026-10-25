@@ -1,9 +1,13 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { sendDataMartDelivery } from "@/lib/datamart";
+import { requireAdminAuth } from "@/lib/admin-auth";
 
 export async function POST(request: Request) {
   try {
+    const authError = await requireAdminAuth(request);
+    if (authError) return authError;
+
     const { order_id, reference } = await request.json();
 
     const order = reference
