@@ -37,14 +37,24 @@ export default async function HomePage() {
   ]);
 
   // White-Label Bounce-Back Protection:
-  // If the visitor accesses through the fastdata/custom agent domain, NEVER let them see BundleMart!
+  // Only redirect if the visitor accesses through an explicitly configured custom white-label agent domain
   const host = (headersList.get("host") || "").toLowerCase();
   const customDomain = config.custom_domain?.toLowerCase().trim();
+  const isMainPlatformHost =
+    host.includes("vercel.app") ||
+    host.includes("bundlemartgh") ||
+    host.includes("bigjaydata") ||
+    host.includes("localhost") ||
+    host.includes("127.0.0.1") ||
+    host.includes("0.0.0.0");
+
   const isWhiteLabelHost =
-    (customDomain && host.includes(customDomain)) ||
-    host.includes("fastdata") ||
-    host.includes("portal") ||
-    (!host.includes("bundlemartgh") && !host.includes("localhost") && !host.includes("127.0.0.1") && !host.includes("0.0.0.0"));
+    !isMainPlatformHost &&
+    Boolean(
+      (customDomain && host.includes(customDomain)) ||
+      host.includes("fastdata") ||
+      host.includes("portal")
+    );
 
   if (isWhiteLabelHost) {
     const cookieStore = await cookies();
