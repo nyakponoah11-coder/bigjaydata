@@ -19,12 +19,9 @@ export async function generateMetadata({
   const decodedRef = decodeURIComponent(reference).trim();
 
   try {
-    const agentOrders = await db.getAgentOrders();
-    const agOrder = agentOrders.find(
-      (ao) => ao.reference.toLowerCase() === decodedRef.toLowerCase()
-    );
+    const agOrder = await db.getAgentOrderByReference(decodedRef);
     if (agOrder) {
-      const agent = await db.getAgentById(agOrder.agent_id);
+      const agent = await db.getAgentById(agOrder.agent_id, false);
       if (agent) {
         return {
           title: `${agent.store_name} | Order Receipt & Status`,
@@ -56,16 +53,13 @@ export default async function ReceiptPage({
   // Check if this order was placed on an agent storefront
   let agent = null;
   try {
-    const agentOrders = await db.getAgentOrders();
-    const agOrder = agentOrders.find(
-      (ao) => ao.reference.toLowerCase() === decodedRef.toLowerCase()
-    );
+    const agOrder = await db.getAgentOrderByReference(decodedRef);
     if (agOrder) {
-      agent = await db.getAgentById(agOrder.agent_id);
+      agent = await db.getAgentById(agOrder.agent_id, false);
     } else if (order?.datamart_response && typeof order.datamart_response === "object") {
       const respAgentId = (order.datamart_response as any).agent_id;
       if (respAgentId) {
-        agent = await db.getAgentById(respAgentId);
+        agent = await db.getAgentById(respAgentId, false);
       }
     }
   } catch (err) {

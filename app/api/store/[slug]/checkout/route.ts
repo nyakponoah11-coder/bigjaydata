@@ -178,23 +178,27 @@ export async function POST(
       });
     }
 
-    // 6. Dispatch bundle via DataMart API
-    let deliveryResult;
-    try {
-      deliveryResult = await sendDataMartDelivery({
-        network: masterOrder.network,
-        package_size: masterOrder.package_size,
-        phone: masterOrder.phone,
-        reference: masterOrder.reference,
-        idempotency_key: masterOrder.reference,
-      });
-    } catch (dmErr: any) {
-      console.error("[DataMart] Agent Store dispatch error:", dmErr);
-      deliveryResult = {
-        success: false,
-        message: dmErr?.message || "Delivery exception",
-        raw_response: { error: String(dmErr) },
-      };
+    // 6. Dispatch bundle via DataMart API (retry transient gateway failures)
+    let deliveryResult: any;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        deliveryResult = await sendDataMartDelivery({
+          network: masterOrder.network,
+          package_size: masterOrder.package_size,
+          phone: masterOrder.phone,
+          reference: masterOrder.reference,
+          idempotency_key: masterOrder.reference,
+        });
+      } catch (dmErr: any) {
+        console.error(`[DataMart] Agent Store dispatch error (attempt ${attempt}):`, dmErr);
+        deliveryResult = {
+          success: false,
+          message: dmErr?.message || "Delivery exception",
+          raw_response: { error: String(dmErr) },
+        };
+      }
+      if (deliveryResult?.success) break;
+      if (attempt < 3) await new Promise((r) => setTimeout(r, 1500 * attempt));
     }
 
     // Once payment is verified, delivery status is either delivered (instant) or processing (telecom fast lane queue).

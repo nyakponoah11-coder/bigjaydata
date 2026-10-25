@@ -2974,7 +2974,7 @@ export const db = {
     return current;
   },
 
-  async getAgentById(id: string): Promise<Agent | null> {
+  async getAgentById(id: string, includeFinances = true): Promise<Agent | null> {
     const cleanId = (id || "").trim();
     if (!cleanId) return null;
     const deletedAgents = new Set(
@@ -2984,6 +2984,10 @@ export const db = {
 
     const all = await this.getAgents();
     let found = all.find((a) => a.id === cleanId || a.store_slug.toLowerCase() === cleanId.toLowerCase()) || null;
+    if (found && !includeFinances) {
+      if (!found.logo_url) found.logo_url = "/agent-icon.png";
+      return found;
+    }
     if (found) {
       try {
         const orders = await this.getAgentOrders(found.id);
@@ -4065,7 +4069,7 @@ export const db = {
       try {
         let query = supabaseAdmin
           .from("agent_orders")
-          .select("*")
+          .select("id, agent_id, reference, network, package_size, phone, amount, base_price, agent_profit, paystack_ref, payment_status, delivery_status, status, created_at")
           .order("created_at", { ascending: false })
           .limit(200);
         if (targetAgentId) {
@@ -4244,6 +4248,53 @@ export const db = {
     }
 
     return finalFullList;
+  },
+
+  async getAgentOrderByReference(reference: string): Promise<AgentOrder | null> {
+    const cleanRef = (reference || "").trim();
+    if (!cleanRef) return null;
+
+    // 1. Check in-memory store first
+    const memFound = (globalStore.__bmgh_agent_orders || []).find(
+      (o) => o.reference?.toLowerCase() === cleanRef.toLowerCase()
+    );
+    if (memFound) return memFound;
+
+    // 2. Query Supabase directly for this single row with low egress
+    if (isSupabaseConfigured && supabaseAdmin) {
+      try {
+        const { data, error } = await supabaseAdmin
+          .from("agent_orders")
+          .select("*")
+          .ilike("reference", cleanRef)
+          .maybeSingle();
+        if (!error && data) {
+          const mapped: AgentOrder = {
+            id: data.id,
+            agent_id: data.agent_id,
+            reference: data.reference,
+            network: data.network,
+            package_size: data.package_size,
+            phone: data.phone,
+            amount: Number(data.amount),
+            base_price: Number(data.base_price),
+            agent_profit: Number(data.agent_profit),
+            paystack_ref: data.paystack_ref,
+            payment_status: data.payment_status || "paid",
+            delivery_status: data.delivery_status || "pending",
+            status: data.status || "pending",
+            datamart_response: data.datamart_response,
+            created_at: data.created_at,
+          };
+          if (!globalStore.__bmgh_agent_orders) globalStore.__bmgh_agent_orders = [];
+          globalStore.__bmgh_agent_orders.unshift(mapped);
+          return mapped;
+        }
+      } catch (err) {
+        console.warn("getAgentOrderByReference error:", err);
+      }
+    }
+    return null;
   },
 
   async createAgentOrder(orderData: Omit<AgentOrder, "id" | "created_at">): Promise<AgentOrder> {

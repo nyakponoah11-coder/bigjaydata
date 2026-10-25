@@ -146,7 +146,7 @@ export default function ReceiptClientView({ initialOrder, reference, settings, b
           className={`p-6 sm:p-8 text-center text-white ${
             isDelivered
               ? "bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700"
-              : isPending
+              : isPending || isFailed
               ? "bg-gradient-to-r from-amber-500 to-amber-600"
               : "bg-gradient-to-r from-red-600 to-rose-700"
           }`}
@@ -154,7 +154,7 @@ export default function ReceiptClientView({ initialOrder, reference, settings, b
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-white/20 backdrop-blur-md mb-4 shadow-inner">
             {isDelivered ? (
               <CheckCircle2 className="w-9 h-9 text-white" />
-            ) : isPending ? (
+            ) : isPending || isFailed ? (
               <Clock className="w-9 h-9 text-white animate-spin" />
             ) : (
               <AlertTriangle className="w-9 h-9 text-white" />
@@ -166,7 +166,9 @@ export default function ReceiptClientView({ initialOrder, reference, settings, b
               ? "Data Delivered Successfully!"
               : isPending
               ? "Processing Your Data Delivery..."
-              : "Data Delivery Requires Manual Check"}
+              : isFailed
+              ? "Your Data Is Being Processed"
+              : "Order Refunded"}
           </h1>
 
           <p className="mt-2 text-xs sm:text-sm text-white/90 max-w-md mx-auto">
@@ -174,8 +176,10 @@ export default function ReceiptClientView({ initialOrder, reference, settings, b
               <span>Your line has been credited with high-speed internet data.</span>
             ) : isPending ? (
               <span>Your bundle is dispatching through automated telecom gateway.</span>
+            ) : isFailed ? (
+              <span>Payment confirmed. Your bundle is queued and will be credited shortly.</span>
             ) : (
-              <span>Automatic dispatch failed. Our admin team will push your package manually.</span>
+              <span>This order has been refunded.</span>
             )}
           </p>
 
@@ -219,9 +223,11 @@ export default function ReceiptClientView({ initialOrder, reference, settings, b
               <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
               <div>
                 <strong className="block font-bold mb-0.5 text-rose-800">
-                  🙏 Apologies for the Delay
+                  {isFailed ? "⏳ Almost There" : "Refund Processed"}
                 </strong>
-                The telco gateway reported a momentary delay. Please don&apos;t worry—your payment is confirmed and our 24/7 human team has been alerted to push your data manually immediately. You can also tap WhatsApp support below.
+                {isFailed
+                  ? "The telco gateway reported a momentary delay. Please don't worry—your payment is confirmed and our 24/7 team has been alerted to dispatch your data shortly. You can also tap WhatsApp support below."
+                  : "Your payment for this order has been refunded."}
               </div>
             </div>
           )}

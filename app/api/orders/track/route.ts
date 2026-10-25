@@ -25,10 +25,7 @@ export async function GET(request: Request) {
 
     // If not found in master orders, search in agent orders
     if (!order) {
-      const agentOrders = await db.getAgentOrders();
-      const agOrder = agentOrders.find(
-        (ao) => ao.reference.toLowerCase() === trimmed.toLowerCase()
-      );
+      const agOrder = await db.getAgentOrderByReference(trimmed);
       if (agOrder) {
         order = {
           id: agOrder.id,
@@ -108,12 +105,16 @@ export async function POST(request: Request) {
 
     // 2. If not found in master orders, search agent orders
     if (!order) {
-      const agentOrders = await db.getAgentOrders();
-      const agOrder = agentOrders.find(
-        (ao) =>
-          ao.reference.toLowerCase() === query.toLowerCase() ||
-          ao.phone.replace(/[^0-9]/g, "").endsWith(query.replace(/[^0-9]/g, "").slice(-9))
-      );
+      let agOrder = await db.getAgentOrderByReference(query);
+      if (!agOrder) {
+        const cleanPhone = query.replace(/[^0-9]/g, "");
+        if (cleanPhone.length >= 9) {
+          const agentOrders = await db.getAgentOrders();
+          agOrder = agentOrders.find(
+            (ao) => ao.phone.replace(/[^0-9]/g, "").endsWith(cleanPhone.slice(-9))
+          ) || null;
+        }
+      }
       if (agOrder) {
         order = {
           id: agOrder.id,
