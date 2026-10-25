@@ -1,8 +1,11 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { sendDataMartDelivery, formatGhanaPhone } from "@/lib/datamart";
+import { requireAdminAuth } from "@/lib/admin-auth";
 
 export async function POST(req: Request) {
+  const authErr = await requireAdminAuth(req);
+  if (authErr) return authErr;
   try {
     const body = await req.json();
     const { phone, network, package_size, note } = body;

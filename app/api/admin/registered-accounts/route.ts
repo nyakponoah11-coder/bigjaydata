@@ -1,10 +1,13 @@
 import { NextResponse } from "next/server";
 import { db, Customer } from "@/lib/db";
+import { requireAdminAuth } from "@/lib/admin-auth";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-export async function GET() {
+export async function GET(req: Request) {
+  const authErr = await requireAdminAuth(req);
+  if (authErr) return authErr;
   try {
     const [customers, orders, transactions] = await Promise.all([
       db.getCustomers().catch(() => []),
@@ -75,6 +78,8 @@ export async function GET() {
 }
 
 export async function PATCH(req: Request) {
+  const authErr = await requireAdminAuth(req);
+  if (authErr) return authErr;
   try {
     const body = await req.json();
     const { customer_id, action, amount, reason, is_active } = body;
@@ -160,6 +165,8 @@ export async function PATCH(req: Request) {
 }
 
 export async function DELETE(req: Request) {
+  const authErr = await requireAdminAuth(req);
+  if (authErr) return authErr;
   try {
     const { searchParams } = new URL(req.url);
     let customerId = searchParams.get("customer_id") || searchParams.get("id");

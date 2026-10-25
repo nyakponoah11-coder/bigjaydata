@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { bigjdb, CORE_TABLES } from "@/lib/bigjdb";
 import { supabaseAdmin, isSupabaseConfigured } from "@/lib/supabase";
+import { requireAdminAuth } from "@/lib/admin-auth";
 
 async function getLiveTableStats() {
   const stats = bigjdb.getStats();
@@ -31,6 +32,8 @@ async function getLiveTableStats() {
 }
 
 export async function GET(req: Request) {
+  const authErr = await requireAdminAuth(req);
+  if (authErr) return authErr;
   try {
     const { searchParams } = new URL(req.url);
     const action = searchParams.get("action") || "stats";
@@ -101,6 +104,8 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
+  const authErr = await requireAdminAuth(req);
+  if (authErr) return authErr;
   try {
     const body = await req.json().catch(() => ({}));
     const action = body.action || "stats";

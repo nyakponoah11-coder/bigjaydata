@@ -46,6 +46,12 @@ export default function AdminLayout({ children }: Props) {
     const token = localStorage.getItem("bundlemart_admin_auth") || localStorage.getItem("bigj_admin_auth");
     if (token) {
       setIsAuthenticated(true);
+      // Ensure backend session cookie is synced seamlessly
+      fetch("/api/admin/auth", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tokenSync: token }),
+      }).catch(() => {});
     } else {
       setIsAuthenticated(false);
     }
@@ -82,9 +88,12 @@ export default function AdminLayout({ children }: Props) {
     }
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     localStorage.removeItem("bundlemart_admin_auth");
     localStorage.removeItem("bigj_admin_auth");
+    try {
+      await fetch("/api/admin/auth?logout=1", { method: "POST" });
+    } catch {}
     setIsAuthenticated(false);
   };
 

@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { sendSuspensionEmail, sendPasswordResetEmail } from "@/lib/email";
+import { requireAdminAuth } from "@/lib/admin-auth";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 export async function GET(req: Request) {
+  const authErr = await requireAdminAuth(req);
+  if (authErr) return authErr;
   try {
     const { searchParams } = new URL(req.url);
     if (searchParams.get("reset_all") === "1" || searchParams.get("reset_all_finances") === "true") {
@@ -97,6 +100,8 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
+  const authErr = await requireAdminAuth(req);
+  if (authErr) return authErr;
   try {
     const body = await req.json();
     const { action } = body;
