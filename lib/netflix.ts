@@ -53,6 +53,7 @@ export async function getNetflixConfig() {
   const isEnabled = settings.netflix_enabled !== false;
   const retailPrice = Number(settings.netflix_price) > 0 ? Number(settings.netflix_price) : 25;
   const agentBasePrice = Number(settings.netflix_agent_base_price) > 0 ? Number(settings.netflix_agent_base_price) : 18;
+  const wholesaleCost = 15;
   const fallbackBalance = settings.netflix_balance !== undefined ? Number(settings.netflix_balance) : 0;
 
   return {
@@ -297,7 +298,46 @@ export async function testNetflixConnection(customKey?: string) {
   }
 
   try {
-    // Send request to status endpoint to verify authorization
+    // 1. Try querying partner info endpoint first
+    try {
+      const infoRes = await fetch("https://www.data1gh.com/api/partner/info", {
+        method: "GET",
+        headers: {
+          "x-api-key": keyToTest,
+          "Accept": "application/json",
+        },
+        cache: "no-store",
+        signal: AbortSignal.timeout(6000),
+      });
+
+      const infoData = await infoRes.json().catch(() => ({}));
+      const bal =
+        infoData.partner?.wallet_balance ??
+        infoData.partner?.balance ??
+        infoData.wallet_balance ??
+        infoData.balance ??
+        infoData.data?.wallet_balance ??
+        infoData.data?.balance;
+
+      if (infoRes.ok && (infoData.status === "success" || infoData.partner || bal !== undefined)) {
+        const partnerName = infoData.partner?.name ?? infoData.name ?? "Bigjay";
+        const balNum = bal !== undefined && !isNaN(Number(bal)) ? Number(bal) : null;
+        if (balNum !== null) {
+          db.updateSettings({ netflix_balance: balNum }).catch(() => {});
+        }
+        return {
+          success: true,
+          message: `Data1 Netflix API connected successfully! Authenticated as ${partnerName}.${balNum !== null ? ` Live Wallet Balance: GH₵ ${balNum.toFixed(2)}` : ""}`,
+          partner: partnerName,
+          wholesale_rate: "GH₵ 15 per 30-day access",
+          balance: balNum ?? undefined,
+        };
+      }
+    } catch (e) {
+      // Continue to status endpoint fallback
+    }
+
+    // 2. Fallback to status endpoint check
     const res = await fetch(`${config.apiUrl}/status`, {
       method: "POST",
       headers: {
@@ -305,6 +345,7 @@ export async function testNetflixConnection(customKey?: string) {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({}),
+      signal: AbortSignal.timeout(6000),
     });
 
     const data = await res.json().catch(() => ({}));

@@ -176,6 +176,14 @@ export default function AdminNetflixPage() {
         success: data.success,
         message: data.message || (data.success ? "Connection established!" : "Connection failed."),
       });
+      if (data.success && data.balance !== undefined) {
+        const b = Number(data.balance);
+        setBalance(b);
+        setManualBalanceInput(b.toFixed(2));
+      }
+      if (data.partner) {
+        setPartnerName(data.partner);
+      }
     } catch (err: any) {
       setTestResult({ success: false, message: err?.message || "Test failed." });
     } finally {
