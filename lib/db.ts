@@ -152,6 +152,9 @@ export interface Settings {
   netflix_price?: number;
   netflix_agent_base_price?: number;
   netflix_balance?: number;
+  whatsapp_security_phone?: string;
+  whatsapp_security_webhook?: string;
+  whatsapp_callmebot_apikey?: string;
   created_at?: string;
   updated_at?: string;
 }
