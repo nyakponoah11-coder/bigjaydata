@@ -18,11 +18,11 @@ export async function POST(request: Request) {
 
     const isNetflix = (network || "").toLowerCase() === "netflix" || service_type === "netflix";
 
-    // Security check: Block any demo or mock references from receiving live bundle deliveries
-    if (!paystack_ref || paystack_ref.startsWith("demo_") || paystack_ref.startsWith("test_")) {
+    // Security check: Block any demo, sim, or mock references from receiving live bundle deliveries
+    if (!paystack_ref || paystack_ref.startsWith("demo_") || paystack_ref.startsWith("test_") || paystack_ref.startsWith("sim_")) {
       console.warn(`[Security Block] Rejected unverified/demo order attempt: ref=${reference}, paystack_ref=${paystack_ref}`);
       return NextResponse.json(
-        { success: false, message: "Invalid or demo payment reference. Orders cannot be fulfilled without verified payment." },
+        { success: false, message: "Invalid payment reference. Orders cannot be fulfilled without verified payment." },
         { status: 400 }
       );
     }
@@ -35,28 +35,18 @@ export async function POST(request: Request) {
       verification = await verifyPaystackTransaction(paystack_ref);
     }
 
+    // STRICT ZERO-TOLERANCE CHECK: If Paystack verification did not succeed, IMMEDIATELY BLOCK
     if (!verification.success) {
-      const settings = await db.getSettings();
-      const secretKey = settings.paystack_secret_key || process.env.PAYSTACK_SECRET_KEY || "";
-      const isTestOrUnconfigured =
-        !secretKey ||
-        secretKey.length < 20 ||
-        secretKey.includes("sample") ||
-        secretKey.includes("placeholder") ||
-        secretKey.startsWith("sk_test_");
-
-      if (!isTestOrUnconfigured && !paystack_ref.startsWith("sim_") && !paystack_ref.startsWith("test_")) {
-        console.error(`[Security Block] Paystack verification failed for ${paystack_ref}:`, verification.message);
-        return NextResponse.json(
-          { success: false, message: `Payment verification failed: ${verification.message}` },
-          { status: 402 }
-        );
-      }
+      console.error(`[Security Block] Paystack verification failed for ${paystack_ref}:`, verification.message);
+      return NextResponse.json(
+        { success: false, message: `Payment verification failed: ${verification.message}. Delivery aborted.` },
+        { status: 402 }
+      );
     }
 
     // Verify paid amount matches expected price (with small rounding margin)
     const expectedAmount = Number(amount);
-    if (verification.success && verification.amount > 0 && verification.amount < expectedAmount - 0.05) {
+    if (verification.amount <= 0 || verification.amount < expectedAmount - 0.05) {
       console.error(`[Security Block] Underpaid: expected GHS ${expectedAmount}, received GHS ${verification.amount}`);
       return NextResponse.json(
         { success: false, message: "Paid amount does not match package price." },

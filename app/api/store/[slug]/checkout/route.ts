@@ -82,42 +82,39 @@ export async function POST(
 
     const agentProfit = Math.max(0, Number((paidAmount - baseCost).toFixed(2)));
 
-    // 2. Paystack verification with automatic fallback for test/configuration modes
-    let finalPaystackRef = paystack_ref || `PST-${Date.now()}`;
-    let isVerified = false;
-
-    if (paystack_ref) {
-      try {
-        const verification = await verifyPaystackTransaction(paystack_ref);
-        if (verification.success) {
-          isVerified = true;
-          finalPaystackRef = verification.reference || paystack_ref;
-        } else {
-          // If Paystack keys are unconfigured or in test mode, allow graceful fallback
-          const settings = await db.getSettings();
-          const secretKey = settings.paystack_secret_key || process.env.PAYSTACK_SECRET_KEY || "";
-          const isTestOrUnconfigured =
-            !secretKey ||
-            secretKey.length < 20 ||
-            secretKey.includes("sample") ||
-            secretKey.includes("placeholder") ||
-            secretKey.startsWith("sk_test_");
-
-          if (isTestOrUnconfigured || paystack_ref.startsWith("test_") || paystack_ref.startsWith("demo_") || paystack_ref.startsWith("sim_")) {
-            console.log(`[Checkout] Test/Fallback mode accepted for ref ${reference} (paystack_ref: ${paystack_ref})`);
-            isVerified = true;
-          } else {
-            console.warn(`[Checkout] Paystack verify warning (${verification.message}). Proceeding with delivery fallback.`);
-            isVerified = true;
-          }
-        }
-      } catch (vErr) {
-        console.warn("[Checkout] Verification exception, proceeding with delivery fallback:", vErr);
-        isVerified = true;
-      }
-    } else {
-      isVerified = true;
+    // 2. Paystack verification - STRICT ZERO-TOLERANCE
+    if (!paystack_ref || paystack_ref.startsWith("demo_") || paystack_ref.startsWith("test_") || paystack_ref.startsWith("sim_")) {
+      console.warn(`[Security Block] Agent checkout rejected unverified/demo ref: ${reference}, paystack_ref: ${paystack_ref}`);
+      return NextResponse.json(
+        { success: false, message: "Valid payment reference is required to complete purchase." },
+        { status: 400 }
+      );
     }
+
+    let verification = await verifyPaystackTransaction(paystack_ref);
+    if (!verification.success) {
+      await new Promise((resolve) => setTimeout(resolve, 1200));
+      verification = await verifyPaystackTransaction(paystack_ref);
+    }
+
+    if (!verification.success) {
+      console.error(`[Security Block] Agent checkout payment verification failed for ${paystack_ref}:`, verification.message);
+      return NextResponse.json(
+        { success: false, message: `Payment verification failed: ${verification.message}. Delivery aborted.` },
+        { status: 402 }
+      );
+    }
+
+    // Verify paid amount matches expected price
+    if (verification.amount <= 0 || verification.amount < paidAmount - 0.05) {
+      console.error(`[Security Block] Agent checkout underpaid: expected GHS ${paidAmount}, received GHS ${verification.amount}`);
+      return NextResponse.json(
+        { success: false, message: "Paid amount does not match package price." },
+        { status: 400 }
+      );
+    }
+
+    const finalPaystackRef = verification.reference || paystack_ref;
 
     // 3. Check if master order already processed by Paystack webhook
     let existingOrder = await db.getOrderByReference(reference);

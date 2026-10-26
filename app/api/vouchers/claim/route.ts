@@ -92,33 +92,9 @@ export async function POST(req: Request) {
     const customer = await db.getCustomerByPhone(formattedPhone);
     const customerName = customer?.name || "Customer";
 
-    // 3. Dispatch data delivery via DataMart
     const orderRef = `BMGH-FREE-${Date.now().toString().slice(-6)}`;
-    const dmResult = await sendDataMartDelivery({
-      phone: formattedPhone,
-      network: voucher.network.toLowerCase(),
-      package_size: voucher.package_size,
-      reference: orderRef,
-    });
 
-    // 4. Save order to database
-    await db.createOrder({
-      reference: orderRef,
-      network: voucher.network.toLowerCase(),
-      package_size: voucher.package_size,
-      phone: formattedPhone,
-      amount: 0,
-      paystack_ref: null,
-      payment_status: "voucher_free",
-      delivery_status: dmResult.success ? "delivered" : "processing",
-      status: dmResult.success ? "delivered" : "pending",
-      datamart_response: dmResult.raw_response || {
-        message: dmResult.message,
-        voucher_code: voucher.code,
-      },
-    });
-
-    // 5. Record voucher claim and update voucher claim count
+    // 3. Atomically record voucher claim first to prevent race condition double-claims
     await db.recordVoucherClaim({
       voucher_id: voucher.id,
       voucher_code: voucher.code,
@@ -130,6 +106,42 @@ export async function POST(req: Request) {
       package_size: voucher.package_size,
       order_reference: orderRef,
     });
+
+    // 4. Save order record in database
+    const createdOrder = await db.createOrder({
+      reference: orderRef,
+      network: voucher.network.toLowerCase(),
+      package_size: voucher.package_size,
+      phone: formattedPhone,
+      amount: 0,
+      paystack_ref: null,
+      payment_status: "voucher_free",
+      delivery_status: "processing",
+      status: "pending",
+      datamart_response: {
+        status: "processing",
+        voucher_code: voucher.code,
+      },
+    });
+
+    // 5. Dispatch data delivery via DataMart
+    let dmResult: any;
+    try {
+      dmResult = await sendDataMartDelivery({
+        phone: formattedPhone,
+        network: voucher.network.toLowerCase(),
+        package_size: voucher.package_size,
+        reference: orderRef,
+      });
+
+      const finalStatus = dmResult.success ? "delivered" : "processing";
+      await db.updateOrderStatus(createdOrder.id, finalStatus, dmResult.raw_response || dmResult, {
+        delivery_status: finalStatus,
+      });
+    } catch (dmErr: any) {
+      console.error("[Voucher Delivery Exception]:", dmErr);
+      dmResult = { success: false, message: dmErr?.message || "Delivery gateway communication error" };
+    }
 
     return NextResponse.json({
       success: true,

@@ -100,7 +100,7 @@ export async function POST(req: Request) {
         );
       }
 
-      if (pending.code !== cleanCode && cleanCode !== "123456") {
+      if (pending.code !== cleanCode) {
         return NextResponse.json(
           { success: false, message: "Invalid verification code. Please double-check and try again." },
           { status: 400 }

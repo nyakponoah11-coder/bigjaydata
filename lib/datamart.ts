@@ -17,8 +17,6 @@ export interface DataMartResult {
   raw_response?: any;
 }
 
-export const ACTIVE_DATAMART_KEY = "795632a59e3748a1ec40a06841f010690f3d10e8250e41e0252c56c32efe7133";
-
 export async function resolveDatamartKeys(): Promise<string[]> {
   const keys: string[] = [];
   try {
@@ -33,9 +31,6 @@ export async function resolveDatamartKeys(): Promise<string[]> {
     !keys.includes(process.env.DATAMART_API_KEY.trim())
   ) {
     keys.push(process.env.DATAMART_API_KEY.trim());
-  }
-  if (!keys.includes(ACTIVE_DATAMART_KEY)) {
-    keys.push(ACTIVE_DATAMART_KEY);
   }
   return keys;
 }
@@ -210,7 +205,7 @@ export async function sendDataMartDelivery(params: DataMartDeliveryParams): Prom
   try {
     const settings = await db.getSettings();
     const keys = await resolveDatamartKeys();
-    const apiKey = keys[0] || ACTIVE_DATAMART_KEY;
+    const apiKey = keys[0] || "";
     const purchaseUrl = resolvePurchaseUrl(settings.datamart_api_url || process.env.DATAMART_API_URL);
 
     const formattedPhone = formatGhanaPhone(params.phone);
@@ -298,40 +293,7 @@ export async function sendDataMartDelivery(params: DataMartDeliveryParams): Prom
       }
     }
 
-    // If auth failed on user-provided key, immediately attempt with ACTIVE_DATAMART_KEY fallback
-    if (
-      !response.ok &&
-      apiKey !== ACTIVE_DATAMART_KEY &&
-      (response.status === 401 ||
-        response.status === 403 ||
-        responseData?.message?.toLowerCase().includes("key") ||
-        responseData?.message?.toLowerCase().includes("unauthorized"))
-    ) {
-      console.log(`[DataMart API] Key failed with status ${response.status}. Retrying with active system key fallback...`);
-      try {
-        const fbHeaders = {
-          ...baseHeaders,
-          "X-API-Key": ACTIVE_DATAMART_KEY,
-          "Authorization": `Bearer ${ACTIVE_DATAMART_KEY}`,
-          "X-Idempotency-Key": crypto.randomUUID(),
-        };
-        const fbResponse = await fetch(purchaseUrl, {
-          method: "POST",
-          headers: fbHeaders,
-          body: JSON.stringify(requestBody),
-        });
-        const fbText = await fbResponse.text();
-        let fbData: any = null;
-        try { fbData = JSON.parse(fbText); } catch { fbData = { text: fbText }; }
-        if (fbResponse.ok && (fbData?.status === "success" || fbData?.data?.purchaseId)) {
-          response = fbResponse;
-          responseText = fbText;
-          responseData = fbData;
-        }
-      } catch (fbErr) {
-        console.warn("[DataMart API] System key fallback error:", fbErr);
-      }
-    }
+
 
     // If rejected due to string capacity, attempt with numeric capacity
     if (!response.ok && (responseData?.message?.toLowerCase().includes("capacity") || response.status === 400)) {
@@ -431,7 +393,7 @@ export async function fetchDataMartBalance(): Promise<DataMartBalanceResult> {
   try {
     const settings = await db.getSettings();
     const keys = await resolveDatamartKeys();
-    const apiKey = keys[0] || ACTIVE_DATAMART_KEY;
+    const apiKey = keys[0] || "";
     const devBaseUrl = resolveDeveloperBaseUrl(settings.datamart_api_url || process.env.DATAMART_API_URL);
 
     if (!apiKey) {
@@ -495,7 +457,7 @@ export async function verifyDataMartNumber(phoneNumber: string): Promise<NumberV
   try {
     const settings = await db.getSettings();
     const keys = await resolveDatamartKeys();
-    const apiKey = keys[0] || ACTIVE_DATAMART_KEY;
+    const apiKey = keys[0] || "";
     const devBaseUrl = resolveDeveloperBaseUrl(settings.datamart_api_url || process.env.DATAMART_API_URL);
 
     if (!apiKey) {
@@ -574,7 +536,7 @@ export async function testDataMartConnection(customApiKey?: string, customApiUrl
   try {
     const settings = await db.getSettings();
     const keys = await resolveDatamartKeys();
-    const apiKey = (customApiKey || keys[0] || ACTIVE_DATAMART_KEY).trim();
+    const apiKey = (customApiKey || keys[0] || "").trim();
     const devBaseUrl = resolveDeveloperBaseUrl(customApiUrl || settings.datamart_api_url || process.env.DATAMART_API_URL);
     const purchaseUrl = resolvePurchaseUrl(customApiUrl || settings.datamart_api_url || process.env.DATAMART_API_URL);
 
@@ -1144,7 +1106,7 @@ export async function fetchDeliveryTracker(): Promise<DeliveryTrackerData> {
 
   const settings = await db.getSettings();
   const keys = await resolveDatamartKeys();
-  const apiKey = keys[0] || ACTIVE_DATAMART_KEY;
+  const apiKey = keys[0] || "";
 
   try {
     const [trackerRes, statusRes] = await Promise.all([

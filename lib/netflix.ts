@@ -33,7 +33,7 @@ export interface NetflixFetchCodeResult {
 }
 
 const DEFAULT_NETFLIX_API_URL = "https://www.data1gh.com/api/partner/netflix";
-const DEFAULT_NETFLIX_API_KEY = "d1_live_nf_bigjay_1zwxy0f7zqi3";
+const DEFAULT_NETFLIX_API_KEY = "";
 
 export interface NetflixPartnerInfoResult {
   success: boolean;
@@ -48,7 +48,7 @@ export interface NetflixPartnerInfoResult {
 
 export async function getNetflixConfig() {
   const settings = await db.getSettings();
-  const apiKey = (settings.netflix_api_key || process.env.DATA1_NETFLIX_API_KEY || DEFAULT_NETFLIX_API_KEY).trim();
+  const apiKey = (settings.netflix_api_key || process.env.DATA1_NETFLIX_API_KEY || "").trim();
   const apiUrl = (settings.netflix_api_url || DEFAULT_NETFLIX_API_URL).trim().replace(/\/+$/, "");
   const isEnabled = settings.netflix_enabled !== false;
   const retailPrice = Number(settings.netflix_price) > 0 ? Number(settings.netflix_price) : 25;
