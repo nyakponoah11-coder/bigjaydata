@@ -51,27 +51,35 @@ export async function POST(req: Request) {
     }
 
     // 2. Dispatch to customer phone via SMS
+    let smsSent = false;
     if (customer.phone) {
       try {
         const { sendCustomerSMS } = await import("@/lib/sms");
-        await sendCustomerSMS({
+        const smsRes = await sendCustomerSMS({
           phone: customer.phone,
           message: `Your Big Jay Data verification code is: ${code}. Valid for 10 minutes.`,
         });
+        smsSent = Boolean(smsRes.success && !smsRes.isFallback);
       } catch (smsErr) {
         console.warn("Failed to dispatch verification SMS:", smsErr);
       }
     }
 
     console.log(
-      `[Customer Auth OTP] Generated code ${code} for ${customer.phone} / ${customer.email || "No email"}`
+      `[Customer Auth OTP] Generated code ${code} for ${customer.phone} / ${customer.email || "No email"} (emailSent=${emailSent}, smsSent=${smsSent})`
     );
 
     return NextResponse.json({
       success: true,
-      message: customer.email && customer.phone
-        ? `A 6-digit verification code was sent to your registered email (${customer.email}) and phone (${customer.phone}).`
-        : `A 6-digit verification code was sent to your registered contact.`,
+      email_sent: emailSent,
+      sms_sent: smsSent,
+      verification_code: !emailSent ? code : undefined,
+      dev_code: !emailSent ? code : undefined,
+      message: emailSent
+        ? (customer.email && customer.phone
+            ? `A 6-digit verification code was sent to your registered email (${customer.email}) and phone (${customer.phone}).`
+            : `A 6-digit verification code was sent to your registered contact.`)
+        : `Email gateway is not configured yet. Your verification code is ${code}. It has been auto-filled below.`,
     });
   } catch (error: any) {
     console.error("Send verification code error:", error);

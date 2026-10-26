@@ -8,6 +8,7 @@ export interface SMSResult {
   success: boolean;
   message: string;
   sms_id?: string;
+  isFallback?: boolean;
 }
 
 /**
@@ -33,6 +34,7 @@ export async function sendCustomerSMS({ phone, message, senderId = "BigJayData" 
       success: true,
       message: "SMS simulated (no API key configured)",
       sms_id: "SIM-" + Date.now(),
+      isFallback: true,
     };
   }
 
@@ -58,6 +60,7 @@ export async function sendCustomerSMS({ phone, message, senderId = "BigJayData" 
         success: true,
         message: "SMS dispatched successfully",
         sms_id: data?.data?.sms_id || "ARK-" + Date.now(),
+        isFallback: false,
       };
     }
 

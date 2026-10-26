@@ -107,17 +107,19 @@ export async function POST(req: Request) {
     }
 
     // 2. Dispatch SMS verification code to customer phone
+    let smsSent = false;
     try {
       const { sendCustomerSMS } = await import("@/lib/sms");
-      await sendCustomerSMS({
+      const smsRes = await sendCustomerSMS({
         phone: cleanPhone,
         message: `Your Big Jay Data verification code is: ${verificationCode}. Valid for 10 minutes.`,
       });
+      smsSent = Boolean(smsRes.success && !smsRes.isFallback);
     } catch (smsErr) {
       console.warn("Failed to dispatch sign-up SMS:", smsErr);
     }
 
-    console.log(`[Customer Register] New account created for ${cleanName} (${cleanPhone}). Verification Code: ${verificationCode}`);
+    console.log(`[Customer Register] New account created for ${cleanName} (${cleanPhone}). Verification Code: ${verificationCode} (emailSent=${emailSent}, smsSent=${smsSent})`);
 
     return NextResponse.json({
       success: true,
@@ -126,7 +128,13 @@ export async function POST(req: Request) {
       phone: newCustomer.phone,
       email: newCustomer.email,
       name: newCustomer.name,
-      message: `Account created! We've sent a 6-digit verification code to your email (${cleanEmail}) and phone (${cleanPhone}). Please check your inbox or SMS to verify.`,
+      email_sent: emailSent,
+      sms_sent: smsSent,
+      verification_code: !emailSent ? verificationCode : undefined,
+      dev_code: !emailSent ? verificationCode : undefined,
+      message: emailSent
+        ? `Account created! We've sent a 6-digit verification code to your email (${cleanEmail}). Please check your inbox or spam folder.`
+        : `Account created! Outbound email service is not configured yet, so your verification code is ${verificationCode}. It has been auto-filled below for instant verification.`,
     });
   } catch (error: any) {
     console.error("Customer register error:", error);

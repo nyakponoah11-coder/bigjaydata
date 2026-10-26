@@ -55,21 +55,25 @@ export async function POST(req: Request) {
       });
 
       // 1. Dispatch via Email
+      let emailSent = false;
       if (customer.email) {
         try {
           const { sendCustomerVerificationEmail } = await import("@/lib/email");
-          await sendCustomerVerificationEmail(customer.email, customer.name, code, "login");
+          const emailRes = await sendCustomerVerificationEmail(customer.email, customer.name, code, "login");
+          emailSent = Boolean(emailRes.success && !emailRes.isFallback);
         } catch {}
       }
 
       // 2. Dispatch via SMS
+      let smsSent = false;
       if (customer.phone) {
         try {
           const { sendCustomerSMS } = await import("@/lib/sms");
-          await sendCustomerSMS({
+          const smsRes = await sendCustomerSMS({
             phone: customer.phone,
             message: `Your Big Jay Data verification code is: ${code}. Valid for 10 minutes.`,
           });
+          smsSent = Boolean(smsRes.success && !smsRes.isFallback);
         } catch {}
       }
 
@@ -79,7 +83,13 @@ export async function POST(req: Request) {
         customer_id: customer.id,
         phone: customer.phone,
         email: customer.email,
-        message: `Your account is not verified yet. Please enter the 6-digit verification code sent to your email (${customer.email}) and phone (${customer.phone}) to activate and sign in.`,
+        email_sent: emailSent,
+        sms_sent: smsSent,
+        verification_code: !emailSent ? code : undefined,
+        dev_code: !emailSent ? code : undefined,
+        message: emailSent
+          ? `Your account is not verified yet. Please enter the 6-digit verification code sent to your email (${customer.email}).`
+          : `Your account is not verified yet. Your verification code is ${code}. It has been auto-filled below.`,
       });
     }
 

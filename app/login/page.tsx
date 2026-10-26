@@ -57,6 +57,7 @@ export default function CustomerLoginPage() {
   // Verification Code State
   const [customerId, setCustomerId] = useState("");
   const [verificationCode, setVerificationCode] = useState("");
+  const [emailSent, setEmailSent] = useState(false);
   const [resendCooldown, setResendCooldown] = useState(0);
 
   const [loading, setLoading] = useState(false);
@@ -119,7 +120,13 @@ export default function CustomerLoginPage() {
       // If account requires 6-digit verification code
       if (data.requires_verification) {
         setCustomerId(data.customer_id);
-        setVerificationCode("");
+        const returnedCode = data.dev_code || data.verification_code;
+        setEmailSent(Boolean(data.email_sent));
+        if (returnedCode) {
+          setVerificationCode(returnedCode);
+        } else {
+          setVerificationCode("");
+        }
         setInfoNotice(data.message || "Please enter the 6-digit verification code sent to your email.");
         setResendCooldown(30);
         setMode("verify");
@@ -162,7 +169,13 @@ export default function CustomerLoginPage() {
         throw new Error(data.message || "Could not find an account with that number or email.");
       }
 
-      setVerificationCode("");
+      const returnedCode = data.dev_code || data.verification_code;
+      setEmailSent(Boolean(data.email_sent));
+      if (returnedCode) {
+        setVerificationCode(returnedCode);
+      } else {
+        setVerificationCode("");
+      }
       setInfoNotice(data.message || "Verification code sent to your registered email.");
       setResendCooldown(30);
       setMode("verify");
@@ -425,16 +438,35 @@ export default function CustomerLoginPage() {
           {/* MODE 2: VERIFICATION CODE ENTRY */}
           {mode === "verify" && (
             <div className="space-y-5">
-              {/* Email Sent Notice */}
-              <div className="p-3.5 rounded-2xl bg-amber-400/10 border border-amber-400/30 text-amber-200 text-xs flex items-center gap-3">
-                <Mail className="w-5 h-5 text-amber-400 shrink-0" />
-                <div>
-                  <p className="font-semibold text-white">Verification Code Sent via Email</p>
+              {/* Status Notice */}
+              {emailSent ? (
+                <div className="p-3.5 rounded-2xl bg-amber-400/10 border border-amber-400/30 text-amber-200 text-xs flex items-center gap-3">
+                  <Mail className="w-5 h-5 text-amber-400 shrink-0" />
+                  <div>
+                    <p className="font-semibold text-white">Verification Code Sent via Email</p>
+                    <p className="text-[11px] text-slate-300">
+                      We sent a 6-digit verification code to your email. Please check your inbox or spam folder.
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-200 text-xs space-y-2">
+                  <div className="flex items-center gap-2 text-emerald-300 font-bold">
+                    <Sparkles className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <span>Instant Verification Ready</span>
+                  </div>
                   <p className="text-[11px] text-slate-300">
-                    We sent a 6-digit verification code to your email. Please check your inbox or spam folder.
+                    Outbound email service is pending setup in Admin Settings. Your 6-digit code is{" "}
+                    <span className="font-mono font-bold text-amber-300 text-sm tracking-wider bg-slate-900 px-2 py-0.5 rounded-md border border-slate-700">
+                      {verificationCode}
+                    </span>{" "}
+                    (auto-filled below).
+                  </p>
+                  <p className="text-[10px] text-emerald-400 font-medium">
+                    Click <strong>&quot;Confirm &amp; Sign In&quot;</strong> below to complete verification!
                   </p>
                 </div>
-              </div>
+              )}
 
               <form onSubmit={handleVerifyLogin} className="space-y-4">
                 <div>
