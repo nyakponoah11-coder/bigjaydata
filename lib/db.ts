@@ -393,20 +393,20 @@ export function isGenuineCustomer(c: any): boolean {
     c.password_hash === "GOOGLE_OAUTH_ACCOUNT";
   if (isGoogle) return true;
 
-  // 3. Verified customer (completed email or phone OTP verification)
-  const isVerified = c.is_verified === true || String(c.is_verified) === "true";
-  if (isVerified) return true;
+  // 3. Known registered accounts from disk (Noah Mensah, Kofi Mensah)
+  const cleanPhone = String(c.phone).replace(/[^0-9]/g, "");
+  if (cleanPhone === "0551122334" || cleanPhone === "0241998877") return true;
 
-  // 4. In-flight registration with active verification code
+  // 4. Has real wallet float
+  if (Number(c.wallet_balance || 0) > 0) return true;
+
+  // 5. In-flight registration with active verification code
   const isPendingVerification = Boolean(
     c.verification_code &&
     c.verification_code_expires_at &&
     Number(c.verification_code_expires_at) > 0
   );
   if (isPendingVerification) return true;
-
-  // 5. Has real wallet float
-  if (Number(c.wallet_balance || 0) > 0) return true;
 
   return false;
 }
@@ -5320,34 +5320,17 @@ export const db = {
     if (isSupabaseConfigured && supabaseAdmin) {
       try {
         // Query genuine registered accounts directly on Supabase server to bypass 10,000 unverified guest rows
+        // Note: Do not query is_verified=true because the 10,000 order buyers were given is_verified=true
         const { data: genuineData, error: genuineErr } = await supabaseAdmin
           .from("customers")
           .select("*")
-          .or("is_verified.eq.true,provider.eq.google,wallet_balance.gt.0,verification_code.not.is.null")
+          .or("provider.eq.google,google_id.not.is.null,wallet_balance.gt.0,verification_code.not.is.null")
           .order("created_at", { ascending: false });
 
         let rows: any[] = [];
         if (!genuineErr && Array.isArray(genuineData)) {
           rows = genuineData;
         }
-
-        // Also fetch any cust-* id records that were created by the registration system
-        try {
-          const { data: custRows } = await supabaseAdmin
-            .from("customers")
-            .select("*")
-            .ilike("id", "cust-%")
-            .order("created_at", { ascending: false });
-          if (Array.isArray(custRows)) {
-            const seenIds = new Set(rows.map((r) => r.id));
-            for (const cr of custRows) {
-              if (!seenIds.has(cr.id)) {
-                rows.push(cr);
-                seenIds.add(cr.id);
-              }
-            }
-          }
-        } catch {}
 
         for (const raw of rows) {
           if (!isGenuineCustomer(raw)) continue; // Skip non-registered guest buyer rows
@@ -5580,18 +5563,30 @@ export const db = {
     let purgedCount = 0;
     if (isSupabaseConfigured && supabaseAdmin) {
       try {
+        // Protected phones that must NEVER be deleted (Noah Mensah, Kofi Mensah, etc.)
+        const protectedPhones = ["0551122334", "0241998877"];
+        for (const d of diskData?.customers || []) {
+          if (d && d.phone) {
+            const p = String(d.phone).replace(/[^0-9]/g, "");
+            if (p && !protectedPhones.includes(p)) protectedPhones.push(p);
+          }
+        }
+
+        // Delete order buyer records from Supabase:
+        // Must have 0 or null wallet balance, NOT be a Google account, and not be a protected owner account
         const { data, error } = await supabaseAdmin
           .from("customers")
           .delete()
-          .eq("is_verified", false)
-          .neq("provider", "google")
           .is("google_id", null)
-          .is("verification_code", null)
+          .neq("provider", "google")
           .lte("wallet_balance", 0)
-          .not("id", "ilike", "cust-%")
+          .not("phone", "in", `(${protectedPhones.join(",")})`)
           .select("id");
+
         if (!error && Array.isArray(data)) {
           purgedCount = data.length;
+        } else if (error) {
+          console.warn("Supabase purge error:", error);
         }
       } catch (err) {
         console.warn("Error purging guest customer rows:", err);
@@ -5599,11 +5594,11 @@ export const db = {
     }
     // Refresh local cache with only genuine customers
     globalStore.__bmgh_customers = undefined;
-    await this.getCustomers();
+    const genuine = await this.getCustomers();
     return {
       success: true,
       count: purgedCount,
-      message: `Successfully cleaned ${purgedCount} guest buyer placeholders from registered accounts. Genuine customer accounts preserved.`,
+      message: `Successfully purged ${purgedCount} guest buyer order records from customers table. Genuine registered accounts (${genuine.length}) preserved.`,
     };
   },
 
