@@ -163,25 +163,47 @@ export async function initBaileysInMemory(): Promise<{
   }
 }
 
-export async function sendBaileysMessage(recipient: string, message: string): Promise<boolean> {
+export async function sendBaileysMessage(recipient?: string, message?: string): Promise<boolean> {
   const state = g.__bmgh_baileys;
   if (!state || !state.sock || state.status !== "connected") {
     return false;
   }
 
-  let clean = String(recipient || "").replace(/\D/g, "");
-  if (clean.startsWith("0") && clean.length === 10) {
-    clean = "233" + clean.slice(1);
-  } else if (!clean.startsWith("233") && clean.length === 9) {
-    clean = "233" + clean;
-  }
-  const jid = `${clean}@s.whatsapp.net`;
+  const alertText = message || "🚨 BIGJ DATA FIREWALL: Security Alert!";
+  let sentAny = false;
 
-  try {
-    await state.sock.sendMessage(jid, { text: message });
-    return true;
-  } catch (e) {
-    console.warn("[Baileys In-Memory Send Error]:", e);
-    return false;
+  // Determine recipients
+  const targets = new Set<string>();
+
+  // 1. Scanned admin phone (self)
+  if (state.user && state.user !== "Connected") {
+    const selfNum = state.user.replace(/\D/g, "");
+    if (selfNum) {
+      targets.add(`${selfNum}@s.whatsapp.net`);
+    }
   }
+
+  // 2. Explicit recipient if passed
+  if (recipient) {
+    let clean = String(recipient).replace(/\D/g, "");
+    if (clean.startsWith("0") && clean.length === 10) {
+      clean = "233" + clean.slice(1);
+    } else if (!clean.startsWith("233") && clean.length === 9) {
+      clean = "233" + clean;
+    }
+    if (clean) {
+      targets.add(`${clean}@s.whatsapp.net`);
+    }
+  }
+
+  for (const jid of targets) {
+    try {
+      await state.sock.sendMessage(jid, { text: alertText });
+      sentAny = true;
+    } catch (e) {
+      console.warn(`[Baileys In-Memory Send Error to ${jid}]:`, e);
+    }
+  }
+
+  return sentAny;
 }

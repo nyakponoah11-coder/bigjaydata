@@ -275,16 +275,51 @@ export async function sendWhatsAppSecurityAlert(
 ): Promise<{ success: boolean; channel: string; error?: string }> {
   try {
     const settings = await db.getSettings();
-    const adminPhone =
+    let adminPhone =
       (settings as any).whatsapp_security_phone ||
       settings.whatsapp_number ||
       settings.support_phone ||
       "";
 
-    const cleanAdminPhone = adminPhone.replace(/[^0-9]/g, "");
-    if (!cleanAdminPhone) {
-      return { success: false, channel: "none", error: "Admin WhatsApp phone number is not configured in settings." };
-    }
+    // 0. Try in-memory Baileys immediately (delivers directly to the admin who scanned the QR code)
+    try {
+      const { sendBaileysMessage, getBaileysState } = await import("./baileys-service");
+      const bState = getBaileysState();
+      if (!adminPhone && bState.user && bState.user !== "Connected") {
+        adminPhone = bState.user.replace(/\D/g, "");
+      }
+      if (!adminPhone) {
+        adminPhone = "0547100951";
+      }
+
+      const formattedTime = new Date(incident.timestamp).toLocaleString("en-GB", {
+        timeZone: "Africa/Accra",
+        dateStyle: "medium",
+        timeStyle: "short",
+      });
+
+      const alertMessage =
+        `🚨 *BIGJ DATA FIREWALL ALERT* 🚨\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━\n` +
+        `⚠️ *Unauthorized Attack Blocked!*\n\n` +
+        `👤 *Attacker Phone:* ${incident.phone || "Unknown / Not Provided"}\n` +
+        `🌐 *Attacker IP:* ${incident.ip}\n` +
+        `🛑 *Attack Vector:* ${incident.type.replace(/_/g, " ").toUpperCase()}\n` +
+        `📝 *Details:* ${incident.details}\n` +
+        (incident.reference ? `🔖 *Target Ref:* ${incident.reference}\n` : "") +
+        (incident.paystack_ref ? `💳 *Supplied Ref:* ${incident.paystack_ref}\n` : "") +
+        `⏰ *Time (Ghana):* ${formattedTime}\n\n` +
+        `🔒 *AUTOMATIC DEFENSE:* Both the IP and Phone have been *AUTOMATICALLY BLOCKED* from placing any orders or accessing the platform.\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━`;
+
+      const inMemSent = await sendBaileysMessage(adminPhone, alertMessage);
+      if (inMemSent) {
+        console.log("[WhatsApp Security Alert] Delivered via in-memory Baileys session to admin.");
+        return { success: true, channel: "whatsapp_baileys" };
+      }
+    } catch (_) {}
+
+    const cleanAdminPhone = (adminPhone || "0547100951").replace(/[^0-9]/g, "");
 
     const ghAdminPhone = cleanAdminPhone.startsWith("233")
       ? `+${cleanAdminPhone}`
@@ -311,16 +346,6 @@ export async function sendWhatsAppSecurityAlert(
       `⏰ *Time (Ghana):* ${formattedTime}\n\n` +
       `🔒 *AUTOMATIC DEFENSE:* Both the IP and Phone have been *AUTOMATICALLY BLOCKED* from placing any orders or accessing the platform.\n` +
       `━━━━━━━━━━━━━━━━━━━━━━`;
-
-    // 0. Try in-memory Baileys (if connected directly via /link)
-    try {
-      const { sendBaileysMessage } = await import("./baileys-service");
-      const inMemSent = await sendBaileysMessage(ghAdminPhone, alertMessage);
-      if (inMemSent) {
-        console.log("[WhatsApp Security Alert] Delivered via in-memory Baileys session.");
-        return { success: true, channel: "whatsapp_baileys" };
-      }
-    } catch (_) {}
 
     // 1. Try Custom / Local WhatsApp Webhook Bot (e.g. user's whatsapp-bot-server.cjs on port 3001)
     const customWebhook = (settings as any).whatsapp_security_webhook || process.env.WHATSAPP_BOT_URL || "http://127.0.0.1:3001/send";
