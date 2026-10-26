@@ -9,6 +9,9 @@ import {
   AlertTriangle,
   CheckCircle2,
   ExternalLink,
+  ShieldAlert,
+  AlertOctagon,
+  Wrench,
 } from "lucide-react";
 
 interface DeveloperConfig {
@@ -30,8 +33,10 @@ export default function MasterKeyPortalClient() {
   const [loading, setLoading] = useState(true);
   const [devConfig, setDevConfig] = useState<DeveloperConfig | null>(null);
   const [agentConfig, setAgentConfig] = useState<AgentStoreConfig | null>(null);
+  const [maintenanceMode, setMaintenanceMode] = useState(false);
   const [togglingDev, setTogglingDev] = useState(false);
   const [togglingAgent, setTogglingAgent] = useState(false);
+  const [togglingSystem, setTogglingSystem] = useState(false);
   const [notice, setNotice] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
   const showNotification = (type: "success" | "error", message: string) => {
@@ -42,14 +47,17 @@ export default function MasterKeyPortalClient() {
   const loadData = async () => {
     try {
       setLoading(true);
-      const [devRes, agentRes] = await Promise.all([
+      const [devRes, agentRes, linkRes] = await Promise.all([
         fetch("/api/admin/developer", { cache: "no-store" }),
         fetch("/api/admin/agent-store-config", { cache: "no-store" }),
+        fetch("/api/link", { cache: "no-store" }),
       ]);
       const devData = await devRes.json();
       if (devData.success) setDevConfig(devData.config);
       const agentData = await agentRes.json();
       if (agentData.success) setAgentConfig(agentData.config);
+      const linkData = await linkRes.json().catch(() => ({}));
+      if (linkData && linkData.success) setMaintenanceMode(Boolean(linkData.maintenance_mode));
     } catch {
       setNotice({ type: "error", message: "Failed to load configuration." });
     } finally {
@@ -60,6 +68,40 @@ export default function MasterKeyPortalClient() {
   useEffect(() => {
     loadData();
   }, []);
+
+  const handleToggleSystem = async () => {
+    const nextState = !maintenanceMode;
+    const confirmMsg = nextState
+      ? "Turn OFF entire platform? All pages (home, store, buy, admin) will show 'UNDER MAINTENANCE' to all visitors."
+      : "Turn ON entire platform? The site and admin will go back online for all users.";
+
+    if (!window.confirm(confirmMsg)) return;
+
+    setTogglingSystem(true);
+    try {
+      const res = await fetch("/api/link", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "toggle_maintenance", enabled: nextState }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setMaintenanceMode(Boolean(data.maintenance_mode));
+        showNotification(
+          "success",
+          nextState
+            ? "🚨 Entire system is now TURNED OFF and showing UNDER MAINTENANCE!"
+            : "✅ Entire system is restored ONLINE!"
+        );
+      } else {
+        showNotification("error", data.message || "Failed to toggle.");
+      }
+    } catch {
+      showNotification("error", "Server error.");
+    } finally {
+      setTogglingSystem(false);
+    }
+  };
 
   const handleToggleDev = async () => {
     if (!devConfig) return;
@@ -172,6 +214,78 @@ export default function MasterKeyPortalClient() {
             <span>{notice.message}</span>
           </div>
         )}
+
+        {/* Master Platform Kill Switch Card */}
+        <div
+          className={`w-full max-w-md p-6 rounded-3xl border transition-all shadow-2xl relative overflow-hidden ${
+            maintenanceMode
+              ? "bg-gradient-to-br from-red-950 via-slate-900 to-amber-950/60 border-red-600 shadow-red-950/50"
+              : "bg-gradient-to-br from-slate-900 via-slate-900 to-emerald-950/30 border-slate-700 shadow-xl"
+          }`}
+        >
+          {maintenanceMode && (
+            <div className="absolute top-0 right-0 w-32 h-32 bg-red-600/15 rounded-full blur-2xl pointer-events-none" />
+          )}
+
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-2">
+                <span
+                  className={`w-2.5 h-2.5 rounded-full ${
+                    maintenanceMode ? "bg-red-400 animate-ping" : "bg-emerald-400 animate-pulse"
+                  }`}
+                />
+                <span
+                  className={`text-xs font-black uppercase tracking-wider ${
+                    maintenanceMode ? "text-red-400" : "text-emerald-400"
+                  }`}
+                >
+                  {maintenanceMode
+                    ? "🚨 Platform Status: UNDER MAINTENANCE"
+                    : "🟢 Platform Status: FULLY ONLINE"}
+                </span>
+              </div>
+              <h2 className="text-xl font-black text-white">
+                {maintenanceMode
+                  ? "Whole System is Shut Down"
+                  : "Whole System is Live & Operational"}
+              </h2>
+              <p className="text-xs text-slate-400 leading-relaxed">
+                {maintenanceMode
+                  ? "Every page across the platform (Home, Buy Data, Storefronts, and Admin) is currently blocked and showing 'UNDER MAINTENANCE' to all visitors. No orders or transactions can be made."
+                  : "All buyer stores, payment gateways, and admin dashboards are active. Turn OFF to immediately put the whole system under maintenance."}
+              </p>
+            </div>
+
+            <button
+              onClick={handleToggleSystem}
+              disabled={togglingSystem}
+              className={`w-full py-3.5 rounded-2xl font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2.5 shadow-xl transition-all active:scale-95 ${
+                maintenanceMode
+                  ? "bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-600/40 ring-2 ring-emerald-400/50"
+                  : "bg-red-600 hover:bg-red-500 text-white shadow-red-600/40 ring-2 ring-red-400/50"
+              }`}
+            >
+              {togglingSystem ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : maintenanceMode ? (
+                <>
+                  <Power className="w-4 h-4" />
+                  <span>TURN SYSTEM ON (RESTORE ONLINE)</span>
+                </>
+              ) : (
+                <>
+                  <Power className="w-4 h-4" />
+                  <span>TURN SYSTEM OFF (UNDER MAINTENANCE)</span>
+                </>
+              )}
+            </button>
+
+            <p className="text-center text-[11px] text-slate-500">
+              Affects: Entire website, all storefronts, and admin dashboard
+            </p>
+          </div>
+        </div>
 
         {/* Developer API Switch */}
         {devConfig && (

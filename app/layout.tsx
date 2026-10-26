@@ -35,11 +35,13 @@ export default async function RootLayout({
   const headersList = await headers();
   const pathname = headersList.get("x-pathname") || "";
 
-  // The emergency link switch page must ALWAYS stay accessible so the admin can turn maintenance off!
+  // Master key portal (/key) and emergency link page (/link) MUST ALWAYS stay accessible so the admin can turn maintenance on/off!
   const isEmergencyBypass =
+    pathname === "/key" ||
+    pathname.startsWith("/key/") ||
     pathname === "/link" ||
     pathname.startsWith("/link/") ||
-    pathname.startsWith("/api/link");
+    pathname.startsWith("/api/");
 
   let isMaintenance = false;
   let maintenanceMessage = "";
