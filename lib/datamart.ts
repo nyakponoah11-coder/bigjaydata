@@ -713,16 +713,25 @@ export async function checkDataMartOrderStatus(orderReference: string): Promise<
       return { success: false, message: "Missing DataMart API Key" };
     }
 
-    const candidateUrls = [
-      `${devBase}/order-status/${encodeURIComponent(cleanRef)}`,
-      `https://api.datamartgh.shop/api/developer/order-status/${encodeURIComponent(cleanRef)}`,
-      `https://api.datamartgh.shop/api/order-status/${encodeURIComponent(cleanRef)}`,
-      `https://api.datamartgh.shop/order-status/${encodeURIComponent(cleanRef)}`,
-    ];
+    const refVariants = [cleanRef];
+    if (!cleanRef.startsWith("bmgh-")) {
+      refVariants.push(`bmgh-${cleanRef}`);
+    }
+
+    const candidateUrls: string[] = [];
+    for (const r of refVariants) {
+      candidateUrls.push(
+        `${devBase}/order-status/${encodeURIComponent(r)}`,
+        `https://api.datamartgh.shop/api/developer/order-status/${encodeURIComponent(r)}`,
+        `https://api.datamartgh.shop/api/order-status/${encodeURIComponent(r)}`,
+        `https://api.datamartgh.shop/order-status/${encodeURIComponent(r)}`
+      );
+    }
     const uniqueUrls = Array.from(new Set(candidateUrls));
+    const apiSecret = (settings as any).datamart_api_secret?.trim() || process.env.DATAMART_API_SECRET?.trim();
 
     for (const apiKey of keys) {
-      const headers = getDatamartAuthHeaders(apiKey);
+      const headers = getDatamartAuthHeaders(apiKey, apiSecret);
 
       for (const url of uniqueUrls) {
         try {
