@@ -20,6 +20,8 @@ import {
   ExternalLink,
   Loader2,
   Lock,
+  Power,
+  AlertOctagon,
 } from "lucide-react";
 
 interface BlockedItem {
@@ -54,6 +56,10 @@ export default function AdminSecurityPage() {
   const [blocked, setBlocked] = useState<BlockedItem[]>([]);
   const [incidents, setIncidents] = useState<IncidentItem[]>([]);
   const [filterType, setFilterType] = useState<"all" | "ip" | "phone">("all");
+
+  // Maintenance Mode / Kill Switch State
+  const [maintenanceMode, setMaintenanceMode] = useState(false);
+  const [togglingMaint, setTogglingMaint] = useState(false);
 
   // WhatsApp Alert Settings State
   const [adminPhone, setAdminPhone] = useState("");
@@ -99,11 +105,14 @@ export default function AdminSecurityPage() {
       if (data.success) {
         setBlocked(data.blocked || []);
         setIncidents(data.incidents || []);
-        if (data.config && !configLoadedRef.current) {
-          setAdminPhone(data.config.whatsapp_security_phone || "");
-          setWebhookUrl(data.config.whatsapp_security_webhook || "");
-          setCallmebotKey(data.config.whatsapp_callmebot_apikey || "");
-          configLoadedRef.current = true;
+        if (data.config) {
+          setMaintenanceMode(Boolean(data.config.maintenance_mode));
+          if (!configLoadedRef.current) {
+            setAdminPhone(data.config.whatsapp_security_phone || "");
+            setWebhookUrl(data.config.whatsapp_security_webhook || "");
+            setCallmebotKey(data.config.whatsapp_callmebot_apikey || "");
+            configLoadedRef.current = true;
+          }
         }
       }
     } catch (err) {
@@ -180,6 +189,39 @@ export default function AdminSecurityPage() {
       setAlertNotice({ type: "error", message: err?.message || "Failed to dispatch test alert." });
     } finally {
       setTestingAlert(false);
+    }
+  };
+
+  const handleToggleMaintenance = async () => {
+    const nextState = !maintenanceMode;
+    const confirmMsg = nextState
+      ? "Are you sure you want to TURN OFF the entire system? All pages (home, store, buy, admin) will show 'UNDER MAINTENANCE' to everyone."
+      : "Are you sure you want to TURN ON the system? The site and admin will go back online for all users.";
+    
+    if (!window.confirm(confirmMsg)) return;
+
+    setTogglingMaint(true);
+    setAlertNotice(null);
+    try {
+      const res = await fetch("/api/admin/security", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "toggle_maintenance", enabled: nextState }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setMaintenanceMode(Boolean(data.maintenance_mode));
+        setAlertNotice({
+          type: "success",
+          message: data.message || (nextState ? "System put under maintenance." : "System restored online."),
+        });
+      } else {
+        setAlertNotice({ type: "error", message: data.message || "Failed to toggle maintenance mode." });
+      }
+    } catch (err: any) {
+      setAlertNotice({ type: "error", message: err?.message || "Connection error." });
+    } finally {
+      setTogglingMaint(false);
     }
   };
 
@@ -277,8 +319,55 @@ export default function AdminSecurityPage() {
               <Ban className="w-3.5 h-3.5" />
               Blacklist IP / Phone
             </button>
+            <button
+              onClick={handleToggleMaintenance}
+              disabled={togglingMaint}
+              className={`px-4 py-2 text-white text-xs font-bold rounded-xl shadow-lg flex items-center gap-1.5 transition-colors ${
+                maintenanceMode
+                  ? "bg-emerald-600 hover:bg-emerald-500 shadow-emerald-600/30"
+                  : "bg-amber-600 hover:bg-amber-500 shadow-amber-600/30"
+              }`}
+            >
+              {togglingMaint ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Power className="w-3.5 h-3.5" />
+              )}
+              {maintenanceMode ? "Turn System ON" : "Kill Switch (Maintenance)"}
+            </button>
           </div>
         </div>
+
+        {/* Maintenance Mode Alert Banner if Active */}
+        {maintenanceMode && (
+          <div className="p-5 rounded-2xl bg-gradient-to-r from-red-950/90 via-red-900/70 to-amber-950/90 border-2 border-red-600 text-red-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-2xl shadow-red-950/60">
+            <div className="flex items-center gap-3.5">
+              <div className="p-3 bg-red-600 text-white rounded-2xl shadow-lg animate-pulse shrink-0">
+                <AlertOctagon className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-sm font-black text-white uppercase tracking-wider flex items-center gap-2 flex-wrap">
+                  Emergency Maintenance Lockdown Active
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-500/20 text-red-300 border border-red-500/40">
+                    All Routes Blocked
+                  </span>
+                </h3>
+                <p className="text-xs text-red-300 mt-1">
+                  The entire platform (storefronts, buyer checkout, and admin pages) is currently showing &apos;UNDER MAINTENANCE&apos; to all visitors.
+                </p>
+              </div>
+            </div>
+
+            <button
+              onClick={handleToggleMaintenance}
+              disabled={togglingMaint}
+              className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-lg transition-colors flex items-center gap-1.5 shrink-0"
+            >
+              {togglingMaint ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Power className="w-3.5 h-3.5" />}
+              Restore Platform Online
+            </button>
+          </div>
+        )}
 
         {/* Status Metrics Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

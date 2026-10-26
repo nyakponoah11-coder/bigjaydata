@@ -31,6 +31,8 @@ export async function GET(request: Request) {
         whatsapp_security_phone: (settings as any).whatsapp_security_phone || settings.whatsapp_number || "",
         whatsapp_security_webhook: (settings as any).whatsapp_security_webhook || "http://127.0.0.1:3001/send",
         whatsapp_callmebot_apikey: (settings as any).whatsapp_callmebot_apikey || "",
+        maintenance_mode: Boolean(settings.maintenance_mode),
+        maintenance_message: settings.maintenance_message || "",
       },
     });
   } catch (error: any) {
@@ -48,6 +50,26 @@ export async function POST(request: Request) {
 
     const body = await request.json();
     const { action } = body;
+
+    // 0. Emergency Maintenance Mode Toggle
+    if (action === "toggle_maintenance") {
+      const { enabled, message } = body;
+      const isMaint = Boolean(enabled);
+      const customMsg = typeof message === "string" && message.trim() ? message.trim() : undefined;
+
+      const updated = await db.updateSettings({
+        maintenance_mode: isMaint,
+        ...(customMsg ? { maintenance_message: customMsg } : {}),
+      } as any);
+
+      return NextResponse.json({
+        success: true,
+        maintenance_mode: Boolean(updated.maintenance_mode),
+        message: isMaint
+          ? "🚨 Emergency Maintenance Mode ACTIVATED! Entire platform is now showing Under Maintenance."
+          : "✅ System is ONLINE! Platform restored to normal operation.",
+      });
+    }
 
     // 1. Manually Block IP or Phone
     if (action === "block") {

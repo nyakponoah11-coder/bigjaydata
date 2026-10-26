@@ -67,6 +67,10 @@ export async function GET() {
       baileys_user: baileysUser,
       qr_data_url: qrDataUrl,
       status: statusText,
+      maintenance_mode: Boolean(settings.maintenance_mode),
+      maintenance_message:
+        settings.maintenance_message ||
+        "Our platform is currently offline for scheduled maintenance and security upgrades. All transactions and store purchases are temporarily paused.",
     });
   } catch (err: any) {
     return NextResponse.json(
@@ -81,6 +85,27 @@ export async function POST(req: Request) {
     const body = await req.json().catch(() => ({}));
     const { action, phone } = body;
 
+    // 1. Toggle Emergency Maintenance Mode / Kill Switch
+    if (action === "toggle_maintenance") {
+      const { enabled, message } = body;
+      const isMaint = Boolean(enabled);
+      const customMsg = typeof message === "string" && message.trim() ? message.trim() : undefined;
+
+      const updated = await db.updateSettings({
+        maintenance_mode: isMaint,
+        ...(customMsg ? { maintenance_message: customMsg } : {}),
+      } as any);
+
+      return NextResponse.json({
+        success: true,
+        maintenance_mode: Boolean(updated.maintenance_mode),
+        message: isMaint
+          ? "🚨 Emergency Maintenance Mode ACTIVATED! Entire platform & admin are now locked down and showing Under Maintenance."
+          : "✅ System is ONLINE! Platform restored to normal operation.",
+      });
+    }
+
+    // 2. Dispatch Live WhatsApp Test Alert
     if (action === "test") {
       const settings = await db.getSettings();
       const targetPhone =

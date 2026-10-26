@@ -155,6 +155,8 @@ export interface Settings {
   whatsapp_security_phone?: string;
   whatsapp_security_webhook?: string;
   whatsapp_callmebot_apikey?: string;
+  maintenance_mode?: boolean;
+  maintenance_message?: string;
   created_at?: string;
   updated_at?: string;
 }
@@ -741,6 +743,7 @@ export const db = {
               "email_config",
               "netflix_config",
               "whatsapp_security_config",
+              "maintenance_config",
             ]);
           if (!res.error && Array.isArray(res.data) && res.data.length > 0) {
             allRows = res.data;
@@ -769,6 +772,7 @@ export const db = {
               "email_config",
               "netflix_config",
               "whatsapp_security_config",
+              "maintenance_config",
             ]);
           if (!retryRes.error && Array.isArray(retryRes.data)) {
             allRows = retryRes.data;
@@ -914,6 +918,20 @@ export const db = {
                 (merged as any).whatsapp_callmebot_apikey = String(parsedSec.whatsapp_callmebot_apikey).trim();
               }
             } catch (_) {}
+          }
+
+          // Parse Emergency Maintenance Mode Configuration
+          const maintRow = allRows?.find((r) => r.id === "maintenance_config");
+          if (maintRow && maintRow.store_name) {
+            try {
+              const parsedMaint = JSON.parse(maintRow.store_name);
+              merged.maintenance_mode = Boolean(parsedMaint.maintenance_mode);
+              if (parsedMaint.maintenance_message) {
+                merged.maintenance_message = String(parsedMaint.maintenance_message).trim();
+              }
+            } catch (_) {
+              merged.maintenance_mode = maintRow.store_name === "true";
+            }
           }
 
           globalStore.__bmgh_settings = merged;
@@ -1124,11 +1142,38 @@ export const db = {
           }
         }
 
+        // Save Maintenance configuration to dedicated config row so it NEVER disappears
+        if (
+          safeUpdates.maintenance_mode !== undefined ||
+          safeUpdates.maintenance_message !== undefined
+        ) {
+          try {
+            const currentMaint = {
+              maintenance_mode:
+                safeUpdates.maintenance_mode !== undefined
+                  ? Boolean(safeUpdates.maintenance_mode)
+                  : Boolean(globalStore.__bmgh_settings?.maintenance_mode),
+              maintenance_message:
+                safeUpdates.maintenance_message !== undefined
+                  ? safeUpdates.maintenance_message
+                  : (globalStore.__bmgh_settings?.maintenance_message || "System is currently undergoing scheduled maintenance. Please check back shortly."),
+            };
+            await supabaseAdmin.from("settings").upsert({
+              id: "maintenance_config",
+              store_name: JSON.stringify(currentMaint),
+            });
+          } catch (mErr) {
+            console.warn("Maintenance config backup row save error:", mErr);
+          }
+        }
+
         const dbPayload: any = { ...safeUpdates };
         delete dbPayload.whatsapp_security_phone;
         delete dbPayload.whatsapp_security_webhook;
         delete dbPayload.whatsapp_callmebot_apikey;
         delete dbPayload.security_incidents;
+        delete dbPayload.maintenance_mode;
+        delete dbPayload.maintenance_message;
 
         const payload = { id: "default", ...dbPayload, updated_at: new Date().toISOString() };
         let { data, error } = await supabaseAdmin

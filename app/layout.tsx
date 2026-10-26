@@ -1,6 +1,9 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import FreeDataBanner from "@/components/FreeDataBanner";
+import MaintenanceScreen from "@/components/MaintenanceScreen";
+import { db } from "@/lib/db";
+import { headers } from "next/headers";
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://fastdata-gh.vercel.app"),
@@ -24,16 +27,42 @@ export const metadata: Metadata = {
   },
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const headersList = await headers();
+  const pathname = headersList.get("x-pathname") || "";
+
+  // The emergency link switch page must ALWAYS stay accessible so the admin can turn maintenance off!
+  const isEmergencyBypass =
+    pathname === "/link" ||
+    pathname.startsWith("/link/") ||
+    pathname.startsWith("/api/link");
+
+  let isMaintenance = false;
+  let maintenanceMessage = "";
+  let supportPhone = "";
+
+  if (!isEmergencyBypass) {
+    try {
+      const settings = await db.getSettings();
+      isMaintenance = Boolean(settings.maintenance_mode);
+      maintenanceMessage = settings.maintenance_message || "";
+      supportPhone = settings.whatsapp_number || settings.support_phone || "";
+    } catch (_) {}
+  }
+
   return (
     <html lang="en" className="h-full antialiased scroll-smooth">
       <body className="min-h-full flex flex-col bg-slate-50 text-slate-900 selection:bg-emerald-500 selection:text-white">
         <FreeDataBanner />
-        {children}
+        {isMaintenance ? (
+          <MaintenanceScreen message={maintenanceMessage} supportPhone={supportPhone} />
+        ) : (
+          children
+        )}
       </body>
     </html>
   );
