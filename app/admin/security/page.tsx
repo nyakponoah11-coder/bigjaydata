@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import AdminLayout from "@/components/AdminLayout";
 import {
   ShieldAlert,
@@ -79,6 +79,8 @@ export default function AdminSecurityPage() {
     qr_data_url?: string | null;
   } | null>(null);
 
+  const configLoadedRef = useRef(false);
+
   const fetchBaileys = async () => {
     try {
       const res = await fetch("/api/admin/whatsapp", { cache: "no-store" });
@@ -97,10 +99,11 @@ export default function AdminSecurityPage() {
       if (data.success) {
         setBlocked(data.blocked || []);
         setIncidents(data.incidents || []);
-        if (data.config) {
+        if (data.config && !configLoadedRef.current) {
           setAdminPhone(data.config.whatsapp_security_phone || "");
           setWebhookUrl(data.config.whatsapp_security_webhook || "");
           setCallmebotKey(data.config.whatsapp_callmebot_apikey || "");
+          configLoadedRef.current = true;
         }
       }
     } catch (err) {
@@ -120,8 +123,8 @@ export default function AdminSecurityPage() {
     return () => clearInterval(interval);
   }, []);
 
-  const handleSaveConfig = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSaveConfig = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     setSavingConfig(true);
     setAlertNotice(null);
     try {
@@ -137,7 +140,11 @@ export default function AdminSecurityPage() {
       });
       const data = await res.json();
       if (data.success) {
-        setAlertNotice({ type: "success", message: "WhatsApp notification preferences saved successfully!" });
+        configLoadedRef.current = true;
+        if (data.config?.whatsapp_security_phone) {
+          setAdminPhone(data.config.whatsapp_security_phone);
+        }
+        setAlertNotice({ type: "success", message: "WhatsApp Admin Number saved & updated successfully!" });
       } else {
         setAlertNotice({ type: "error", message: data.message || "Failed to save configuration." });
       }
@@ -345,36 +352,28 @@ export default function AdminSecurityPage() {
                   className={`w-3.5 h-3.5 rounded-full shrink-0 ${
                     baileysInfo?.connected
                       ? "bg-emerald-500 animate-pulse shadow-lg shadow-emerald-500/50"
-                      : baileysInfo?.online
-                      ? "bg-amber-400 animate-pulse"
-                      : "bg-slate-600"
+                      : "bg-amber-400 animate-pulse"
                   }`}
                 />
                 <div>
                   <h3 className="text-sm font-bold text-white flex items-center gap-2 flex-wrap">
-                    Baileys WhatsApp Scanner & Live Link
+                    WhatsApp Scanner & Push Alert Status
                     <span
                       className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${
                         baileysInfo?.connected
                           ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
-                          : baileysInfo?.online
-                          ? "bg-amber-500/10 text-amber-400 border border-amber-500/20"
-                          : "bg-slate-700 text-slate-400 border border-slate-600"
+                          : "bg-amber-500/10 text-amber-400 border border-amber-500/20"
                       }`}
                     >
                       {baileysInfo?.connected
                         ? `Connected (${baileysInfo.user ? "+" + baileysInfo.user : "Active"})`
-                        : baileysInfo?.online
-                        ? "Waiting for QR Scan"
-                        : "Offline / Not Started"}
+                        : "Ready to Scan / Link"}
                     </span>
                   </h3>
                   <p className="text-xs text-slate-400 mt-0.5">
                     {baileysInfo?.connected
-                      ? "Your WhatsApp is linked! Intrusion attacks and PowerShell executions will immediately message you."
-                      : baileysInfo?.online
-                      ? "Scan the QR code below on your mobile WhatsApp (Linked Devices > Link a Device)."
-                      : "Run 'npm run whatsapp-bot' in your terminal or start the background bot to link WhatsApp."}
+                      ? `Your WhatsApp (+${baileysInfo.user}) is linked! Any attack attempt will instantly trigger a WhatsApp push alert.`
+                      : "Scan the QR code below or open the dedicated scanner page to link your WhatsApp."}
                   </p>
                 </div>
               </div>
@@ -386,16 +385,16 @@ export default function AdminSecurityPage() {
                   className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5"
                 >
                   <RefreshCw className="w-3.5 h-3.5" />
-                  Refresh
+                  Refresh QR
                 </button>
                 <a
-                  href="http://localhost:3001"
+                  href="/link"
                   target="_blank"
                   rel="noreferrer"
-                  className="px-3 py-1.5 bg-emerald-600/30 hover:bg-emerald-600/50 text-emerald-300 border border-emerald-500/30 text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5"
+                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5 shadow-md shadow-emerald-600/30"
                 >
                   <ExternalLink className="w-3.5 h-3.5" />
-                  Open UI (:3001)
+                  Open Scanner (/link)
                 </a>
               </div>
             </div>
@@ -416,8 +415,8 @@ export default function AdminSecurityPage() {
                     <li>Tap <b>Menu (⋮)</b> or <b>Settings</b> &gt; <b>Linked Devices</b></li>
                     <li>Tap <b>Link a Device</b> and point camera at this screen</li>
                   </ol>
-                  <p className="text-[11px] text-slate-400 pt-1">
-                    Once scanned, your phone will automatically link and intrusion alerts will be pushed to your WhatsApp instantly.
+                  <p className="text-[11px] text-emerald-400 pt-1 font-medium">
+                    ✓ Once scanned, your phone will automatically link and intrusion alerts will be pushed to your WhatsApp instantly.
                   </p>
                 </div>
               </div>
@@ -425,24 +424,33 @@ export default function AdminSecurityPage() {
           </div>
 
           <form onSubmit={handleSaveConfig} className="grid grid-cols-1 sm:grid-cols-3 gap-5">
-            <div>
+            <div className="sm:col-span-1">
               <label className="block text-xs font-semibold text-slate-300 mb-1.5 uppercase tracking-wide">
                 Admin WhatsApp Phone Number
               </label>
-              <input
-                type="text"
-                value={adminPhone}
-                onChange={(e) => setAdminPhone(e.target.value)}
-                placeholder="e.g. 0551234567 or 233551234567"
-                required
-                className="w-full px-4 py-2.5 bg-slate-800/80 border border-slate-700 rounded-xl text-white text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 placeholder:text-slate-500"
-              />
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={adminPhone}
+                  onChange={(e) => setAdminPhone(e.target.value)}
+                  placeholder="e.g. 0547100951 or 233547100951"
+                  required
+                  className="w-full px-4 py-2.5 bg-slate-800/80 border border-slate-700 rounded-xl text-white text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 placeholder:text-slate-500 font-mono"
+                />
+                <button
+                  type="submit"
+                  disabled={savingConfig}
+                  className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow-md transition-colors shrink-0 disabled:opacity-50"
+                >
+                  {savingConfig ? <Loader2 className="w-4 h-4 animate-spin" /> : "Save"}
+                </button>
+              </div>
               <span className="text-[11px] text-slate-500 mt-1 block">Your personal number where alerts will be sent.</span>
             </div>
 
-            <div>
+            <div className="sm:col-span-1">
               <label className="block text-xs font-semibold text-slate-300 mb-1.5 uppercase tracking-wide">
-                WhatsApp Bot Webhook URL (Optional)
+                WhatsApp Bot Webhook (Optional)
               </label>
               <input
                 type="text"
@@ -451,30 +459,30 @@ export default function AdminSecurityPage() {
                 placeholder="http://127.0.0.1:3001/send"
                 className="w-full px-4 py-2.5 bg-slate-800/80 border border-slate-700 rounded-xl text-white text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 placeholder:text-slate-500"
               />
-              <span className="text-[11px] text-slate-500 mt-1 block">Compatible with Baileys / whatsapp-bot-server on port 3001.</span>
+              <span className="text-[11px] text-slate-500 mt-1 block">Only needed if running a persistent VPS bot.</span>
             </div>
 
-            <div>
+            <div className="sm:col-span-1">
               <label className="block text-xs font-semibold text-slate-300 mb-1.5 uppercase tracking-wide">
-                CallMeBot API Key (Free Direct WhatsApp)
+                CallMeBot API Key (Optional)
               </label>
               <input
                 type="password"
                 value={callmebotKey}
                 onChange={(e) => setCallmebotKey(e.target.value)}
-                placeholder="Enter CallMeBot API key"
+                placeholder="Optional backup key"
                 className="w-full px-4 py-2.5 bg-slate-800/80 border border-slate-700 rounded-xl text-white text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 placeholder:text-slate-500"
               />
-              <span className="text-[11px] text-slate-500 mt-1 block">Free direct WhatsApp messaging with zero bot setup needed.</span>
+              <span className="text-[11px] text-slate-500 mt-1 block">Optional fallback provider.</span>
             </div>
 
-            <div className="sm:col-span-3 flex justify-end">
+            <div className="sm:col-span-3 flex justify-end pt-2 border-t border-slate-800/50">
               <button
                 type="submit"
                 disabled={savingConfig}
-                className="px-6 py-2.5 bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs rounded-xl border border-slate-600 transition-colors disabled:opacity-50 flex items-center gap-2"
+                className="px-6 py-2.5 bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs rounded-xl border border-slate-600 transition-colors disabled:opacity-50 flex items-center gap-2 shadow-lg"
               >
-                {savingConfig ? <Loader2 className="w-4 h-4 animate-spin" /> : "Save Security Preferences"}
+                {savingConfig ? <Loader2 className="w-4 h-4 animate-spin" /> : "Save All Security Preferences"}
               </button>
             </div>
           </form>

@@ -739,6 +739,8 @@ export const db = {
               "ai_instructions_config",
               "agent_store_config",
               "email_config",
+              "netflix_config",
+              "whatsapp_security_config",
             ]);
           if (!res.error && Array.isArray(res.data) && res.data.length > 0) {
             allRows = res.data;
@@ -766,6 +768,7 @@ export const db = {
               "agent_store_config",
               "email_config",
               "netflix_config",
+              "whatsapp_security_config",
             ]);
           if (!retryRes.error && Array.isArray(retryRes.data)) {
             allRows = retryRes.data;
@@ -893,6 +896,23 @@ export const db = {
                 auto_paystack_payout: autoPayout,
               };
               markCacheFresh("agent_config");
+            } catch (_) {}
+          }
+
+          // Parse WhatsApp Security Alert Configuration
+          const secRow = allRows?.find((r) => r.id === "whatsapp_security_config");
+          if (secRow && secRow.store_name) {
+            try {
+              const parsedSec = JSON.parse(secRow.store_name);
+              if (parsedSec.whatsapp_security_phone) {
+                (merged as any).whatsapp_security_phone = String(parsedSec.whatsapp_security_phone).trim();
+              }
+              if (parsedSec.whatsapp_security_webhook) {
+                (merged as any).whatsapp_security_webhook = String(parsedSec.whatsapp_security_webhook).trim();
+              }
+              if (parsedSec.whatsapp_callmebot_apikey) {
+                (merged as any).whatsapp_callmebot_apikey = String(parsedSec.whatsapp_callmebot_apikey).trim();
+              }
             } catch (_) {}
           }
 
@@ -1074,7 +1094,43 @@ export const db = {
           }
         }
 
-        const payload = { id: "default", ...safeUpdates, updated_at: new Date().toISOString() };
+        // Save WhatsApp Security configuration to dedicated config row so it NEVER disappears
+        if (
+          (safeUpdates as any).whatsapp_security_phone !== undefined ||
+          (safeUpdates as any).whatsapp_security_webhook !== undefined ||
+          (safeUpdates as any).whatsapp_callmebot_apikey !== undefined
+        ) {
+          try {
+            const currentSec = {
+              whatsapp_security_phone:
+                (safeUpdates as any).whatsapp_security_phone !== undefined
+                  ? (safeUpdates as any).whatsapp_security_phone
+                  : ((globalStore.__bmgh_settings as any)?.whatsapp_security_phone || ""),
+              whatsapp_security_webhook:
+                (safeUpdates as any).whatsapp_security_webhook !== undefined
+                  ? (safeUpdates as any).whatsapp_security_webhook
+                  : ((globalStore.__bmgh_settings as any)?.whatsapp_security_webhook || ""),
+              whatsapp_callmebot_apikey:
+                (safeUpdates as any).whatsapp_callmebot_apikey !== undefined
+                  ? (safeUpdates as any).whatsapp_callmebot_apikey
+                  : ((globalStore.__bmgh_settings as any)?.whatsapp_callmebot_apikey || ""),
+            };
+            await supabaseAdmin.from("settings").upsert({
+              id: "whatsapp_security_config",
+              store_name: JSON.stringify(currentSec),
+            });
+          } catch (secErr) {
+            console.warn("Security config backup row save error:", secErr);
+          }
+        }
+
+        const dbPayload: any = { ...safeUpdates };
+        delete dbPayload.whatsapp_security_phone;
+        delete dbPayload.whatsapp_security_webhook;
+        delete dbPayload.whatsapp_callmebot_apikey;
+        delete dbPayload.security_incidents;
+
+        const payload = { id: "default", ...dbPayload, updated_at: new Date().toISOString() };
         let { data, error } = await supabaseAdmin
           .from("settings")
           .upsert(payload)

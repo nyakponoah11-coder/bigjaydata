@@ -106,15 +106,22 @@ export async function POST(request: Request) {
     // 4. Update WhatsApp Alert Configuration
     if (action === "update_config") {
       const { whatsapp_security_phone, whatsapp_security_webhook, whatsapp_callmebot_apikey } = body;
-      await db.updateSettings({
-        whatsapp_security_phone: (whatsapp_security_phone || "").trim(),
+      const cleanPhone = (whatsapp_security_phone || "").trim();
+      const updated = await db.updateSettings({
+        whatsapp_security_phone: cleanPhone,
         whatsapp_security_webhook: (whatsapp_security_webhook || "").trim(),
         whatsapp_callmebot_apikey: (whatsapp_callmebot_apikey || "").trim(),
+        ...(cleanPhone ? { whatsapp_number: cleanPhone } : {}),
       } as any);
 
       return NextResponse.json({
         success: true,
         message: "WhatsApp security notification settings saved successfully.",
+        config: {
+          whatsapp_security_phone: (updated as any).whatsapp_security_phone || updated.whatsapp_number || cleanPhone,
+          whatsapp_security_webhook: (updated as any).whatsapp_security_webhook || "",
+          whatsapp_callmebot_apikey: (updated as any).whatsapp_callmebot_apikey || "",
+        },
       });
     }
 

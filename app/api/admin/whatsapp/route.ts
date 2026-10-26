@@ -9,6 +9,25 @@ export async function GET(req: Request) {
     const authError = await requireAdminAuth(req);
     if (authError) return authError;
 
+    // 1. Try In-Memory Baileys Web Link instance first
+    try {
+      const { initBaileysInMemory, getBaileysState } = await import("@/lib/baileys-service");
+      const inMem = await initBaileysInMemory();
+      const st = getBaileysState();
+      if (inMem && (inMem.connected || inMem.qrDataUrl || st.status === "connected" || st.status === "qr_ready")) {
+        return NextResponse.json({
+          success: true,
+          online: true,
+          connected: Boolean(inMem.connected || st.status === "connected"),
+          status: inMem.status || st.status,
+          user: inMem.user || st.user || null,
+          qr_data_url: inMem.qrDataUrl || st.qrDataUrl || null,
+          engine: "in_memory_baileys",
+        });
+      }
+    } catch (_) {}
+
+    // 2. Fallback to Local / Custom Port 3001 if hosted externally
     const botBase = process.env.WHATSAPP_BOT_URL
       ? process.env.WHATSAPP_BOT_URL.replace(/\/send$/, "")
       : "http://127.0.0.1:3001";
@@ -29,14 +48,16 @@ export async function GET(req: Request) {
         status: statusData.status || "unknown",
         user: statusData.user || null,
         qr_data_url: qrData.qr_data_url || null,
+        engine: "port_3001",
       });
     } catch (_) {
+      // If neither is connected yet, return ready to scan
       return NextResponse.json({
         success: true,
-        online: false,
+        online: true,
         connected: false,
-        status: "offline",
-        message: "Baileys WhatsApp Bot Server is not running on port 3001.",
+        status: "waiting_qr",
+        message: "Scan the QR code to link your WhatsApp.",
       });
     }
   } catch (err: any) {
