@@ -45,4 +45,5 @@ next-env.d.ts
 # local test scripts
 check_key.py
 scratch/
+baileys_auth/
 

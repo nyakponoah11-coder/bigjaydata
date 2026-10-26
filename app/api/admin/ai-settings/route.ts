@@ -1,11 +1,15 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { testAIProvider } from "@/lib/ai-rotator";
+import { requireAdminAuth } from "@/lib/admin-auth";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const authError = await requireAdminAuth(request);
+    if (authError) return authError;
+
     const settings = await db.getSettings();
 
     const maskKey = (k?: string) => {
@@ -50,6 +54,9 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    const authError = await requireAdminAuth(request);
+    if (authError) return authError;
+
     const body = await request.json().catch(() => ({}));
     const action = body.action || "save";
 

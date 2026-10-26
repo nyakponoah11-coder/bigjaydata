@@ -1,9 +1,13 @@
 import { NextResponse } from "next/server";
 import { sendAgentEmail } from "@/lib/email";
 import { db } from "@/lib/db";
+import { requireAdminAuth } from "@/lib/admin-auth";
 
 export async function POST(req: Request) {
   try {
+    const authError = await requireAdminAuth(req);
+    if (authError) return authError;
+
     const body = await req.json();
     const { test_email, resend_api_key, email_from, smtp_user, smtp_pass, smtp_host, smtp_port } = body;
 

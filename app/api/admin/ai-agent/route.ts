@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { sendCustomerSMS } from "@/lib/sms";
+import { requireAdminAuth } from "@/lib/admin-auth";
 
 interface ToolExecutionResult {
   tool: string;
@@ -10,6 +11,9 @@ interface ToolExecutionResult {
 
 export async function POST(request: Request) {
   try {
+    const authError = await requireAdminAuth(request);
+    if (authError) return authError;
+
     const { prompt } = await request.json();
     if (!prompt || typeof prompt !== "string") {
       return NextResponse.json({ success: false, message: "Prompt is required" }, { status: 400 });

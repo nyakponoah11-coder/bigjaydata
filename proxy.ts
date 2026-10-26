@@ -42,17 +42,28 @@ function dispatchEdgeAlert(url: string, ip: string, snippet: string) {
     const waPhoneId = (process.env.WHATSAPP_PHONE_NUMBER_ID || process.env.PHONE_ID || "").trim();
     const timeStr = new Date().toLocaleString("en-GB", { timeZone: "Africa/Accra" });
 
-    if (waToken && waPhoneId) {
-      const waMsg =
-        "🚨 *BIGJAYDATA — SECURITY INTRUSION ALERT* 🚨\n" +
-        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n" +
-        "⚠️ *Intrusion or probing attempt blocked at the edge!*\n\n" +
-        "• *Target:* " + url.slice(0, 80) + "\n" +
-        "• *Attacker IP:* " + ip + "\n" +
-        "• *Trigger:* \"" + snippet + "\"\n" +
-        "• *Time:* " + timeStr + "\n" +
-        "• *Status:* 🛡️ BLOCKED with 403 Forbidden.";
+    const waMsg =
+      "🚨 *BIGJAYDATA — SECURITY INTRUSION ALERT* 🚨\n" +
+      "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n" +
+      "⚠️ *Unauthorized attempt blocked by Firewall!*\n\n" +
+      "• *Target:* " + url.slice(0, 80) + "\n" +
+      "• *Attacker IP:* " + ip + "\n" +
+      "• *Trigger:* \"" + snippet + "\"\n" +
+      "• *Time:* " + timeStr + "\n" +
+      "• *Status:* 🛡️ BLOCKED with 403 Forbidden.";
 
+    // 1. Dispatch via Local Baileys WhatsApp Bot (Port 3001)
+    const botUrl = process.env.WHATSAPP_BOT_URL || "http://127.0.0.1:3001/send";
+    for (const phone of adminPhones) {
+      fetch(botUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ to: phone, message: waMsg }),
+      }).catch(() => null);
+    }
+
+    // 2. Dispatch via Meta Cloud API (if configured)
+    if (waToken && waPhoneId) {
       for (const phone of adminPhones) {
         fetch("https://graph.facebook.com/v20.0/" + waPhoneId + "/messages", {
           method: "POST",
@@ -62,6 +73,23 @@ function dispatchEdgeAlert(url: string, ip: string, snippet: string) {
       }
     }
 
+    // 3. Dispatch via CallMeBot WhatsApp Gateway (if configured)
+    const callmebotKey = (process.env.CALLMEBOT_API_KEY || "").trim();
+    if (callmebotKey) {
+      for (const phone of adminPhones) {
+        const ghPhone = phone.startsWith("233") ? "+" + phone : "+233" + phone.replace(/^0/, "");
+        const cmbUrl =
+          "https://api.callmebot.com/whatsapp.php?phone=" +
+          encodeURIComponent(ghPhone) +
+          "&text=" +
+          encodeURIComponent(waMsg) +
+          "&apikey=" +
+          encodeURIComponent(callmebotKey);
+        fetch(cmbUrl).catch(() => null);
+      }
+    }
+
+    // 4. Dispatch Guaranteed Instant Arkesel SMS
     if (arkeselKey) {
       const smsMsg = "🚨 BIGJAYDATA SECURITY ALERT: Blocked intrusion from " + ip + " on " + url.slice(0, 40) + ". Trigger: \"" + snippet.slice(0, 35) + "\". BLOCKED!";
       for (const phone of adminPhones) {

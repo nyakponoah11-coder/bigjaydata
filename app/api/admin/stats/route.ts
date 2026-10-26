@@ -2,9 +2,13 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { fetchDataMartBalance } from "@/lib/datamart";
 import { fetchNetflixPartnerInfo } from "@/lib/netflix";
+import { requireAdminAuth } from "@/lib/admin-auth";
 
 export async function GET(request: Request) {
   try {
+    const authError = await requireAdminAuth(request);
+    if (authError) return authError;
+
     const { searchParams } = new URL(request.url);
     const dateParam = searchParams.get("date") || new Date().toISOString().slice(0, 10);
 

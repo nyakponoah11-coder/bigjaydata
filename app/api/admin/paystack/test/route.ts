@@ -1,8 +1,12 @@
 import { NextResponse } from "next/server";
 import { db, isMaskedSecret, isValidPaystackSecret } from "@/lib/db";
+import { requireAdminAuth } from "@/lib/admin-auth";
 
 export async function POST(req: Request) {
   try {
+    const authError = await requireAdminAuth(req);
+    if (authError) return authError;
+
     const body = await req.json();
     let { public_key, secret_key } = body;
 

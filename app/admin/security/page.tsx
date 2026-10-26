@@ -70,6 +70,25 @@ export default function AdminSecurityPage() {
   const [blockingTarget, setBlockingTarget] = useState(false);
   const [isBlockModalOpen, setIsBlockModalOpen] = useState(false);
 
+  // Baileys WhatsApp Bot Status
+  const [baileysInfo, setBaileysInfo] = useState<{
+    online: boolean;
+    connected: boolean;
+    status: string;
+    user?: string | null;
+    qr_data_url?: string | null;
+  } | null>(null);
+
+  const fetchBaileys = async () => {
+    try {
+      const res = await fetch("/api/admin/whatsapp", { cache: "no-store" });
+      const data = await res.json();
+      if (data.success) {
+        setBaileysInfo(data);
+      }
+    } catch (_) {}
+  };
+
   const fetchData = async () => {
     setLoading(true);
     try {
@@ -93,7 +112,11 @@ export default function AdminSecurityPage() {
 
   useEffect(() => {
     fetchData();
-    const interval = setInterval(fetchData, 15000); // Live poll every 15s
+    fetchBaileys();
+    const interval = setInterval(() => {
+      fetchData();
+      fetchBaileys();
+    }, 10000); // Live poll every 10s
     return () => clearInterval(interval);
   }, []);
 
@@ -314,18 +337,92 @@ export default function AdminSecurityPage() {
             </button>
           </div>
 
-          {alertNotice && (
-            <div
-              className={`mb-6 p-4 rounded-2xl border text-xs flex items-center gap-2 ${
-                alertNotice.type === "success"
-                  ? "bg-emerald-950/60 border-emerald-800 text-emerald-300"
-                  : "bg-red-950/60 border-red-800 text-red-300"
-              }`}
-            >
-              {alertNotice.type === "success" ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <AlertTriangle className="w-4 h-4 shrink-0" />}
-              <span>{alertNotice.message}</span>
+          {/* Baileys WhatsApp Bot Status & QR Scanner Card */}
+          <div className="mb-6 p-5 rounded-2xl bg-slate-800/60 border border-slate-700/80">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-4 border-b border-slate-700/60">
+              <div className="flex items-center gap-3">
+                <div
+                  className={`w-3.5 h-3.5 rounded-full shrink-0 ${
+                    baileysInfo?.connected
+                      ? "bg-emerald-500 animate-pulse shadow-lg shadow-emerald-500/50"
+                      : baileysInfo?.online
+                      ? "bg-amber-400 animate-pulse"
+                      : "bg-slate-600"
+                  }`}
+                />
+                <div>
+                  <h3 className="text-sm font-bold text-white flex items-center gap-2 flex-wrap">
+                    Baileys WhatsApp Scanner & Live Link
+                    <span
+                      className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${
+                        baileysInfo?.connected
+                          ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+                          : baileysInfo?.online
+                          ? "bg-amber-500/10 text-amber-400 border border-amber-500/20"
+                          : "bg-slate-700 text-slate-400 border border-slate-600"
+                      }`}
+                    >
+                      {baileysInfo?.connected
+                        ? `Connected (${baileysInfo.user ? "+" + baileysInfo.user : "Active"})`
+                        : baileysInfo?.online
+                        ? "Waiting for QR Scan"
+                        : "Offline / Not Started"}
+                    </span>
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    {baileysInfo?.connected
+                      ? "Your WhatsApp is linked! Intrusion attacks and PowerShell executions will immediately message you."
+                      : baileysInfo?.online
+                      ? "Scan the QR code below on your mobile WhatsApp (Linked Devices > Link a Device)."
+                      : "Run 'npm run whatsapp-bot' in your terminal or start the background bot to link WhatsApp."}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={fetchBaileys}
+                  className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  Refresh
+                </button>
+                <a
+                  href="http://localhost:3001"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="px-3 py-1.5 bg-emerald-600/30 hover:bg-emerald-600/50 text-emerald-300 border border-emerald-500/30 text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  Open UI (:3001)
+                </a>
+              </div>
             </div>
-          )}
+
+            {/* QR Code Display if available */}
+            {baileysInfo?.qr_data_url && !baileysInfo?.connected && (
+              <div className="mt-5 flex flex-col sm:flex-row items-center gap-6 p-4 bg-slate-900/80 rounded-xl border border-slate-700">
+                <div className="p-3 bg-white rounded-xl shadow-lg shrink-0">
+                  <img src={baileysInfo.qr_data_url} alt="WhatsApp QR Code" className="w-48 h-48 block" />
+                </div>
+                <div className="space-y-2 text-xs text-slate-300">
+                  <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                    <Phone className="w-4 h-4 text-emerald-400" />
+                    How to Link your WhatsApp:
+                  </h4>
+                  <ol className="list-decimal list-inside space-y-1.5 text-slate-300 text-xs">
+                    <li>Open WhatsApp on your phone</li>
+                    <li>Tap <b>Menu (⋮)</b> or <b>Settings</b> &gt; <b>Linked Devices</b></li>
+                    <li>Tap <b>Link a Device</b> and point camera at this screen</li>
+                  </ol>
+                  <p className="text-[11px] text-slate-400 pt-1">
+                    Once scanned, your phone will automatically link and intrusion alerts will be pushed to your WhatsApp instantly.
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
 
           <form onSubmit={handleSaveConfig} className="grid grid-cols-1 sm:grid-cols-3 gap-5">
             <div>

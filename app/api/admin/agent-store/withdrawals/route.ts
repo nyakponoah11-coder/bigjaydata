@@ -1,9 +1,13 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { disbursePaystackTransfer } from "@/lib/paystack";
+import { requireAdminAuth } from "@/lib/admin-auth";
 
 export async function POST(req: Request) {
   try {
+    const authError = await requireAdminAuth(req);
+    if (authError) return authError;
+
     const body = await req.json();
     const { id, status, note, pay_with_paystack } = body;
 
