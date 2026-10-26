@@ -2,11 +2,12 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { sendDataMartDelivery } from "@/lib/datamart";
 import { verifyPaystackTransaction } from "@/lib/paystack";
+import { createNetflixOrder } from "@/lib/netflix";
 
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { reference, network, package_size, phone, amount, paystack_ref, customer_id } = body;
+    const { reference, network, package_size, phone, amount, paystack_ref, customer_id, customer_name, customer_email, service_type } = body;
 
     if (!reference || !network || !package_size || !phone || amount === undefined) {
       return NextResponse.json(
@@ -14,6 +15,8 @@ export async function POST(request: Request) {
         { status: 400 }
       );
     }
+
+    const isNetflix = (network || "").toLowerCase() === "netflix" || service_type === "netflix";
 
     // Security check: Block any demo or mock references from receiving live bundle deliveries
     if (!paystack_ref || paystack_ref.startsWith("demo_") || paystack_ref.startsWith("test_")) {
@@ -68,7 +71,7 @@ export async function POST(request: Request) {
       try {
         order = await db.createOrder({
           reference,
-          network: network.toLowerCase(),
+          network: isNetflix ? "netflix" : network.toLowerCase(),
           package_size,
           phone,
           amount: Number(amount),
@@ -78,6 +81,9 @@ export async function POST(request: Request) {
           status: "pending",
           source: customer_id ? "customer_momo" : "web",
           customer_id: customer_id || undefined,
+          customer_name: customer_name || undefined,
+          customer_email: customer_email || undefined,
+          service_type: isNetflix ? "netflix" : "data",
           payment_method: "momo",
           datamart_response: { status: "pending", initiated_at: new Date().toISOString() },
         });
@@ -92,7 +98,9 @@ export async function POST(request: Request) {
               reference,
               paystack_ref: verification.reference || paystack_ref,
               status: "success",
-              description: `${network.toUpperCase()} ${package_size} Data Bundle (Direct Momo)`,
+              description: isNetflix
+                ? `Netflix 30-Day Premium UHD Access (Direct Momo)`
+                : `${network.toUpperCase()} ${package_size} Data Bundle (Direct Momo)`,
             });
           } catch (txErr) {
             console.warn("Failed to log customer transaction for direct order:", txErr);
@@ -113,6 +121,39 @@ export async function POST(request: Request) {
         success: true,
         order,
         delivery: order.datamart_response,
+      });
+    }
+
+    // Handle Netflix automated delivery via Data1 Partner API
+    if (isNetflix) {
+      let netflixResult;
+      try {
+        netflixResult = await createNetflixOrder({
+          customer_name: customer_name || "Customer",
+          customer_phone: order.phone,
+          customer_email: customer_email || `${order.phone}@bundlemartgh.com`,
+          partner_reference: order.reference,
+          duration_days: 30,
+        });
+
+        if (netflixResult && netflixResult.success) {
+          order =
+            (await db.updateOrderStatus(order.id, "delivered", netflixResult.raw || netflixResult, {
+              delivery_status: "delivered",
+              netflix_email: netflixResult.netflix_email,
+              netflix_reference: netflixResult.reference,
+              service_type: "netflix",
+              duration_days: 30,
+            })) || order;
+        }
+      } catch (nfErr: any) {
+        console.error("[Netflix Partner API] Automated dispatch error:", nfErr);
+      }
+
+      return NextResponse.json({
+        success: true,
+        order,
+        netflix: netflixResult,
       });
     }
 

@@ -63,7 +63,7 @@ const NETWORKS: NetworkConfig[] = [
   },
 ];
 
-export default function NetworkSelectionSection({ products }: Props) {
+export default function NetworkSelectionSection({ products, settings }: Props) {
   useEffect(() => {
     if (products && products.length > 0) {
       saveProductsSession("all", products);
@@ -169,6 +169,62 @@ export default function NetworkSelectionSection({ products }: Props) {
             </Link>
           );
         })}
+
+        {/* Netflix Reseller Feature Card */}
+        {settings?.netflix_enabled !== false && (
+          <Link
+            href="/buy/netflix"
+            className="group block rounded-3xl border-2 border-red-600/60 hover:border-red-500 bg-gradient-to-r from-slate-950 via-red-950/30 to-slate-950 p-4 sm:p-6 lg:p-7 transition-all duration-300 overflow-hidden shadow-2xl hover:shadow-red-600/20 hover:scale-[1.01] active:scale-[0.99] relative"
+          >
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 lg:gap-6">
+              <div className="flex items-center gap-4 sm:gap-5 lg:gap-6">
+                <div className="w-14 h-14 sm:w-16 sm:h-16 lg:w-20 lg:h-20 rounded-full bg-black border-2 border-red-600 text-red-600 font-black flex items-center justify-center text-2xl sm:text-3xl lg:text-4xl shadow-xl shrink-0 group-hover:scale-105 transition-transform tracking-tighter">
+                  N
+                </div>
+
+                <div className="flex flex-col text-left">
+                  <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+                    <span className="text-xl sm:text-2xl lg:text-3xl font-black text-white tracking-tight group-hover:text-red-400 transition-colors">
+                      Netflix Premium UHD
+                    </span>
+                    <span className="text-[10px] sm:text-[11px] font-black uppercase tracking-wider text-red-200 bg-red-600/30 border border-red-500/50 px-2.5 py-0.5 rounded-full inline-flex items-center gap-1">
+                      ★ 30-Day Access
+                    </span>
+                    <span className="text-xs sm:text-sm text-emerald-400 font-extrabold">
+                      ₵{(settings?.netflix_price || 25).toFixed(2)}
+                    </span>
+                  </div>
+
+                  <p className="text-xs sm:text-sm text-slate-300 mt-1 leading-relaxed max-w-xl line-clamp-2 hidden sm:block">
+                    Stream movies and shows in Ultra HD 4K on TV, phone, or laptop. Instant sign-in code fetching when you need to log in.
+                  </p>
+
+                  <div className="hidden lg:flex items-center gap-2 mt-2.5">
+                    <span className="text-[11px] text-red-400 font-bold uppercase tracking-wider">
+                      Includes:
+                    </span>
+                    <span className="px-2.5 py-0.5 rounded-lg bg-red-950/80 border border-red-700/50 text-red-200 text-xs font-mono font-bold">
+                      Ultra HD 4K
+                    </span>
+                    <span className="px-2.5 py-0.5 rounded-lg bg-red-950/80 border border-red-700/50 text-red-200 text-xs font-mono font-bold">
+                      30 Days Validity
+                    </span>
+                    <span className="px-2.5 py-0.5 rounded-lg bg-red-950/80 border border-red-700/50 text-red-200 text-xs font-mono font-bold">
+                      Instant Sign-In Code
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end md:shrink-0 pt-2 md:pt-0 border-t md:border-t-0 border-slate-800/80">
+                <span className="w-full md:w-auto py-2.5 px-5 sm:py-3 sm:px-6 lg:py-3.5 lg:px-8 rounded-2xl font-black text-xs sm:text-sm lg:text-base shadow-md flex items-center justify-center gap-2 transition-all group-hover:shadow-xl group-hover:scale-105 bg-gradient-to-r from-red-600 to-rose-700 hover:from-red-500 hover:to-rose-600 text-white">
+                  <span>Get Netflix Access</span>
+                  <ArrowRight className="w-4 h-4 sm:w-5 sm:h-5 shrink-0 group-hover:translate-x-1 transition-transform" />
+                </span>
+              </div>
+            </div>
+          </Link>
+        )}
       </div>
     </section>
   );

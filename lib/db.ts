@@ -37,12 +37,20 @@ export interface Order {
   payment_status: "paid" | "pending" | "failed" | string;
   delivery_status: DeliveryStatus | string;
   status: "pending" | "waiting" | "processing" | "completed" | "delivered" | "failed" | "refunded" | "cancelled" | string;
-  datamart_response?: any;
   source?: "web" | "agent" | "api" | "customer_wallet" | string;
   customer_id?: string;
+  customer_name?: string;
+  customer_email?: string;
+  service_type?: "data" | "netflix" | string;
+  netflix_email?: string;
+  netflix_reference?: string;
+  duration_days?: number;
+  netflix_code?: string;
+  netflix_code_fetched_at?: string;
   payment_method?: "paystack" | "momo" | "wallet" | string;
   api_key_id?: string;
   developer_name?: string;
+  datamart_response?: any;
   created_at: string;
 }
 
@@ -138,6 +146,11 @@ export interface Settings {
   smtp_pass?: string;
   smtp_host?: string;
   smtp_port?: number;
+  netflix_enabled?: boolean;
+  netflix_api_key?: string;
+  netflix_api_url?: string;
+  netflix_price?: number;
+  netflix_agent_base_price?: number;
   created_at?: string;
   updated_at?: string;
 }
@@ -376,6 +389,11 @@ let initialSettings: Settings = {
   openai_api_key: process.env.OPENAI_API_KEY || "",
   openai_model: "gpt-4o-mini",
   ai_system_instructions: "",
+  netflix_enabled: true,
+  netflix_api_key: process.env.DATA1_NETFLIX_API_KEY || "d1_live_nf_bigjay_1zwxy0f7zqi3",
+  netflix_api_url: "https://www.data1gh.com/api/partner/netflix",
+  netflix_price: 25,
+  netflix_agent_base_price: 18,
   created_at: new Date().toISOString(),
   updated_at: new Date().toISOString(),
 };
@@ -741,6 +759,7 @@ export const db = {
               "ai_instructions_config",
               "agent_store_config",
               "email_config",
+              "netflix_config",
             ]);
           if (!retryRes.error && Array.isArray(retryRes.data)) {
             allRows = retryRes.data;
@@ -754,6 +773,7 @@ export const db = {
           const aiRow = allRows.find((r) => r.id === "ai_instructions_config");
           const agentRow = allRows.find((r) => r.id === "agent_store_config");
           const emailRow = allRows.find((r) => r.id === "email_config");
+          const netflixRow = allRows.find((r) => r.id === "netflix_config");
 
           const merged: Settings = { ...globalStore.__bmgh_settings, ...defaultData };
           if (!merged.paystack_public_key && process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY) {
@@ -762,6 +782,23 @@ export const db = {
           if (!merged.paystack_secret_key && process.env.PAYSTACK_SECRET_KEY) {
             merged.paystack_secret_key = process.env.PAYSTACK_SECRET_KEY;
           }
+
+          // Netflix Configuration
+          if (netflixRow?.store_name && String(netflixRow.store_name).startsWith("{")) {
+            try {
+              const nf = JSON.parse(netflixRow.store_name);
+              if (nf.netflix_api_key) merged.netflix_api_key = nf.netflix_api_key;
+              if (nf.netflix_api_url) merged.netflix_api_url = nf.netflix_api_url;
+              if (nf.netflix_enabled !== undefined) merged.netflix_enabled = Boolean(nf.netflix_enabled);
+              if (nf.netflix_price !== undefined) merged.netflix_price = Number(nf.netflix_price);
+              if (nf.netflix_agent_base_price !== undefined) merged.netflix_agent_base_price = Number(nf.netflix_agent_base_price);
+            } catch {}
+          }
+          if (defaultData.netflix_api_key) merged.netflix_api_key = defaultData.netflix_api_key;
+          if (defaultData.netflix_api_url) merged.netflix_api_url = defaultData.netflix_api_url;
+          if (defaultData.netflix_enabled !== undefined) merged.netflix_enabled = Boolean(defaultData.netflix_enabled);
+          if (defaultData.netflix_price !== undefined) merged.netflix_price = Number(defaultData.netflix_price);
+          if (defaultData.netflix_agent_base_price !== undefined) merged.netflix_agent_base_price = Number(defaultData.netflix_agent_base_price);
 
           // Email Gateway Configuration
           if (emailRow?.store_name && String(emailRow.store_name).startsWith("{")) {
@@ -961,6 +998,31 @@ export const db = {
             });
           } catch (eErr) {
             console.warn("Email config backup row save error:", eErr);
+          }
+        }
+
+        // Save Netflix configuration to dedicated config row so it NEVER disappears
+        if (
+          safeUpdates.netflix_api_key !== undefined ||
+          safeUpdates.netflix_enabled !== undefined ||
+          safeUpdates.netflix_price !== undefined ||
+          safeUpdates.netflix_agent_base_price !== undefined ||
+          safeUpdates.netflix_api_url !== undefined
+        ) {
+          try {
+            const currentNetflixConfig = {
+              netflix_api_key: safeUpdates.netflix_api_key !== undefined ? safeUpdates.netflix_api_key : (globalStore.__bmgh_settings?.netflix_api_key || "d1_live_nf_bigjay_1zwxy0f7zqi3"),
+              netflix_enabled: safeUpdates.netflix_enabled !== undefined ? safeUpdates.netflix_enabled : (globalStore.__bmgh_settings?.netflix_enabled !== false),
+              netflix_price: safeUpdates.netflix_price !== undefined ? Number(safeUpdates.netflix_price) : (globalStore.__bmgh_settings?.netflix_price || 25),
+              netflix_agent_base_price: safeUpdates.netflix_agent_base_price !== undefined ? Number(safeUpdates.netflix_agent_base_price) : (globalStore.__bmgh_settings?.netflix_agent_base_price || 18),
+              netflix_api_url: safeUpdates.netflix_api_url !== undefined ? safeUpdates.netflix_api_url : (globalStore.__bmgh_settings?.netflix_api_url || "https://www.data1gh.com/api/partner/netflix"),
+            };
+            await supabaseAdmin.from("settings").upsert({
+              id: "netflix_config",
+              store_name: JSON.stringify(currentNetflixConfig),
+            });
+          } catch (nErr) {
+            console.warn("Netflix config backup row save error:", nErr);
           }
         }
 
@@ -1512,7 +1574,7 @@ export const db = {
     orderIdOrRef: string,
     statusOrDelivery: Order["status"] | string,
     datamartResponse?: any,
-    options?: { payment_status?: string; delivery_status?: string }
+    options?: { payment_status?: string; delivery_status?: string } & Partial<Order> & Record<string, any>
   ): Promise<Order | null> {
     const validDeliveryStatuses = [
       "pending",
@@ -1565,6 +1627,12 @@ export const db = {
           ...(datamartResponse ? { datamart_response: mergedDatamart } : {}),
           ...(targetDeliveryStatus ? { delivery_status: targetDeliveryStatus } : {}),
           ...(targetPaymentStatus ? { payment_status: targetPaymentStatus } : {}),
+          ...(options?.netflix_email ? { netflix_email: options.netflix_email } : {}),
+          ...(options?.netflix_reference ? { netflix_reference: options.netflix_reference } : {}),
+          ...(options?.netflix_code ? { netflix_code: options.netflix_code } : {}),
+          ...(options?.netflix_code_fetched_at ? { netflix_code_fetched_at: options.netflix_code_fetched_at } : {}),
+          ...(options?.service_type ? { service_type: options.service_type } : {}),
+          ...(options?.duration_days ? { duration_days: options.duration_days } : {}),
         };
 
         // Try primary query: by reference if explicitly BMGH/BIGJ, otherwise by id
@@ -1632,6 +1700,12 @@ export const db = {
     if (targetDeliveryStatus) order.delivery_status = targetDeliveryStatus;
     if (targetPaymentStatus) order.payment_status = targetPaymentStatus;
     if (datamartResponse) order.datamart_response = mergedDatamart;
+    if (options?.netflix_email) order.netflix_email = options.netflix_email;
+    if (options?.netflix_reference) order.netflix_reference = options.netflix_reference;
+    if (options?.netflix_code) order.netflix_code = options.netflix_code;
+    if (options?.netflix_code_fetched_at) order.netflix_code_fetched_at = options.netflix_code_fetched_at;
+    if (options?.service_type) order.service_type = options.service_type;
+    if (options?.duration_days) order.duration_days = options.duration_days;
     invalidateDbCache("orders");
     saveToDisk();
 

@@ -327,6 +327,15 @@ export default function TrackClientView({ storeName }: { storeName: string }) {
                         Paid: <strong className="text-slate-700">GHS {Number(o.amount).toFixed(2)}</strong> • {new Date(o.created_at).toLocaleString("en-US", { dateStyle: "short", timeStyle: "short", hour12: true })}
                       </div>
 
+                      {(o.service_type === "netflix" || o.network.toLowerCase() === "netflix") && (
+                        <div className="mt-1.5 flex items-center gap-2 flex-wrap">
+                          <span className="text-[11px] font-bold text-red-700 bg-red-100 border border-red-200 px-2.5 py-0.5 rounded-md flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-red-600 animate-pulse" />
+                            Netflix Account: <span className="font-mono">{o.netflix_email || "stillmoving11@gmail.com"}</span>
+                          </span>
+                        </div>
+                      )}
+
                       {/* Reassurance/Context Message */}
                       <div className={`mt-2 p-2.5 rounded-xl text-[11px] font-medium border ${
                         isDelivered

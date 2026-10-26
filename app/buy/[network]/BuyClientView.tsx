@@ -59,6 +59,16 @@ export default function BuyClientView({ network, products, settings }: Props) {
           selectBtn: "bg-blue-600 hover:bg-blue-700 text-white",
           badgeColor: "bg-blue-100 text-blue-900",
         };
+      case "netflix":
+        return {
+          title: "Netflix 30-Day UHD Access",
+          pill: "Netflix Premium",
+          accentBg: "bg-red-600",
+          borderHover: "hover:border-red-500",
+          headerGradient: "from-red-600 via-rose-700 to-black text-white",
+          selectBtn: "bg-red-600 hover:bg-red-700 text-white",
+          badgeColor: "bg-red-100 text-red-900",
+        };
       default:
         return {
           title: `${network.toUpperCase()} Bundles`,
@@ -189,10 +199,13 @@ export default function BuyClientView({ network, products, settings }: Props) {
             {activeProducts.map((pkg) => {
               const isMtn = network.toLowerCase() === "mtn";
               const isTelecel = network.toLowerCase() === "telecel";
+              const isNetflix = network.toLowerCase() === "netflix";
               const cardBg = isMtn
                 ? "bg-[#ffcc00] text-slate-950"
                 : isTelecel
                 ? "bg-[#e60000] text-white"
+                : isNetflix
+                ? "bg-gradient-to-r from-red-600 to-rose-900 text-white border-2 border-red-500/50"
                 : "bg-[#1a73e8] text-white";
 
               return (

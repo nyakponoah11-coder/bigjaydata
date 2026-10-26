@@ -32,10 +32,47 @@ export default function ReceiptClientView({ initialOrder, reference, settings, b
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [copied, setCopied] = useState(false);
 
+  // Netflix State Hooks
+  const [fetchingCode, setFetchingCode] = useState(false);
+  const [fetchedCode, setFetchedCode] = useState<string | null>(initialOrder?.netflix_code || null);
+  const [codeExpiresIn, setCodeExpiresIn] = useState<string | null>(null);
+  const [codeCopied, setCodeCopied] = useState(false);
+  const [emailCopied, setEmailCopied] = useState(false);
+  const [codeError, setCodeError] = useState("");
+
+  const handleFetchCode = async () => {
+    if (!order) return;
+    setFetchingCode(true);
+    setCodeError("");
+    try {
+      const res = await fetch("/api/netflix/fetch-code", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          reference: order.netflix_reference || order.reference,
+          order_id: order.id,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.message || "Sign-in code is not ready yet. Please click 'Send sign-in code' on your Netflix screen first, then try again.");
+      }
+      setFetchedCode(data.code);
+      setCodeExpiresIn(data.expires_in || "15 minutes");
+    } catch (err: any) {
+      setCodeError(err.message || "Failed to fetch sign-in code. Please try again.");
+    } finally {
+      setFetchingCode(false);
+    }
+  };
+
   // Trigger celebration confetti on delivered status
   useEffect(() => {
     if (order) {
       saveDeviceSession("last_tracked", { query: order.reference, orders: [order] }, 30 * 60 * 1000);
+      if (order.netflix_code && !fetchedCode) {
+        setFetchedCode(order.netflix_code);
+      }
     }
     if (order?.status === "delivered") {
       try {
@@ -144,7 +181,9 @@ export default function ReceiptClientView({ initialOrder, reference, settings, b
         {/* Status Header */}
         <div
           className={`p-6 sm:p-8 text-center text-white ${
-            isDelivered
+            (order.service_type === "netflix" || order.network.toLowerCase() === "netflix")
+              ? "bg-gradient-to-r from-red-600 via-rose-700 to-red-800"
+              : isDelivered
               ? "bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700"
               : isPending || isFailed
               ? "bg-gradient-to-r from-amber-500 to-amber-600"
@@ -152,7 +191,9 @@ export default function ReceiptClientView({ initialOrder, reference, settings, b
           }`}
         >
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-white/20 backdrop-blur-md mb-4 shadow-inner">
-            {isDelivered ? (
+            {(order.service_type === "netflix" || order.network.toLowerCase() === "netflix") ? (
+              <span className="text-2xl font-black">N</span>
+            ) : isDelivered ? (
               <CheckCircle2 className="w-9 h-9 text-white" />
             ) : isPending || isFailed ? (
               <Clock className="w-9 h-9 text-white animate-spin" />
@@ -162,7 +203,9 @@ export default function ReceiptClientView({ initialOrder, reference, settings, b
           </div>
 
           <h1 className="text-2xl sm:text-3xl font-black tracking-tight">
-            {isDelivered
+            {(order.service_type === "netflix" || order.network.toLowerCase() === "netflix")
+              ? "Netflix 30-Day UHD Access Ready!"
+              : isDelivered
               ? "Data Delivered Successfully!"
               : isPending
               ? "Processing Your Data Delivery..."
@@ -172,7 +215,9 @@ export default function ReceiptClientView({ initialOrder, reference, settings, b
           </h1>
 
           <p className="mt-2 text-xs sm:text-sm text-white/90 max-w-md mx-auto">
-            {isDelivered ? (
+            {(order.service_type === "netflix" || order.network.toLowerCase() === "netflix") ? (
+              <span>Your Netflix profile is active. Follow the steps below to sign in with your code.</span>
+            ) : isDelivered ? (
               <span>Your line has been credited with high-speed internet data.</span>
             ) : isPending ? (
               <span>Your bundle is dispatching through automated telecom gateway.</span>
@@ -197,7 +242,133 @@ export default function ReceiptClientView({ initialOrder, reference, settings, b
 
         {/* Dynamic Congratulations / Apology Banner */}
         <div className="p-6 bg-slate-50 border-b border-slate-200/80">
-          {isDelivered ? (
+          {(order.service_type === "netflix" || order.network.toLowerCase() === "netflix") ? (
+            <div className="space-y-4">
+              <div className="p-4 rounded-2xl bg-red-950 text-white border border-red-700/60 shadow-lg flex items-start gap-3">
+                <span className="w-8 h-8 rounded-full bg-red-600 text-white font-black flex items-center justify-center shrink-0 text-base">
+                  N
+                </span>
+                <div>
+                  <strong className="block font-bold text-sm text-red-200 mb-0.5">
+                    🎉 Your Netflix 30-Day UHD Access is Ready!
+                  </strong>
+                  Follow the instructions below to sign in to Netflix using your assigned email and fetch your one-time sign-in code.
+                </div>
+              </div>
+
+              {/* Account Credentials Box */}
+              <div className="p-5 rounded-2xl bg-white border-2 border-red-200 shadow-sm space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+                  <div>
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                      Netflix Account Email
+                    </span>
+                    <div className="text-base sm:text-lg font-mono font-black text-slate-900 mt-0.5 select-all">
+                      {order.netflix_email || "stillmoving11@gmail.com"}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(order.netflix_email || "stillmoving11@gmail.com");
+                      setEmailCopied(true);
+                      setTimeout(() => setEmailCopied(false), 2000);
+                    }}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold transition-colors self-start sm:self-auto cursor-pointer"
+                  >
+                    {emailCopied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                    <span>{emailCopied ? "Email Copied!" : "Copy Email"}</span>
+                  </button>
+                </div>
+
+                {/* Fetch Sign-In Code Interactive Area */}
+                <div className="p-4 rounded-xl bg-slate-900 text-white space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-300 uppercase tracking-wider">
+                      Sign-In Code (One-Time Passcode)
+                    </span>
+                    {codeExpiresIn && (
+                      <span className="text-[10px] font-bold text-amber-400 bg-amber-400/20 px-2 py-0.5 rounded-full">
+                        Expires in {codeExpiresIn}
+                      </span>
+                    )}
+                  </div>
+
+                  {fetchedCode ? (
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-black/40 p-4 rounded-xl border border-red-500/40">
+                      <div>
+                        <span className="text-[11px] text-slate-400 block mb-0.5">Your 4-Digit Code:</span>
+                        <div className="text-3xl sm:text-4xl font-mono font-black tracking-widest text-emerald-400">
+                          {fetchedCode}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => {
+                            navigator.clipboard.writeText(fetchedCode);
+                            setCodeCopied(true);
+                            setTimeout(() => setCodeCopied(false), 2000);
+                          }}
+                          className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                        >
+                          {codeCopied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                          <span>{codeCopied ? "Copied" : "Copy Code"}</span>
+                        </button>
+                        <button
+                          onClick={handleFetchCode}
+                          disabled={fetchingCode}
+                          className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold flex items-center gap-1 transition-colors disabled:opacity-50 cursor-pointer"
+                        >
+                          <RefreshCw className={`w-3.5 h-3.5 ${fetchingCode ? "animate-spin" : ""}`} />
+                          <span>Fetch Again</span>
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <p className="text-xs text-slate-300 max-w-sm">
+                        Enter the email into Netflix, choose <strong>"Send sign-in code"</strong>, then tap the button to reveal your code.
+                      </p>
+                      <button
+                        onClick={handleFetchCode}
+                        disabled={fetchingCode}
+                        className="py-3 px-5 rounded-xl bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white font-black text-xs shadow-lg flex items-center justify-center gap-2 transition-all disabled:opacity-50 cursor-pointer"
+                      >
+                        {fetchingCode ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4 text-amber-300" />}
+                        <span>{fetchingCode ? "Fetching Code..." : "Get Sign-In Code"}</span>
+                      </button>
+                    </div>
+                  )}
+
+                  {codeError && (
+                    <p className="text-xs text-rose-400 font-medium bg-rose-950/80 p-2.5 rounded-lg border border-rose-800/60">
+                      ⚠️ {codeError}
+                    </p>
+                  )}
+                </div>
+
+                {/* 4-Step Instructions */}
+                <div className="pt-1 text-xs text-slate-600 space-y-1.5">
+                  <span className="font-bold text-slate-900 block mb-1">How to sign in on your TV or Phone:</span>
+                  <div className="flex items-center gap-2">
+                    <span className="w-4 h-4 rounded-full bg-slate-200 text-slate-700 font-bold flex items-center justify-center text-[10px]">1</span>
+                    <span>Open Netflix app or visit netflix.com</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="w-4 h-4 rounded-full bg-slate-200 text-slate-700 font-bold flex items-center justify-center text-[10px]">2</span>
+                    <span>Enter email: <strong className="font-mono text-slate-900">{order.netflix_email || "stillmoving11@gmail.com"}</strong></span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="w-4 h-4 rounded-full bg-slate-200 text-slate-700 font-bold flex items-center justify-center text-[10px]">3</span>
+                    <span>Select <strong>"Send sign-in code"</strong></span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="w-4 h-4 rounded-full bg-slate-200 text-slate-700 font-bold flex items-center justify-center text-[10px]">4</span>
+                    <span>Click <strong>"Get Sign-In Code"</strong> above and enter the 4-digit code to start streaming!</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : isDelivered ? (
             <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs sm:text-sm flex items-start gap-3">
               <Zap className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
               <div>

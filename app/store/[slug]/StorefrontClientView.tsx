@@ -335,6 +335,19 @@ export default function StorefrontClientView({
       priceColor: "text-blue-400",
       buyBtn: "bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-500 hover:to-indigo-600 text-white shadow-blue-500/25",
     },
+    {
+      id: "netflix",
+      name: "Netflix 30-Day",
+      pill: "Ultra HD UHD",
+      activeTab: "bg-gradient-to-r from-red-600 via-rose-700 to-red-900 text-white border-red-500 shadow-xl shadow-red-600/30 font-black",
+      inactiveTab: "bg-red-500/10 text-red-300 border-red-500/30 hover:bg-red-500/20",
+      pillBg: "bg-black text-red-400 border border-red-600/40",
+      cardBorder: "border-red-600/40 hover:border-red-500",
+      cardBg: "bg-gradient-to-b from-red-600/10 via-slate-900/95 to-slate-950",
+      badgeStyle: "bg-red-600 text-white",
+      priceColor: "text-red-400",
+      buyBtn: "bg-gradient-to-r from-red-600 via-rose-700 to-red-800 hover:from-red-500 hover:to-rose-600 text-white shadow-red-600/25",
+    },
   ];
 
   const currentNetworkConfig =
@@ -667,7 +680,7 @@ export default function StorefrontClientView({
             <span className="text-xs text-slate-400">Non-Expiry Bundles</span>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             {NETWORK_CONFIGS.map((net) => {
               const active = selectedNetwork.toLowerCase() === net.id;
               return (

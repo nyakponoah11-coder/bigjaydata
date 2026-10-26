@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { sendDataMartDelivery } from "@/lib/datamart";
 import { verifyPaystackTransaction } from "@/lib/paystack";
 import { decodeAgentToken } from "@/lib/agent-link";
+import { createNetflixOrder } from "@/lib/netflix";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -58,8 +59,12 @@ export async function POST(
         norm(p.size) === norm(package_size)
     );
 
+    const isNetflix = (network || "").toLowerCase().trim() === "netflix";
     let baseCost = matched ? Number(matched.base_price) : 0;
-    if (!baseCost) {
+    if (isNetflix && !baseCost) {
+      const settings = await db.getSettings();
+      baseCost = Number(settings.netflix_agent_base_price || 18);
+    } else if (!baseCost) {
       const baseProducts = await db.getAgentBaseProducts();
       const bp = baseProducts.find(
         (b) =>
@@ -178,8 +183,47 @@ export async function POST(
       });
     }
 
-    // 6. Dispatch bundle via DataMart API (retry transient gateway failures)
+    // 6. Dispatch order (Netflix via Data1 partner API, Data bundles via DataMart)
     let deliveryResult: any;
+
+    if (isNetflix) {
+      try {
+        const netflixResult = await createNetflixOrder({
+          customer_name: body.customer_name || agent.store_name,
+          customer_phone: masterOrder.phone,
+          customer_email: body.customer_email || `${masterOrder.phone}@${agent.store_slug}.com`,
+          partner_reference: masterOrder.reference,
+          duration_days: 30,
+        });
+
+        deliveryResult = netflixResult?.raw || netflixResult;
+        const isDelivered = netflixResult?.success;
+        const finalDeliveryStatus = isDelivered ? "delivered" : "processing";
+
+        await Promise.all([
+          db.updateOrderStatus(masterOrder.id, finalDeliveryStatus, deliveryResult, {
+            payment_status: "paid",
+            delivery_status: finalDeliveryStatus,
+            netflix_email: netflixResult?.netflix_email,
+            netflix_reference: netflixResult?.reference,
+            service_type: "netflix",
+            duration_days: 30,
+          }),
+          db.updateAgentOrderStatus(agentOrder.id, finalDeliveryStatus, deliveryResult),
+        ]);
+
+        return NextResponse.json({
+          success: true,
+          reference,
+          order: masterOrder,
+          agent_order: agentOrder,
+          delivery: deliveryResult,
+        });
+      } catch (nfErr: any) {
+        console.error("[Netflix Partner API] Agent store order error:", nfErr);
+      }
+    }
+
     for (let attempt = 1; attempt <= 3; attempt++) {
       try {
         deliveryResult = await sendDataMartDelivery({

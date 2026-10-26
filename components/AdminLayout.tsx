@@ -27,6 +27,7 @@ import {
   UserCheck,
   Eye,
   EyeOff,
+  Tv,
 } from "lucide-react";
 
 interface Props {
@@ -181,6 +182,7 @@ export default function AdminLayout({ children }: Props) {
     { label: "Registered Accounts", href: "/admin/registered-accounts", icon: UserCheck, badge: "Wallets" },
     { label: "Customer Leads", href: "/admin/customers", icon: Users, badge: "Contacts" },
     { label: "Direct Purchase", href: "/admin/direct-purchase", icon: Zap, badge: "DataMart" },
+    { label: "Netflix Reseller", href: "/admin/netflix", icon: Tv, badge: "Data1" },
     { label: "Free Data Vouchers", href: "/admin/vouchers", icon: Gift, badge: "Promo" },
     { label: "Agent Stores", href: "/admin/agent-store", icon: Store, badge: "New" },
     { label: "Developer API", href: "/admin/developer", icon: Code, badge: "API" },

@@ -50,7 +50,19 @@ export default async function BuyNetworkPage({
   }
 
   const settings = await db.getSettings();
-  const products = await db.getProducts(decodedNetwork);
+  let products = await db.getProducts(decodedNetwork);
+  if (decodedNetwork === "netflix" && (!products || products.length === 0)) {
+    products = [
+      {
+        id: "netflix-30-days",
+        network: "netflix",
+        size: "30-Day Premium Access",
+        price: Number(settings.netflix_price || 25),
+        is_active: settings.netflix_enabled !== false,
+        created_at: new Date().toISOString(),
+      },
+    ];
+  }
 
   // Omit all backend API keys and datamart configuration from client props
   const {
