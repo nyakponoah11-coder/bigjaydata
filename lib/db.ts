@@ -128,6 +128,7 @@ export interface Settings {
   paystack_public_key: string;
   paystack_secret_key: string;
   datamart_api_key: string;
+  datamart_api_secret?: string;
   datamart_api_url: string;
   announcement_text: string;
   announcement_active: boolean;
@@ -744,6 +745,7 @@ export const db = {
               "netflix_config",
               "whatsapp_security_config",
               "maintenance_config",
+              "datamart_config",
             ]);
           if (!res.error && Array.isArray(res.data) && res.data.length > 0) {
             allRows = res.data;
@@ -794,6 +796,17 @@ export const db = {
           }
           if (!merged.paystack_secret_key && process.env.PAYSTACK_SECRET_KEY) {
             merged.paystack_secret_key = process.env.PAYSTACK_SECRET_KEY;
+          }
+
+          // DataMart Configuration
+          const dmRow = allRows?.find((r) => r.id === "datamart_config");
+          if (dmRow?.store_name && String(dmRow.store_name).startsWith("{")) {
+            try {
+              const dm = JSON.parse(dmRow.store_name);
+              if (dm.datamart_api_key) merged.datamart_api_key = dm.datamart_api_key;
+              if (dm.datamart_api_secret) merged.datamart_api_secret = dm.datamart_api_secret;
+              if (dm.datamart_api_url) merged.datamart_api_url = dm.datamart_api_url;
+            } catch {}
           }
 
           // Netflix Configuration
@@ -1071,6 +1084,27 @@ export const db = {
             });
           } catch (nErr) {
             console.warn("Netflix config backup row save error:", nErr);
+          }
+        }
+
+        // Save DataMart configuration to dedicated config row so it NEVER disappears
+        if (
+          safeUpdates.datamart_api_key !== undefined ||
+          (safeUpdates as any).datamart_api_secret !== undefined ||
+          safeUpdates.datamart_api_url !== undefined
+        ) {
+          try {
+            const currentDmConfig = {
+              datamart_api_key: safeUpdates.datamart_api_key !== undefined ? safeUpdates.datamart_api_key : (globalStore.__bmgh_settings?.datamart_api_key || ""),
+              datamart_api_secret: (safeUpdates as any).datamart_api_secret !== undefined ? (safeUpdates as any).datamart_api_secret : ((globalStore.__bmgh_settings as any)?.datamart_api_secret || ""),
+              datamart_api_url: safeUpdates.datamart_api_url !== undefined ? safeUpdates.datamart_api_url : (globalStore.__bmgh_settings?.datamart_api_url || ""),
+            };
+            await supabaseAdmin.from("settings").upsert({
+              id: "datamart_config",
+              store_name: JSON.stringify(currentDmConfig),
+            });
+          } catch (dmErr) {
+            console.warn("DataMart config backup row save error:", dmErr);
           }
         }
 

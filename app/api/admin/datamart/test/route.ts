@@ -8,9 +8,9 @@ export async function POST(request: Request) {
     if (authError) return authError;
 
     const body = await request.json().catch(() => ({}));
-    const { api_key, api_url } = body;
+    const { api_key, api_url, api_secret } = body;
 
-    const result = await testDataMartConnection(api_key, api_url);
+    const result = await testDataMartConnection(api_key, api_url, api_secret);
     return NextResponse.json(result);
   } catch (error: any) {
     return NextResponse.json(

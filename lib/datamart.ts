@@ -39,15 +39,19 @@ export async function resolveDatamartKeys(): Promise<string[]> {
   return keys;
 }
 
-export function getDatamartAuthHeaders(apiKey: string): Record<string, string> {
-  return {
+export function getDatamartAuthHeaders(apiKey: string, apiSecret?: string): Record<string, string> {
+  const headers: Record<string, string> = {
     "X-API-Key": apiKey,
     "Authorization": `Bearer ${apiKey}`,
     "x-access-token": apiKey,
     "token": apiKey,
-    "User-Agent": "BigJayData/1.0",
+    "User-Agent": "BundleMartGh/1.0",
     "Accept": "application/json",
   };
+  if (apiSecret) {
+    headers["X-API-Secret"] = apiSecret;
+  }
+  return headers;
 }
 
 /**
@@ -218,11 +222,16 @@ export async function sendDataMartDelivery(params: DataMartDeliveryParams): Prom
     // Always use a compliant UUID v4 as specified in DataMart documentation
     const idempotencyKey = crypto.randomUUID();
 
-    const requestBody = {
+    const rawRef = params.reference ? String(params.reference).trim() : `order_${Date.now()}`;
+    const orderRef = rawRef.startsWith("bmgh-") ? rawRef : `bmgh-${rawRef}`;
+
+    const requestBody: Record<string, any> = {
       phoneNumber: formattedPhone,
       network: datamartNetwork,
       capacity: capacityGb,
       gateway: "wallet",
+      ref: orderRef,
+      reference: orderRef,
     };
 
     console.log(`[DataMart API] Requesting ${purchaseUrl}`);
@@ -239,7 +248,8 @@ export async function sendDataMartDelivery(params: DataMartDeliveryParams): Prom
       };
     }
 
-    console.log(`[DataMart API] Sending with key (${apiKey.substring(0, 5)}... length ${apiKey.length}) and idempotency ${idempotencyKey}`);
+    const apiSecret = (settings as any).datamart_api_secret?.trim() || process.env.DATAMART_API_SECRET?.trim();
+    console.log(`[DataMart API] Sending with key (${apiKey.substring(0, 5)}... length ${apiKey.length}) and idempotency ${idempotencyKey}${apiSecret ? " [Second Secret X-API-Secret active]" : ""}`);
 
     const baseHeaders: Record<string, string> = {
       "Content-Type": "application/json",
@@ -248,6 +258,10 @@ export async function sendDataMartDelivery(params: DataMartDeliveryParams): Prom
       "User-Agent": "BundleMartGh/1.0",
       "Accept": "application/json",
     };
+
+    if (apiSecret) {
+      baseHeaders["X-API-Secret"] = apiSecret;
+    }
 
     // Live HTTP Call to DataMart official purchase endpoint
     let response = await fetch(purchaseUrl, {
@@ -531,7 +545,11 @@ export async function verifyDataMartNumber(phoneNumber: string): Promise<NumberV
 /**
  * Diagnostic tool: Tests connectivity and API key validity against DataMart developer API
  */
-export async function testDataMartConnection(customApiKey?: string, customApiUrl?: string): Promise<{
+export async function testDataMartConnection(
+  customApiKey?: string,
+  customApiUrl?: string,
+  customApiSecret?: string
+): Promise<{
   success: boolean;
   message: string;
   status: number;
@@ -541,6 +559,7 @@ export async function testDataMartConnection(customApiKey?: string, customApiUrl
     const settings = await db.getSettings();
     const keys = await resolveDatamartKeys();
     const apiKey = (customApiKey || keys[0] || "").trim();
+    const apiSecret = (customApiSecret || (settings as any).datamart_api_secret || process.env.DATAMART_API_SECRET || "").trim();
     const devBaseUrl = resolveDeveloperBaseUrl(customApiUrl || settings.datamart_api_url || process.env.DATAMART_API_URL);
     const purchaseUrl = resolvePurchaseUrl(customApiUrl || settings.datamart_api_url || process.env.DATAMART_API_URL);
 
@@ -552,13 +571,16 @@ export async function testDataMartConnection(customApiKey?: string, customApiUrl
       };
     }
 
-    const testHeaders = {
+    const testHeaders: Record<string, string> = {
       "Content-Type": "application/json",
       "X-API-Key": apiKey,
       "X-Idempotency-Key": crypto.randomUUID(),
       "User-Agent": "BundleMartGh/1.0",
       "Accept": "application/json",
     };
+    if (apiSecret) {
+      testHeaders["X-API-Secret"] = apiSecret;
+    }
 
     // 1. Primary check: Query developer wallet balance
     try {

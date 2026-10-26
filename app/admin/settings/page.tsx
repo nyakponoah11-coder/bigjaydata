@@ -47,6 +47,8 @@ export default function AdminSettingsPage() {
     details?: any;
   } | null>(null);
   const [datamartApiKey, setDatamartApiKey] = useState("");
+  const [datamartApiSecret, setDatamartApiSecret] = useState("");
+  const [showDatamartSecret, setShowDatamartSecret] = useState(false);
   const [datamartApiUrl, setDatamartApiUrl] = useState("");
   const [announcementText, setAnnouncementText] = useState("");
   const [announcementActive, setAnnouncementActive] = useState(true);
@@ -94,6 +96,7 @@ export default function AdminSettingsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           api_key: datamartApiKey.trim(),
+          api_secret: datamartApiSecret.trim(),
           api_url: datamartApiUrl.trim(),
         }),
       });
@@ -281,6 +284,7 @@ export default function AdminSettingsPage() {
         setPaystackPublicKey(s.paystack_public_key || "");
         setPaystackSecretKey(s.paystack_secret_key || "");
         setDatamartApiKey(s.datamart_api_key || "");
+        setDatamartApiSecret(s.datamart_api_secret || "");
         const rawDmUrl = s.datamart_api_url || "";
         const cleanDmUrl = !rawDmUrl || rawDmUrl.includes("datamartgh.com") || rawDmUrl === "https://api.datamartgh.shop/api" || rawDmUrl === "https://api.datamartgh.shop"
           ? "https://api.datamartgh.shop/api/developer"
@@ -341,7 +345,16 @@ export default function AdminSettingsPage() {
         updates.paystack_secret_key = cleanSecret;
       }
 
-      // Gemini AI Key & Model
+      // DataMart API Key & Second Secret
+      if (datamartApiKey !== undefined && !isMaskedSecret(datamartApiKey)) {
+        updates.datamart_api_key = datamartApiKey.trim();
+      }
+      if (datamartApiSecret !== undefined && !isMaskedSecret(datamartApiSecret)) {
+        updates.datamart_api_secret = datamartApiSecret.trim();
+      }
+      if (datamartApiUrl !== undefined) {
+        updates.datamart_api_url = datamartApiUrl.trim();
+      }
       if (geminiApiKey !== undefined && !isMaskedSecret(geminiApiKey)) {
         updates.gemini_api_key = geminiApiKey.trim();
       }
@@ -796,7 +809,7 @@ export default function AdminSettingsPage() {
                   type="text"
                   value={datamartApiKey}
                   onChange={(e) => setDatamartApiKey(e.target.value)}
-                  placeholder="dm_live_xxxxxxxxxxxxxxxxxxxxxxxx"
+                  placeholder="64-character DataMart API Key"
                   className="w-full px-3.5 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500"
                 />
               </div>
@@ -812,6 +825,35 @@ export default function AdminSettingsPage() {
                   placeholder="https://api.datamartgh.shop/api/developer"
                   className="w-full px-3.5 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500"
                 />
+              </div>
+
+              <div className="sm:col-span-2">
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-slate-400 font-semibold flex items-center gap-1.5">
+                    <span>DataMart Second Secret (X-API-Secret)</span>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-bold uppercase">
+                      DataMart Rule #2
+                    </span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setShowDatamartSecret(!showDatamartSecret)}
+                    className="text-[11px] text-slate-400 hover:text-emerald-400 flex items-center gap-1 transition-colors"
+                  >
+                    {showDatamartSecret ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                    <span>{showDatamartSecret ? "Hide" : "Show"}</span>
+                  </button>
+                </div>
+                <input
+                  type={showDatamartSecret ? "text" : "password"}
+                  value={datamartApiSecret}
+                  onChange={(e) => setDatamartApiSecret(e.target.value)}
+                  placeholder="Enter 12+ character secret matching DataMart 'Second Secret' rule"
+                  className="w-full px-3.5 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500 text-xs"
+                />
+                <span className="text-[10px] text-slate-500 mt-1 block">
+                  Enforces DataMart Rule #2. Stolen keys without this secret will be immediately rejected by DataMart before any money moves!
+                </span>
               </div>
             </div>
 
