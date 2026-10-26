@@ -1,5 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  serverExternalPackages: ["@whiskeysockets/baileys", "pino", "jimp"],
   typescript: {
     ignoreBuildErrors: true,
   },

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { sendWhatsAppSecurityAlert } from "@/lib/security";
+import { initBaileysInMemory, getBaileysState, sendBaileysMessage } from "@/lib/baileys-service";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -17,21 +18,40 @@ export async function GET() {
     let baileysConnected = false;
     let baileysUser: string | null = null;
     let qrDataUrl: string | null = null;
+    let statusText = "connecting";
 
+    // 1. First, check if external bot daemon is running on port 3001 or WHATSAPP_BOT_URL
     try {
       const [statusRes, qrRes] = await Promise.all([
-        fetch(`${botBase}/status`, { signal: AbortSignal.timeout(1500), cache: "no-store" }),
-        fetch(`${botBase}/qr`, { signal: AbortSignal.timeout(1500), cache: "no-store" }),
+        fetch(`${botBase}/status`, { signal: AbortSignal.timeout(1000), cache: "no-store" }),
+        fetch(`${botBase}/qr`, { signal: AbortSignal.timeout(1000), cache: "no-store" }),
       ]);
 
       const statusData = await statusRes.json().catch(() => ({}));
       const qrData = await qrRes.json().catch(() => ({}));
 
-      baileysOnline = true;
-      baileysConnected = Boolean(statusData.connected);
-      baileysUser = statusData.user || null;
-      qrDataUrl = qrData.qr_data_url || null;
+      if (statusData && (statusData.connected || qrData.qr_data_url)) {
+        baileysOnline = true;
+        baileysConnected = Boolean(statusData.connected);
+        baileysUser = statusData.user || null;
+        qrDataUrl = qrData.qr_data_url || null;
+        statusText = statusData.status || (baileysConnected ? "connected" : "qr_ready");
+      }
     } catch (_) {}
+
+    // 2. If external bot is not running, run directly in Next.js in-memory engine!
+    if (!baileysConnected && !qrDataUrl) {
+      try {
+        const mem = await initBaileysInMemory();
+        baileysOnline = true;
+        baileysConnected = mem.connected;
+        baileysUser = mem.user;
+        qrDataUrl = mem.qrDataUrl;
+        statusText = mem.status;
+      } catch (memErr) {
+        console.warn("[Baileys In-Memory Error]:", memErr);
+      }
+    }
 
     const savedPhone =
       settings.whatsapp_security_phone ||
@@ -39,18 +59,14 @@ export async function GET() {
       settings.support_phone ||
       "";
 
-    const isCallMeBotConfigured = Boolean(
-      settings.whatsapp_callmebot_apikey && settings.whatsapp_callmebot_apikey.length >= 4
-    );
-
     return NextResponse.json({
       success: true,
       phone: savedPhone,
-      callmebot_configured: isCallMeBotConfigured,
       baileys_online: baileysOnline,
       baileys_connected: baileysConnected,
       baileys_user: baileysUser,
       qr_data_url: qrDataUrl,
+      status: statusText,
     });
   } catch (err: any) {
     return NextResponse.json(
@@ -63,69 +79,49 @@ export async function GET() {
 export async function POST(req: Request) {
   try {
     const body = await req.json().catch(() => ({}));
-    const { action, phone, apikey, test_phone } = body;
-
-    if (action === "save") {
-      const cleanPhone = String(phone || "").replace(/\s+/g, "").trim();
-      const cleanKey = String(apikey || "").trim();
-
-      if (!cleanPhone || cleanPhone.length < 9) {
-        return NextResponse.json(
-          { success: false, message: "Please enter a valid WhatsApp phone number (e.g. 0551234567)." },
-          { status: 400 }
-        );
-      }
-
-      await db.updateSettings({
-        whatsapp_security_phone: cleanPhone,
-        whatsapp_callmebot_apikey: cleanKey,
-      });
-
-      // Automatically dispatch a test alert to confirm connection
-      if (cleanKey) {
-        try {
-          await sendWhatsAppSecurityAlert({
-            id: `verify-${Date.now()}`,
-            type: "manual_block",
-            severity: "low",
-            ip: "Security Setup",
-            phone: cleanPhone,
-            details: "BigJayData WhatsApp Security Alerts have been successfully connected to this number!",
-            timestamp: new Date().toISOString(),
-            blocked: false,
-            alert_sent: false,
-          });
-        } catch (_) {}
-      }
-
-      return NextResponse.json({
-        success: true,
-        message: "WhatsApp security preferences saved successfully!",
-      });
-    }
+    const { action, phone } = body;
 
     if (action === "test") {
-      const targetPhone = test_phone || phone;
-      const testIncident = {
-        id: `test-${Date.now()}`,
-        type: "manual_block" as const,
-        severity: "low" as const,
-        ip: "Live Verification",
-        phone: targetPhone || "0550000000",
-        details: "This is a live test notification from BigJayData Firewall confirming your WhatsApp alerts are active.",
-        timestamp: new Date().toISOString(),
-        blocked: false,
-        alert_sent: false,
-      };
+      const settings = await db.getSettings();
+      const targetPhone =
+        phone ||
+        settings.whatsapp_security_phone ||
+        settings.whatsapp_number ||
+        "0547100951";
 
-      const result = await sendWhatsAppSecurityAlert(testIncident);
+      const testMsg =
+        "🚨 *BIGJAYDATA — SECURITY ALERT TEST* 🚨\n" +
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n" +
+        "✅ *WhatsApp Link Verified Successfully!*\n\n" +
+        "• *Recipient:* " + targetPhone + "\n" +
+        "• *Time:* " + new Date().toLocaleString("en-GB", { timeZone: "Africa/Accra" }) + "\n" +
+        "• *Status:* 🛡️ Intrusion Detection System is ACTIVE.\n\n" +
+        "You will receive immediate alerts whenever unauthorized PowerShell scripts, command injections, or payment tampering are detected.";
+
+      // Try in-memory Baileys send first
+      let sent = await sendBaileysMessage(targetPhone, testMsg);
+
+      // If in-memory wasn't connected, fallback to standard security dispatcher
+      if (!sent) {
+        const result = await sendWhatsAppSecurityAlert({
+          id: `test-${Date.now()}`,
+          type: "manual_block" as const,
+          severity: "low" as const,
+          ip: "Admin Test",
+          phone: targetPhone,
+          details: "Live test notification from BigJayData Security System.",
+          timestamp: new Date().toISOString(),
+          blocked: false,
+          alert_sent: false,
+        });
+        sent = result.success;
+      }
+
       return NextResponse.json({
-        success: result.success,
-        channel: result.channel,
-        message: result.success
-          ? `Test alert dispatched successfully via ${result.channel}! Check your WhatsApp.`
-          : `Alert dispatch failed: ${result.error}`,
-        error: result.error,
+        success: sent,
+        message: sent
+          ? "Test security alert sent to WhatsApp successfully!"
+          : "Could not send test message. Please ensure your WhatsApp is scanned and connected.",
       });
     }
 

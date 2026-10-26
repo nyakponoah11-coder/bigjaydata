@@ -312,6 +312,16 @@ export async function sendWhatsAppSecurityAlert(
       `🔒 *AUTOMATIC DEFENSE:* Both the IP and Phone have been *AUTOMATICALLY BLOCKED* from placing any orders or accessing the platform.\n` +
       `━━━━━━━━━━━━━━━━━━━━━━`;
 
+    // 0. Try in-memory Baileys (if connected directly via /link)
+    try {
+      const { sendBaileysMessage } = await import("./baileys-service");
+      const inMemSent = await sendBaileysMessage(ghAdminPhone, alertMessage);
+      if (inMemSent) {
+        console.log("[WhatsApp Security Alert] Delivered via in-memory Baileys session.");
+        return { success: true, channel: "whatsapp_baileys" };
+      }
+    } catch (_) {}
+
     // 1. Try Custom / Local WhatsApp Webhook Bot (e.g. user's whatsapp-bot-server.cjs on port 3001)
     const customWebhook = (settings as any).whatsapp_security_webhook || process.env.WHATSAPP_BOT_URL || "http://127.0.0.1:3001/send";
     if (customWebhook) {
