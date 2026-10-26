@@ -21,20 +21,22 @@ export interface DataMartResult {
 
 export async function resolveDatamartKeys(): Promise<string[]> {
   const keys: string[] = [];
-  try {
-    const settings = await db.getSettings();
-    if (settings?.datamart_api_key && settings.datamart_api_key !== "dm_test_sample_key") {
-      keys.push(settings.datamart_api_key.trim());
-    }
-  } catch {}
   if (
     process.env.DATAMART_API_KEY &&
-    process.env.DATAMART_API_KEY !== "dm_test_sample_key" &&
-    !keys.includes(process.env.DATAMART_API_KEY.trim())
+    process.env.DATAMART_API_KEY !== "dm_test_sample_key"
   ) {
     keys.push(process.env.DATAMART_API_KEY.trim());
   }
-  // Fallback key removed - keys strictly resolved from settings or env
+  try {
+    const settings = await db.getSettings();
+    if (
+      settings?.datamart_api_key &&
+      settings.datamart_api_key !== "dm_test_sample_key" &&
+      !keys.includes(settings.datamart_api_key.trim())
+    ) {
+      keys.push(settings.datamart_api_key.trim());
+    }
+  } catch {}
 
   return keys;
 }
@@ -248,7 +250,7 @@ export async function sendDataMartDelivery(params: DataMartDeliveryParams): Prom
       };
     }
 
-    const apiSecret = (settings as any).datamart_api_secret?.trim() || process.env.DATAMART_API_SECRET?.trim();
+    const apiSecret = process.env.DATAMART_API_SECRET?.trim() || (settings as any).datamart_api_secret?.trim();
     console.log(`[DataMart API] Sending with key (${apiKey.substring(0, 5)}... length ${apiKey.length}) and idempotency ${idempotencyKey}${apiSecret ? " [Second Secret X-API-Secret active]" : ""}`);
 
     const baseHeaders: Record<string, string> = {
@@ -559,7 +561,7 @@ export async function testDataMartConnection(
     const settings = await db.getSettings();
     const keys = await resolveDatamartKeys();
     const apiKey = (customApiKey || keys[0] || "").trim();
-    const apiSecret = (customApiSecret || (settings as any).datamart_api_secret || process.env.DATAMART_API_SECRET || "").trim();
+    const apiSecret = (customApiSecret || process.env.DATAMART_API_SECRET || (settings as any).datamart_api_secret || "").trim();
     const devBaseUrl = resolveDeveloperBaseUrl(customApiUrl || settings.datamart_api_url || process.env.DATAMART_API_URL);
     const purchaseUrl = resolvePurchaseUrl(customApiUrl || settings.datamart_api_url || process.env.DATAMART_API_URL);
 
