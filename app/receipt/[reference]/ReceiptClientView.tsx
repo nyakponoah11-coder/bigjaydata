@@ -55,7 +55,7 @@ export default function ReceiptClientView({ initialOrder, reference, settings, b
       });
       const data = await res.json();
       if (!res.ok || !data.success) {
-        throw new Error(data.message || "Sign-in code is not ready yet. Please click 'Send sign-in code' on your Netflix screen first, then try again.");
+        throw new Error(data.error || data.message || "Sign-in code is not ready yet. Please click 'Send sign-in code' on your Netflix screen first, then try again.");
       }
       setFetchedCode(data.code);
       setCodeExpiresIn(data.expires_in || "15 minutes");

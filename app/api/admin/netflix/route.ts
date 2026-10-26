@@ -119,11 +119,12 @@ export async function POST(req: Request) {
         return NextResponse.json({ success: false, message: "Order reference is required." }, { status: 400 });
       }
 
-      const result = await fetchNetflixSignInCode(reference);
+      const order = await db.getOrderByReference(reference);
+      const targetRef = order?.netflix_reference || reference;
+      const result = await fetchNetflixSignInCode(targetRef);
 
       // If code was found, update order in db
       if (result.success && result.code) {
-        const order = await db.getOrderByReference(reference);
         if (order) {
           await db.updateOrderStatus(order.id, "delivered", undefined, {
             netflix_code: result.code,
