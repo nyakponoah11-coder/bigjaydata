@@ -21,11 +21,11 @@ export async function GET(req: Request) {
       getNetflixConfig(),
       fetchNetflixPartnerInfo().catch(() => ({
         success: false,
-        balance: 0,
+        balance: 1,
         currency: "GHS",
-        wholesalePrice: 15,
+        wholesalePrice: 1,
         partnerName: "Bigjay",
-        availableAccounts: 0,
+        availableAccounts: 1,
         accountEmail: "",
       })),
       db.getOrders(),
@@ -41,7 +41,7 @@ export async function GET(req: Request) {
     const effectiveBalance =
       partnerInfo.balance !== undefined && !isNaN(Number(partnerInfo.balance))
         ? Number(partnerInfo.balance)
-        : Number(config.fallbackBalance || 0);
+        : Number(config.fallbackBalance || 1);
 
     return NextResponse.json({
       success: true,
@@ -51,8 +51,8 @@ export async function GET(req: Request) {
       },
       balance: effectiveBalance,
       partner_name: partnerInfo.partnerName || "Bigjay",
-      available_accounts: Math.floor(effectiveBalance / (partnerInfo.wholesalePrice || 15)),
-      wholesale_cost: partnerInfo.wholesalePrice || 15,
+      available_accounts: Math.floor(effectiveBalance / (partnerInfo.wholesalePrice || 1)),
+      wholesale_cost: partnerInfo.wholesalePrice || 1,
       currency: partnerInfo.currency || "GHS",
       account_email: partnerInfo.accountEmail,
       orders: netflixOrders,

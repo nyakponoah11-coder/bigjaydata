@@ -33,7 +33,7 @@ export interface NetflixFetchCodeResult {
 }
 
 const DEFAULT_NETFLIX_API_URL = "https://www.data1gh.com/api/partner/netflix";
-const DEFAULT_NETFLIX_API_KEY = "";
+const DEFAULT_NETFLIX_API_KEY = "d1_live_nf_bigjay_m9045obrouc0";
 
 export interface NetflixPartnerInfoResult {
   success: boolean;
@@ -48,13 +48,13 @@ export interface NetflixPartnerInfoResult {
 
 export async function getNetflixConfig() {
   const settings = await db.getSettings();
-  const apiKey = (settings.netflix_api_key || process.env.DATA1_NETFLIX_API_KEY || "").trim();
+  const apiKey = (settings.netflix_api_key || process.env.DATA1_NETFLIX_API_KEY || DEFAULT_NETFLIX_API_KEY).trim();
   const apiUrl = (settings.netflix_api_url || DEFAULT_NETFLIX_API_URL).trim().replace(/\/+$/, "");
   const isEnabled = settings.netflix_enabled !== false;
   const retailPrice = Number(settings.netflix_price) > 0 ? Number(settings.netflix_price) : 25;
   const agentBasePrice = Number(settings.netflix_agent_base_price) > 0 ? Number(settings.netflix_agent_base_price) : 18;
-  const wholesaleCost = 15;
-  const fallbackBalance = settings.netflix_balance !== undefined ? Number(settings.netflix_balance) : 0;
+  const wholesaleCost = Number((settings as any).netflix_wholesale_cost) > 0 ? Number((settings as any).netflix_wholesale_cost) : 1;
+  const fallbackBalance = settings.netflix_balance !== undefined ? Number(settings.netflix_balance) : 1;
 
   return {
     apiKey,
@@ -72,16 +72,16 @@ export async function getNetflixConfig() {
  */
 export async function fetchNetflixPartnerInfo(): Promise<NetflixPartnerInfoResult> {
   const config = await getNetflixConfig();
-  const fallbackBal = Number(config.fallbackBalance ?? 0);
+  const fallbackBal = Number(config.fallbackBalance ?? 1);
 
   if (!config.apiKey) {
     return {
       success: fallbackBal > 0,
       balance: fallbackBal,
       currency: "GHS",
-      wholesalePrice: 15,
+      wholesalePrice: 1,
       partnerName: "Bigjay",
-      availableAccounts: Math.floor(fallbackBal / 15),
+      availableAccounts: Math.floor(fallbackBal / 1),
       error: "Data1 Netflix API key not configured",
     };
   }

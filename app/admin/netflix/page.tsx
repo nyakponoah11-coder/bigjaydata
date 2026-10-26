@@ -41,7 +41,7 @@ export default function AdminNetflixPage() {
   const [isEnabled, setIsEnabled] = useState(true);
   const [retailPrice, setRetailPrice] = useState(25);
   const [agentBasePrice, setAgentBasePrice] = useState(18);
-  const [wholesaleCost] = useState(15); // Fixed Data1 wholesale rate
+  const [wholesaleCost, setWholesaleCost] = useState(1); // Data1 wholesale rate
 
   // Balance state (read live from Data1 provider or synced in database)
   const [balance, setBalance] = useState(0);
@@ -76,6 +76,9 @@ export default function AdminNetflixPage() {
         setIsEnabled(data.config.isEnabled !== false);
         setRetailPrice(Number(data.config.retailPrice) || 25);
         setAgentBasePrice(Number(data.config.agentBasePrice) || 18);
+        if (data.wholesale_cost !== undefined) {
+          setWholesaleCost(Number(data.wholesale_cost));
+        }
         const liveBal = Number(data.balance ?? 0);
         setBalance(liveBal);
         setManualBalanceInput(liveBal > 0 ? liveBal.toFixed(2) : "0.00");
@@ -335,7 +338,7 @@ export default function AdminNetflixPage() {
 
               <div className="p-4 rounded-2xl bg-black/40 border border-red-900/30 text-center min-w-[130px]">
                 <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Wholesale Rate</div>
-                <div className="text-xl font-black text-red-400 mt-0.5">GH₵ 15.00</div>
+                <div className="text-xl font-black text-red-400 mt-0.5">GH₵ {wholesaleCost.toFixed(2)}</div>
                 <div className="text-[10px] text-slate-500">per 30 days</div>
               </div>
 
@@ -378,7 +381,7 @@ export default function AdminNetflixPage() {
                   </div>
                   <div>
                     <h2 className="text-lg font-black text-white">Data1 API Credentials</h2>
-                    <p className="text-xs text-slate-400">Partner: Bigjay • Rate: GH₵ 15 / 30-day</p>
+                    <p className="text-xs text-slate-400">Partner: {partnerName} • Rate: GH₵ {wholesaleCost.toFixed(2)} / 30-day</p>
                   </div>
                 </div>
 
