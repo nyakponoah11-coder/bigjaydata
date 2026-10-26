@@ -12,16 +12,11 @@ import {
   Loader2,
   Send,
   Lock,
-  Power,
-  Wrench,
-  AlertOctagon,
 } from "lucide-react";
 
 export default function WhatsAppLinkPage() {
   const [loading, setLoading] = useState(true);
   const [testing, setTesting] = useState(false);
-  const [togglingMaint, setTogglingMaint] = useState(false);
-  const [maintenanceMode, setMaintenanceMode] = useState(false);
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
   const [linkInfo, setLinkInfo] = useState<{
@@ -31,7 +26,6 @@ export default function WhatsAppLinkPage() {
     baileys_user?: string | null;
     qr_data_url?: string | null;
     status?: string;
-    maintenance_mode?: boolean;
   } | null>(null);
 
   const fetchStatus = async () => {
@@ -40,7 +34,6 @@ export default function WhatsAppLinkPage() {
       const data = await res.json();
       if (data.success) {
         setLinkInfo(data);
-        setMaintenanceMode(Boolean(data.maintenance_mode));
       }
     } catch (_) {
     } finally {
@@ -54,39 +47,6 @@ export default function WhatsAppLinkPage() {
     const interval = setInterval(fetchStatus, 3000);
     return () => clearInterval(interval);
   }, []);
-
-  const handleToggleMaintenance = async () => {
-    const nextState = !maintenanceMode;
-    const confirmMsg = nextState
-      ? "Are you sure you want to TURN OFF the entire system? All pages (home, store, buy, admin) will show 'UNDER MAINTENANCE' to everyone."
-      : "Are you sure you want to TURN ON the system? The site and admin will go back online for all users.";
-    
-    if (!window.confirm(confirmMsg)) return;
-
-    setTogglingMaint(true);
-    setFeedback(null);
-    try {
-      const res = await fetch("/api/link", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "toggle_maintenance", enabled: nextState }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        setMaintenanceMode(Boolean(data.maintenance_mode));
-        setFeedback({
-          type: "success",
-          message: data.message || (nextState ? "System put under maintenance." : "System restored online."),
-        });
-      } else {
-        setFeedback({ type: "error", message: data.message || "Failed to toggle maintenance mode." });
-      }
-    } catch (err: any) {
-      setFeedback({ type: "error", message: err?.message || "Connection error." });
-    } finally {
-      setTogglingMaint(false);
-    }
-  };
 
   const handleTestAlert = async () => {
     setTesting(true);
@@ -169,79 +129,6 @@ export default function WhatsAppLinkPage() {
             <div className="flex-1 font-semibold">{feedback.message}</div>
           </div>
         )}
-
-        {/* Emergency Kill Switch / Maintenance Mode Control Card */}
-        <div
-          className={`mb-6 p-6 rounded-3xl border transition-all shadow-2xl relative overflow-hidden ${
-            maintenanceMode
-              ? "bg-gradient-to-br from-red-950 via-slate-900 to-amber-950/60 border-red-700 shadow-red-950/50"
-              : "bg-slate-900/90 border-slate-800 shadow-xl"
-          }`}
-        >
-          {maintenanceMode && (
-            <div className="absolute top-0 right-0 w-32 h-32 bg-red-600/10 rounded-full blur-2xl pointer-events-none" />
-          )}
-
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div className="flex items-start gap-3">
-              <div
-                className={`p-3 rounded-2xl shrink-0 ${
-                  maintenanceMode
-                    ? "bg-red-600 text-white animate-pulse shadow-lg shadow-red-600/40"
-                    : "bg-slate-800 text-emerald-400 border border-slate-700"
-                }`}
-              >
-                {maintenanceMode ? <AlertOctagon className="w-6 h-6" /> : <Power className="w-6 h-6" />}
-              </div>
-              <div>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <h2 className="text-base sm:text-lg font-bold text-white tracking-tight">
-                    Emergency System Kill Switch
-                  </h2>
-                  <span
-                    className={`text-[10px] px-2.5 py-0.5 rounded-full font-black uppercase tracking-wider ${
-                      maintenanceMode
-                        ? "bg-red-500/20 text-red-400 border border-red-500/40"
-                        : "bg-emerald-500/10 text-emerald-400 border border-emerald-500/30"
-                    }`}
-                  >
-                    {maintenanceMode ? "🚨 LOCKDOWN ACTIVE" : "🟢 SYSTEM LIVE"}
-                  </span>
-                </div>
-                <p className="text-xs text-slate-400 mt-1">
-                  {maintenanceMode
-                    ? "The entire platform (storefronts, buyer checkout, and admin pages) is currently SHUT OFF and showing 'UNDER MAINTENANCE' to all visitors."
-                    : "System is online. All buyer stores, checkout, and admin dashboards are active."}
-                </p>
-              </div>
-            </div>
-
-            <button
-              type="button"
-              onClick={handleToggleMaintenance}
-              disabled={togglingMaint}
-              className={`w-full sm:w-auto px-5 py-3 rounded-xl font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all shadow-lg shrink-0 disabled:opacity-50 hover:scale-[1.02] active:scale-[0.98] ${
-                maintenanceMode
-                  ? "bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-600/30"
-                  : "bg-red-600 hover:bg-red-500 text-white shadow-red-600/30"
-              }`}
-            >
-              {togglingMaint ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : maintenanceMode ? (
-                <>
-                  <Power className="w-4 h-4" />
-                  TURN SYSTEM ON (RESTORE LIVE)
-                </>
-              ) : (
-                <>
-                  <Power className="w-4 h-4" />
-                  TURN SYSTEM OFF (LOCKDOWN)
-                </>
-              )}
-            </button>
-          </div>
-        </div>
 
         {/* Main Card */}
         <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 sm:p-8 backdrop-blur-md shadow-2xl space-y-6">
