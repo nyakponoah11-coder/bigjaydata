@@ -1125,6 +1125,12 @@ export default function AgentDashboardPage() {
                   count: products.filter((p) => p.network?.toLowerCase() === "at").length,
                   badge: "bg-blue-500/20 text-blue-300 border-blue-500/30",
                 },
+                {
+                  id: "netflix",
+                  label: "Netflix",
+                  count: products.filter((p) => p.network?.toLowerCase() === "netflix").length,
+                  badge: "bg-red-600/20 text-red-400 border-red-500/30",
+                },
               ].map((tab) => {
                 const isSelected = productNetworkFilter === tab.id;
                 return (
@@ -1186,6 +1192,8 @@ export default function AgentDashboardPage() {
                                 ? "bg-amber-400/20 text-amber-300 border border-amber-400/30"
                                 : p.network.toLowerCase() === "telecel"
                                 ? "bg-rose-500/20 text-rose-300 border border-rose-500/30"
+                                : p.network.toLowerCase() === "netflix"
+                                ? "bg-red-600/20 text-red-400 border border-red-500/40"
                                 : "bg-blue-500/20 text-blue-300 border border-blue-500/30"
                             }`}
                           >

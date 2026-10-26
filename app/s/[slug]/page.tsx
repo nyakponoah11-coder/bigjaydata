@@ -171,6 +171,18 @@ export default async function ShortStorefrontPage({
     }));
 
   const settings = await db.getSettings();
+  if (settings.netflix_enabled !== false) {
+    const hasNf = activeProducts.some((p) => p.network.toLowerCase() === "netflix");
+    if (!hasNf) {
+      activeProducts.push({
+        id: `nf-${agent.id}`,
+        network: "netflix",
+        size: "30-Day Premium Access",
+        price: Number(settings.netflix_price || 25),
+      });
+    }
+  }
+
   const paystackPublicKey = settings.paystack_public_key || process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY || "";
 
   return (

@@ -443,6 +443,7 @@ const initialAgentBaseProducts: AgentBaseProduct[] = [
   { id: "abp-at-2", network: "at", size: "2GB", base_price: 8.0, suggested_price: 10.0, is_active: true, created_at: new Date().toISOString() },
   { id: "abp-at-5", network: "at", size: "5GB", base_price: 19.0, suggested_price: 23.5, is_active: true, created_at: new Date().toISOString() },
   { id: "abp-at-10", network: "at", size: "10GB", base_price: 37.0, suggested_price: 45.0, is_active: true, created_at: new Date().toISOString() },
+  { id: "abp-netflix-30d", network: "netflix", size: "30-Day Premium Access", base_price: 18.0, suggested_price: 25.0, is_active: true, created_at: new Date().toISOString() },
 ];
 
 const initialDeveloperApiProducts: DeveloperApiProduct[] = [
@@ -2393,9 +2394,13 @@ export const db = {
       (globalStore.__bmgh_deleted_base_products || []).map((k) => k.toLowerCase().trim())
     );
 
+    const hasCachedNf = (globalStore.__bmgh_agent_base_products || []).some(
+      (bp) => bp.network.toLowerCase() === "netflix"
+    );
     if (
       isCacheFresh("agent_base_products", CACHE_TTLS.agent_base_products) &&
-      Array.isArray(globalStore.__bmgh_agent_base_products)
+      Array.isArray(globalStore.__bmgh_agent_base_products) &&
+      hasCachedNf
     ) {
       return globalStore.__bmgh_agent_base_products.filter((bp) => {
         const compKey = `${(bp.network || "").toLowerCase().trim()}_${(bp.size || "").toLowerCase().trim().replace(/\s+/g, "")}`;
@@ -2500,6 +2505,31 @@ export const db = {
         }
       } catch (err) {
         console.warn("Base products Supabase settings fetch error:", err);
+      }
+    }
+
+    // Automatically ensure Netflix 30-Day Access is included as an agent base product
+    const settings = await this.getSettings();
+    if (settings.netflix_enabled !== false) {
+      const netflixKey = "netflix_30-daypremiumaccess";
+      if (!deletedKeys.has("abp-netflix-30d") && !deletedKeys.has(netflixKey)) {
+        const netflixBasePrice = Number(settings.netflix_agent_base_price || 18);
+        const netflixRetailPrice = Number(settings.netflix_price || 25);
+        if (!compMap.has(netflixKey)) {
+          compMap.set(netflixKey, {
+            id: "abp-netflix-30d",
+            network: "netflix",
+            size: "30-Day Premium Access",
+            base_price: netflixBasePrice,
+            suggested_price: netflixRetailPrice,
+            is_active: true,
+            created_at: new Date().toISOString(),
+          });
+        } else {
+          const existing = compMap.get(netflixKey)!;
+          existing.base_price = netflixBasePrice;
+          if (!existing.suggested_price) existing.suggested_price = netflixRetailPrice;
+        }
       }
     }
 
