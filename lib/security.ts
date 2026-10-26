@@ -1,5 +1,6 @@
 import { db, Settings } from "./db";
 import { sendCustomerSMS } from "./sms";
+import { sendAgentEmail } from "./email";
 
 export interface SecurityIncident {
   id: string;
@@ -412,4 +413,153 @@ export async function sendWhatsAppSecurityAlert(
   } catch (err: any) {
     return { success: false, channel: "none", error: err?.message || String(err) };
   }
+}
+
+/**
+ * Sends an urgent security alert email to the admin regarding an unauthorized admin login attempt.
+ */
+export async function sendAdminSecurityEmail(
+  ip: string,
+  attemptedEmail: string,
+  userAgent: string,
+  targetAdminEmail?: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const settings = await db.getSettings();
+    const recipientEmail = targetAdminEmail || settings.email || "admin@bundlemartgh.com";
+    if (!recipientEmail || !recipientEmail.includes("@")) {
+      return { success: false, error: "No recipient email configured" };
+    }
+
+    const formattedTime = new Date().toLocaleString("en-GB", {
+      timeZone: "Africa/Accra",
+      dateStyle: "medium",
+      timeStyle: "short",
+    });
+
+    const html = `
+      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #020617; color: #f8fafc; padding: 32px; border-radius: 20px; max-width: 600px; margin: 0 auto; border: 1px solid #1e293b;">
+        <div style="background: linear-gradient(135deg, #7f1d1d 0%, #450a0a 100%); border: 1px solid #ef4444; border-radius: 16px; padding: 20px; margin-bottom: 24px;">
+          <h2 style="color: #fef2f2; margin: 0; font-size: 18px; font-weight: 800; letter-spacing: -0.02em;">
+            🚨 SECURITY ALERT: Unauthorized Admin Login Attempt
+          </h2>
+          <p style="color: #fecaca; margin: 8px 0 0 0; font-size: 13px; line-height: 1.5;">
+            An unauthorized entity just attempted to log in to your <strong>BundleMartGh Admin Portal</strong> with invalid credentials.
+          </p>
+        </div>
+
+        <div style="background-color: #0f172a; border: 1px solid #1e293b; border-radius: 16px; padding: 20px; margin-bottom: 24px;">
+          <h3 style="color: #94a3b8; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; margin: 0 0 16px 0;">
+            Intrusion Incident Details
+          </h3>
+          <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+            <tr style="border-bottom: 1px solid #1e293b;">
+              <td style="padding: 10px 0; color: #64748b;">Attacker IP:</td>
+              <td style="padding: 10px 0; color: #ef4444; font-family: monospace; font-weight: bold; text-align: right;">${ip}</td>
+            </tr>
+            <tr style="border-bottom: 1px solid #1e293b;">
+              <td style="padding: 10px 0; color: #64748b;">Supplied Email:</td>
+              <td style="padding: 10px 0; color: #f8fafc; font-weight: 600; text-align: right;">${attemptedEmail || "None"}</td>
+            </tr>
+            <tr style="border-bottom: 1px solid #1e293b;">
+              <td style="padding: 10px 0; color: #64748b;">Ghana Time:</td>
+              <td style="padding: 10px 0; color: #f8fafc; text-align: right;">${formattedTime}</td>
+            </tr>
+            <tr style="border-bottom: 1px solid #1e293b;">
+              <td style="padding: 10px 0; color: #64748b;">Device / User-Agent:</td>
+              <td style="padding: 10px 0; color: #cbd5e1; font-size: 11px; text-align: right; max-width: 300px; word-break: break-all;">${userAgent || "Unknown"}</td>
+            </tr>
+            <tr>
+              <td style="padding: 10px 0; color: #64748b;">Firewall Status:</td>
+              <td style="padding: 10px 0; color: #10b981; font-weight: bold; text-align: right;">Active Shield Protection</td>
+            </tr>
+          </table>
+        </div>
+
+        <div style="background-color: #1e1b4b; border: 1px solid #4338ca; border-radius: 12px; padding: 14px 18px; margin-bottom: 24px;">
+          <p style="color: #c7d2fe; font-size: 12px; margin: 0; line-height: 1.5;">
+            🔒 <strong>Automatic Defense:</strong> The Edge Firewall tracks all failed attempts. If this IP repeatedly fails authentication, it will be automatically blacklisted from the entire platform.
+          </p>
+        </div>
+
+        <p style="font-size: 11px; color: #475569; text-align: center; margin: 0;">
+          BundleMartGh Automated Security Engine • Accra, Ghana
+        </p>
+      </div>
+    `;
+
+    const res = await sendAgentEmail({
+      to: recipientEmail,
+      subject: `🚨 [SECURITY ALERT] Unauthorized Admin Login Attempt Blocked (${ip})`,
+      html,
+    });
+
+    return { success: res.success, error: res.message };
+  } catch (err: any) {
+    console.error("[Security Email Alert Error]:", err);
+    return { success: false, error: err?.message };
+  }
+}
+
+// In-memory counter for failed login attempts (tracked within 15-minute sliding windows)
+const failedLoginAttempts = new Map<string, { count: number; lastAttempt: number }>();
+
+/**
+ * Handles failed admin login attempts: records incident, alerts admin via WhatsApp & Email,
+ * and auto-blocks malicious IPs after 3 failed attempts.
+ */
+export async function recordAdminLoginFailure(
+  ip: string,
+  attemptedEmail: string,
+  userAgent: string,
+  realAdminEmail?: string
+): Promise<{ count: number; isBlocked: boolean }> {
+  const cleanIp = (ip || "127.0.0.1").trim();
+  const now = Date.now();
+
+  // 1. Track failed attempts for this IP within 15-minute window
+  const prev = failedLoginAttempts.get(cleanIp);
+  let count = 1;
+  if (prev && now - prev.lastAttempt < 15 * 60 * 1000) {
+    count = prev.count + 1;
+  }
+  failedLoginAttempts.set(cleanIp, { count, lastAttempt: now });
+
+  const isBlocked = count >= 3;
+
+  // 2. If 3 or more attempts, auto-block the IP!
+  if (isBlocked && cleanIp !== "127.0.0.1" && cleanIp !== "::1") {
+    await blockEntity(cleanIp, "ip", `Auto-blocked: ${count} consecutive failed admin login attempts`);
+  }
+
+  // 3. Log security incident
+  const incident: SecurityIncident = {
+    id: `sec-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`,
+    type: "brute_force",
+    severity: "critical",
+    ip: cleanIp,
+    details: `Unauthorized admin login attempt #${count}. Attempted email: "${attemptedEmail}". Device: ${userAgent.substring(0, 100)}`,
+    timestamp: new Date().toISOString(),
+    blocked: isBlocked,
+    alert_sent: false,
+  };
+
+  // 4. Send Instant WhatsApp Alert
+  sendWhatsAppSecurityAlert(incident).catch((e) => {
+    console.warn("[AdminAuth] WhatsApp alert dispatch error:", e?.message);
+  });
+
+  // 5. Send Instant Email Alert
+  sendAdminSecurityEmail(cleanIp, attemptedEmail, userAgent, realAdminEmail).catch((e) => {
+    console.warn("[AdminAuth] Email alert dispatch error:", e?.message);
+  });
+
+  // 6. Append to incidents feed
+  try {
+    const allIncidents = await getSecurityIncidents(150);
+    allIncidents.unshift(incident);
+    await saveSecurityIncidents(allIncidents);
+  } catch {}
+
+  return { count, isBlocked };
 }

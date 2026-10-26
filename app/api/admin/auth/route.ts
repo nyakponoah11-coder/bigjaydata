@@ -7,6 +7,11 @@ import {
   verifyAdminPassword,
   requireAdminAuth,
 } from "@/lib/admin-auth";
+import {
+  getClientIp,
+  isEntityBlocked,
+  recordAdminLoginFailure,
+} from "@/lib/security";
 
 export const dynamic = "force-dynamic";
 
@@ -30,6 +35,17 @@ export async function GET(req: Request) {
 
 export async function POST(request: Request) {
   try {
+    const clientIp = getClientIp(request);
+
+    // Blocked IP pre-check
+    const blockedStatus = await isEntityBlocked(clientIp);
+    if (blockedStatus.blocked) {
+      return NextResponse.json(
+        { success: false, message: "Access forbidden: Your IP has been blacklisted by the security firewall." },
+        { status: 403 }
+      );
+    }
+
     const { searchParams } = new URL(request.url);
 
     // 1. Logout action
@@ -166,9 +182,23 @@ export async function POST(request: Request) {
       return response;
     }
 
+    // Authentication Failed - Record intrusion attempt, send Email & WhatsApp alert, and auto-block
+    const userAgent = request.headers.get("user-agent") || "Unknown Device";
+    const failureResult = await recordAdminLoginFailure(
+      clientIp,
+      inputEmail,
+      userAgent,
+      existingAdmin?.email
+    );
+
     return NextResponse.json(
-      { success: false, message: "Invalid admin email or password." },
-      { status: 401 }
+      {
+        success: false,
+        message: failureResult.isBlocked
+          ? "Too many failed attempts. Your IP has been temporarily blacklisted by the firewall."
+          : "Invalid admin email or password.",
+      },
+      { status: failureResult.isBlocked ? 403 : 401 }
     );
   } catch (error: any) {
     console.error("[AdminAuth API Error]:", error);
