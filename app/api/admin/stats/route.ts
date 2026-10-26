@@ -1,13 +1,14 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { fetchDataMartBalance } from "@/lib/datamart";
+import { fetchNetflixPartnerInfo } from "@/lib/netflix";
 
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const dateParam = searchParams.get("date") || new Date().toISOString().slice(0, 10);
 
-    const [allOrders, datamartBalance, settings] = await Promise.all([
+    const [allOrders, datamartBalance, netflixInfo, settings] = await Promise.all([
       db.getOrders(),
       fetchDataMartBalance().catch((err) => ({
         success: false,
@@ -15,11 +16,20 @@ export async function GET(request: Request) {
         currency: "GHS",
         message: err?.message,
       })),
+      fetchNetflixPartnerInfo().catch((err) => ({
+        success: false,
+        balance: 0,
+        currency: "GHS",
+        wholesalePrice: 15,
+        partnerName: "Bigjay",
+        availableAccounts: 0,
+        error: err?.message,
+      })),
       db.getSettings().catch(() => null),
     ]);
 
-    const netflixBal = Number(settings?.netflix_balance !== undefined ? settings.netflix_balance : 150);
-    const netflixWholesale = 15;
+    const netflixBal = Number(netflixInfo.balance ?? 0);
+    const netflixWholesale = Number(netflixInfo.wholesalePrice ?? 15);
 
     const ordersForDate = allOrders.filter((o) => o.created_at.startsWith(dateParam));
 
@@ -51,6 +61,7 @@ export async function GET(request: Request) {
           wholesaleCost: netflixWholesale,
           availableAccounts: Math.floor(netflixBal / netflixWholesale),
           currency: "GHS",
+          partnerName: netflixInfo.partnerName || "Bigjay",
           isEnabled: settings?.netflix_enabled !== false,
         },
       },

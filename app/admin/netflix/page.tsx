@@ -43,13 +43,10 @@ export default function AdminNetflixPage() {
   const [agentBasePrice, setAgentBasePrice] = useState(18);
   const [wholesaleCost] = useState(15); // Fixed Data1 wholesale rate
 
-  // Balance state
-  const [balance, setBalance] = useState(150);
-  const [updatingBalance, setUpdatingBalance] = useState(false);
-  const [customBalanceInput, setCustomBalanceInput] = useState("");
-  const [customTopUpInput, setCustomTopUpInput] = useState("150");
-  const [isTopUpModalOpen, setIsTopUpModalOpen] = useState(false);
-  const [balanceTab, setBalanceTab] = useState<"topup" | "set">("topup");
+  // Balance state (read live from Data1 provider)
+  const [balance, setBalance] = useState(0);
+  const [partnerName, setPartnerName] = useState("Bigjay");
+  const [refreshingBalance, setRefreshingBalance] = useState(false);
 
   // Orders state
   const [orders, setOrders] = useState<any[]>([]);
@@ -75,21 +72,26 @@ export default function AdminNetflixPage() {
         setIsEnabled(data.config.isEnabled !== false);
         setRetailPrice(Number(data.config.retailPrice) || 25);
         setAgentBasePrice(Number(data.config.agentBasePrice) || 18);
-        const currentBal = Number(data.balance !== undefined ? data.balance : (data.config.balance || 150));
-        setBalance(currentBal);
-        setCustomBalanceInput(String(currentBal));
+        setBalance(Number(data.balance ?? 0));
+        setPartnerName(data.partner_name || "Bigjay");
         setOrders(data.orders || []);
       }
     } catch (err) {
       console.error("Failed to load Netflix admin data:", err);
     } finally {
       setLoading(false);
+      setRefreshingBalance(false);
     }
   };
 
   useEffect(() => {
     loadData();
   }, []);
+
+  const handleRefreshBalance = async () => {
+    setRefreshingBalance(true);
+    await loadData();
+  };
 
   const handleSaveConfig = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -119,56 +121,6 @@ export default function AdminNetflixPage() {
       setTestResult({ success: false, message: err?.message || "Failed to save settings." });
     } finally {
       setSaving(false);
-    }
-  };
-
-  const handleTopUpBalance = async (amount: number) => {
-    setUpdatingBalance(true);
-    setTestResult(null);
-    try {
-      const res = await fetch("/api/admin/netflix", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "top_up_balance", amount }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        setBalance(data.balance);
-        setCustomBalanceInput(String(data.balance));
-        setTestResult({ success: true, message: data.message || "Top-up added successfully!" });
-        setIsTopUpModalOpen(false);
-      } else {
-        setTestResult({ success: false, message: data.message || "Failed to top up." });
-      }
-    } catch (e: any) {
-      setTestResult({ success: false, message: e?.message || "Failed to top up." });
-    } finally {
-      setUpdatingBalance(false);
-    }
-  };
-
-  const handleSetBalance = async (newBal: number) => {
-    setUpdatingBalance(true);
-    setTestResult(null);
-    try {
-      const res = await fetch("/api/admin/netflix", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "update_balance", balance: newBal }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        setBalance(data.balance);
-        setCustomBalanceInput(String(data.balance));
-        setTestResult({ success: true, message: data.message || "Balance updated successfully!" });
-        setIsTopUpModalOpen(false);
-      } else {
-        setTestResult({ success: false, message: data.message || "Failed to update balance." });
-      }
-    } catch (e: any) {
-      setTestResult({ success: false, message: e?.message || "Failed to update balance." });
-    } finally {
-      setUpdatingBalance(false);
     }
   };
 
@@ -331,20 +283,13 @@ export default function AdminNetflixPage() {
             </div>
 
             <div className="flex flex-wrap sm:flex-nowrap items-center gap-3">
-              <div className="p-4 rounded-2xl bg-black/40 border border-red-500/40 text-center min-w-[140px] relative group shadow-lg">
+              <div className="p-4 rounded-2xl bg-black/40 border border-red-500/40 text-center min-w-[140px] shadow-lg">
                 <div className="text-[11px] font-bold text-red-400 uppercase tracking-wider flex items-center justify-center gap-1.5">
                   <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse" />
                   Netflix Balance
                 </div>
                 <div className="text-xl font-black text-white font-mono mt-0.5">GH₵ {balance.toFixed(2)}</div>
-                <div className="text-[10px] text-slate-400 font-medium">~{Math.floor(balance / wholesaleCost)} accounts</div>
-                <button
-                  type="button"
-                  onClick={() => setIsTopUpModalOpen(true)}
-                  className="mt-1 text-[10px] font-black text-red-400 hover:text-red-300 uppercase tracking-wider underline cursor-pointer"
-                >
-                  Top Up / Edit →
-                </button>
+                <div className="text-[10px] text-slate-400 font-medium">~{wholesaleCost > 0 ? Math.floor(balance / wholesaleCost) : 0} accounts ({partnerName})</div>
               </div>
 
               <div className="p-4 rounded-2xl bg-black/40 border border-red-900/30 text-center min-w-[130px]">
@@ -470,8 +415,8 @@ export default function AdminNetflixPage() {
               </div>
             </div>
 
-            {/* Card 1.5: Netflix Partner Wallet & Stock Balance */}
-            <div className="rounded-3xl bg-slate-900/90 border border-red-500/30 p-6 sm:p-7 shadow-xl space-y-6 relative overflow-hidden">
+            {/* Card 1.5: Data1 Live Reseller Wallet Balance */}
+            <div className="rounded-3xl bg-slate-900/90 border border-red-500/30 p-6 sm:p-7 shadow-xl space-y-4 relative overflow-hidden">
               <div className="absolute top-0 right-0 w-32 h-32 bg-red-500/5 rounded-full blur-3xl pointer-events-none" />
 
               <div className="flex items-center justify-between border-b border-slate-800 pb-4">
@@ -481,147 +426,54 @@ export default function AdminNetflixPage() {
                   </div>
                   <div>
                     <h2 className="text-lg font-black text-white flex items-center gap-2">
-                      Netflix Reseller Balance
-                      <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                      Data1 Partner Wallet
+                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
                     </h2>
-                    <p className="text-xs text-slate-400">Funded account credits on Data1 gateway (GH₵ 15 per order)</p>
+                    <p className="text-xs text-slate-400">Live balance from Data1 gateway (GH₵ 15 wholesale per order)</p>
                   </div>
                 </div>
 
-                <div className="text-right">
+                <button
+                  type="button"
+                  onClick={handleRefreshBalance}
+                  disabled={refreshingBalance}
+                  className="py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-bold flex items-center gap-1.5 border border-slate-700 transition-all disabled:opacity-50"
+                  title="Refresh Live Balance from Data1"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${refreshingBalance ? "animate-spin text-red-400" : "text-slate-400"}`} />
+                  <span>{refreshingBalance ? "Checking..." : "Refresh"}</span>
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="p-4 rounded-2xl bg-black/40 border border-slate-800 space-y-1">
+                  <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Live Wallet Balance</div>
                   <div className="text-2xl font-black text-red-400 font-mono">
                     GH₵ {balance.toFixed(2)}
                   </div>
-                  <div className="text-[11px] text-slate-400 font-semibold">
-                    ~{Math.floor(balance / wholesaleCost)} accounts stock
+                  <div className="text-[10px] text-slate-500 font-medium">Provider: Data1</div>
+                </div>
+
+                <div className="p-4 rounded-2xl bg-black/40 border border-slate-800 space-y-1">
+                  <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Stock Available</div>
+                  <div className="text-2xl font-black text-white font-mono">
+                    ~{wholesaleCost > 0 ? Math.floor(balance / wholesaleCost) : 0}
                   </div>
+                  <div className="text-[10px] text-slate-500 font-medium">30-day Netflix accounts</div>
+                </div>
+
+                <div className="p-4 rounded-2xl bg-black/40 border border-slate-800 space-y-1">
+                  <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Partner Profile</div>
+                  <div className="text-xl font-black text-emerald-400 truncate mt-0.5">
+                    {partnerName}
+                  </div>
+                  <div className="text-[10px] text-slate-500 font-medium">Wholesale GH₵ 15 / acc</div>
                 </div>
               </div>
 
-              {/* Mode Selector */}
-              <div className="grid grid-cols-2 p-1 bg-slate-950 rounded-2xl border border-slate-800 text-xs font-bold">
-                <button
-                  type="button"
-                  onClick={() => setBalanceTab("topup")}
-                  className={`py-2 rounded-xl transition-all ${
-                    balanceTab === "topup"
-                      ? "bg-red-600 text-white shadow-lg"
-                      : "text-slate-400 hover:text-white"
-                  }`}
-                >
-                  + Add Top-Up Deposit
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setBalanceTab("set");
-                    setCustomBalanceInput(String(balance));
-                  }}
-                  className={`py-2 rounded-xl transition-all ${
-                    balanceTab === "set"
-                      ? "bg-red-600 text-white shadow-lg"
-                      : "text-slate-400 hover:text-white"
-                  }`}
-                >
-                  Set Exact Balance
-                </button>
-              </div>
-
-              {balanceTab === "topup" ? (
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-2">
-                      Quick Top-Up Presets
-                    </label>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                      {[
-                        { label: "+GH₵ 75", acc: "5 acc", val: 75 },
-                        { label: "+GH₵ 150", acc: "10 acc", val: 150 },
-                        { label: "+GH₵ 300", acc: "20 acc", val: 300 },
-                        { label: "+GH₵ 750", acc: "50 acc", val: 750 },
-                      ].map((p) => (
-                        <button
-                          key={p.val}
-                          type="button"
-                          disabled={updatingBalance}
-                          onClick={() => handleTopUpBalance(p.val)}
-                          className="p-3 rounded-2xl bg-slate-950 border border-slate-800 hover:border-red-500/50 hover:bg-red-950/20 text-center transition-all group disabled:opacity-50"
-                        >
-                          <div className="text-sm font-black text-white group-hover:text-red-400 font-mono">
-                            {p.label}
-                          </div>
-                          <div className="text-[10px] text-slate-500">{p.acc}</div>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-2">
-                      Custom Top-Up Amount (GHS)
-                    </label>
-                    <div className="flex gap-2">
-                      <div className="relative flex-1">
-                        <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-sm">
-                          GH₵
-                        </span>
-                        <input
-                          type="number"
-                          step="0.01"
-                          min="1"
-                          value={customTopUpInput}
-                          onChange={(e) => setCustomTopUpInput(e.target.value)}
-                          placeholder="e.g. 150"
-                          className="w-full pl-12 pr-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white font-mono font-bold text-sm focus:outline-none focus:border-red-500"
-                        />
-                      </div>
-                      <button
-                        type="button"
-                        disabled={updatingBalance || !customTopUpInput || Number(customTopUpInput) <= 0}
-                        onClick={() => handleTopUpBalance(Number(customTopUpInput))}
-                        className="py-2.5 px-5 rounded-xl bg-red-600 hover:bg-red-500 text-white font-black text-xs flex items-center gap-1.5 shadow-lg shadow-red-950/50 transition-all disabled:opacity-50 shrink-0"
-                      >
-                        {updatingBalance ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <PlusCircle className="w-3.5 h-3.5" />}
-                        <span>Deposit</span>
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider">
-                    Override / Correct Exact Netflix Balance (GHS)
-                  </label>
-                  <div className="flex gap-2">
-                    <div className="relative flex-1">
-                      <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-sm">
-                        GH₵
-                      </span>
-                      <input
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        value={customBalanceInput}
-                        onChange={(e) => setCustomBalanceInput(e.target.value)}
-                        placeholder="e.g. 150.00"
-                        className="w-full pl-12 pr-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white font-mono font-bold text-sm focus:outline-none focus:border-red-500"
-                      />
-                    </div>
-                    <button
-                      type="button"
-                      disabled={updatingBalance || customBalanceInput === "" || Number(customBalanceInput) < 0}
-                      onClick={() => handleSetBalance(Number(customBalanceInput))}
-                      className="py-2.5 px-5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-black text-xs flex items-center gap-1.5 border border-slate-700 transition-all disabled:opacity-50 shrink-0"
-                    >
-                      {updatingBalance ? <Loader2 className="w-3.5 h-3.5 animate-spin text-red-400" /> : <Check className="w-3.5 h-3.5 text-emerald-400" />}
-                      <span>Set Balance</span>
-                    </button>
-                  </div>
-                  <p className="text-[11px] text-slate-500">
-                    Use this whenever you want to manually synchronize your tracked wallet balance with Data1.
-                  </p>
-                </div>
-              )}
+              <p className="text-[11px] text-slate-500">
+                Top-ups and balance funding are credited directly by the provider (Data1). Whenever you fund your Data1 account, your updated balance reflects here automatically.
+              </p>
             </div>
 
             {/* Card 2: Pricing & Profit Margins */}
@@ -979,141 +831,6 @@ export default function AdminNetflixPage() {
             </div>
           )}
         </div>
-
-        {/* Netflix Balance Top-Up / Edit Modal */}
-        {isTopUpModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
-            <div className="bg-slate-900 border border-red-500/30 rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl relative space-y-6">
-              <button
-                type="button"
-                onClick={() => setIsTopUpModalOpen(false)}
-                className="absolute top-5 right-5 p-2 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 transition-colors"
-              >
-                <X className="w-5 h-5" />
-              </button>
-
-              <div className="space-y-1.5">
-                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-red-500/10 border border-red-500/20 text-red-400 text-xs font-black uppercase tracking-wider">
-                  <Wallet className="w-3.5 h-3.5" />
-                  Data1 Netflix Partner Wallet
-                </div>
-                <h3 className="text-xl font-black text-white">Update Netflix Balance</h3>
-                <p className="text-xs text-slate-400">
-                  Track your wholesale credit with Data1. Wholesale cost: GH₵ 15 per 30-day account.
-                </p>
-              </div>
-
-              {/* Current Balance Pill */}
-              <div className="p-4 rounded-2xl bg-black/40 border border-slate-800 flex items-center justify-between">
-                <div>
-                  <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Current Balance</div>
-                  <div className="text-2xl font-black text-red-400 font-mono mt-0.5">
-                    GH₵ {balance.toFixed(2)}
-                  </div>
-                </div>
-                <div className="text-right">
-                  <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Available Stock</div>
-                  <div className="text-lg font-black text-white mt-0.5">
-                    ~{Math.floor(balance / wholesaleCost)} accounts
-                  </div>
-                </div>
-              </div>
-
-              {/* Presets */}
-              <div className="space-y-2">
-                <label className="text-xs font-bold text-slate-300">Quick Deposit Presets</label>
-                <div className="grid grid-cols-2 gap-2">
-                  {[
-                    { label: "+GH₵ 75 (5 acc)", val: 75 },
-                    { label: "+GH₵ 150 (10 acc)", val: 150 },
-                    { label: "+GH₵ 300 (20 acc)", val: 300 },
-                    { label: "+GH₵ 750 (50 acc)", val: 750 },
-                  ].map((p) => (
-                    <button
-                      key={p.val}
-                      type="button"
-                      disabled={updatingBalance}
-                      onClick={() => handleTopUpBalance(p.val)}
-                      className="p-3 rounded-xl border border-slate-800 bg-slate-950 text-xs font-bold text-left text-slate-300 hover:text-white hover:border-red-500 transition-all disabled:opacity-50"
-                    >
-                      {p.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Custom Top Up */}
-              <div className="space-y-2">
-                <label className="text-xs font-bold text-slate-300">Custom Top-Up (GHS)</label>
-                <div className="flex gap-2">
-                  <div className="relative flex-1">
-                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-sm">
-                      GH₵
-                    </span>
-                    <input
-                      type="number"
-                      step="0.01"
-                      min="1"
-                      value={customTopUpInput}
-                      onChange={(e) => setCustomTopUpInput(e.target.value)}
-                      placeholder="e.g. 150"
-                      className="w-full pl-12 pr-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white font-mono font-bold text-sm focus:outline-none focus:border-red-500"
-                    />
-                  </div>
-                  <button
-                    type="button"
-                    disabled={updatingBalance || !customTopUpInput || Number(customTopUpInput) <= 0}
-                    onClick={() => handleTopUpBalance(Number(customTopUpInput))}
-                    className="py-2.5 px-4 rounded-xl bg-red-600 hover:bg-red-500 text-white font-black text-xs flex items-center gap-1.5 shadow-lg shadow-red-950/50 transition-all disabled:opacity-50 shrink-0"
-                  >
-                    {updatingBalance ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <PlusCircle className="w-3.5 h-3.5" />}
-                    <span>Add</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Set Exact Balance */}
-              <div className="pt-4 border-t border-slate-800/80 space-y-2">
-                <label className="text-xs font-bold text-slate-300">Or Set Exact Balance (GHS)</label>
-                <div className="flex gap-2">
-                  <div className="relative flex-1">
-                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-sm">
-                      GH₵
-                    </span>
-                    <input
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      value={customBalanceInput}
-                      onChange={(e) => setCustomBalanceInput(e.target.value)}
-                      placeholder="e.g. 150.00"
-                      className="w-full pl-12 pr-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white font-mono font-bold text-sm focus:outline-none focus:border-red-500"
-                    />
-                  </div>
-                  <button
-                    type="button"
-                    disabled={updatingBalance || customBalanceInput === "" || Number(customBalanceInput) < 0}
-                    onClick={() => handleSetBalance(Number(customBalanceInput))}
-                    className="py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-black text-xs flex items-center gap-1.5 border border-slate-700 transition-all disabled:opacity-50 shrink-0"
-                  >
-                    {updatingBalance ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5 text-emerald-400" />}
-                    <span>Set</span>
-                  </button>
-                </div>
-              </div>
-
-              <div className="pt-2 border-t border-slate-800/80 flex items-center justify-end">
-                <button
-                  type="button"
-                  onClick={() => setIsTopUpModalOpen(false)}
-                  className="py-2 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs"
-                >
-                  Close
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
     </AdminLayout>
   );

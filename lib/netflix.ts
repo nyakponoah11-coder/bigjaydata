@@ -35,6 +35,17 @@ export interface NetflixFetchCodeResult {
 const DEFAULT_NETFLIX_API_URL = "https://www.data1gh.com/api/partner/netflix";
 const DEFAULT_NETFLIX_API_KEY = "d1_live_nf_bigjay_1zwxy0f7zqi3";
 
+export interface NetflixPartnerInfoResult {
+  success: boolean;
+  balance: number;
+  currency: string;
+  wholesalePrice: number;
+  partnerName: string;
+  availableAccounts: number;
+  accountEmail?: string;
+  error?: string;
+}
+
 export async function getNetflixConfig() {
   const settings = await db.getSettings();
   const apiKey = (settings.netflix_api_key || process.env.DATA1_NETFLIX_API_KEY || DEFAULT_NETFLIX_API_KEY).trim();
@@ -43,7 +54,6 @@ export async function getNetflixConfig() {
   const retailPrice = Number(settings.netflix_price) > 0 ? Number(settings.netflix_price) : 25;
   const agentBasePrice = Number(settings.netflix_agent_base_price) > 0 ? Number(settings.netflix_agent_base_price) : 18;
   const wholesaleCost = 15; // GH₵ 15 Data1 wholesale rate
-  const balance = Number(settings.netflix_balance !== undefined ? settings.netflix_balance : 150);
 
   return {
     apiKey,
@@ -52,27 +62,70 @@ export async function getNetflixConfig() {
     retailPrice,
     agentBasePrice,
     wholesaleCost,
-    balance,
   };
 }
 
-export async function updateNetflixBalance(newBalance: number) {
-  const clean = Math.max(0, Number(newBalance) || 0);
-  return await db.updateSettings({ netflix_balance: clean });
-}
+/**
+ * Fetches real-time partner wallet balance and account status directly from Data1
+ */
+export async function fetchNetflixPartnerInfo(): Promise<NetflixPartnerInfoResult> {
+  const config = await getNetflixConfig();
+  if (!config.apiKey) {
+    return {
+      success: false,
+      balance: 0,
+      currency: "GHS",
+      wholesalePrice: 15,
+      partnerName: "Bigjay",
+      availableAccounts: 0,
+      error: "Data1 Netflix API key not configured",
+    };
+  }
 
-export async function deductNetflixBalance(amount: number = 15) {
-  const settings = await db.getSettings();
-  const current = Number(settings.netflix_balance !== undefined ? settings.netflix_balance : 150);
-  const updated = Math.max(0, Number((current - amount).toFixed(2)));
-  return await db.updateSettings({ netflix_balance: updated });
-}
+  try {
+    const res = await fetch("https://www.data1gh.com/api/partner/info", {
+      method: "GET",
+      headers: {
+        "x-api-key": config.apiKey,
+      },
+      next: { revalidate: 15 },
+    });
 
-export async function topUpNetflixBalance(amount: number) {
-  const settings = await db.getSettings();
-  const current = Number(settings.netflix_balance !== undefined ? settings.netflix_balance : 0);
-  const updated = Number((current + Number(amount)).toFixed(2));
-  return await db.updateSettings({ netflix_balance: updated });
+    const data = await res.json().catch(() => ({}));
+    if (data.status === "success" && data.partner) {
+      const balance = Number(data.partner.wallet_balance ?? 0);
+      const wholesalePrice = Number(data.partner.wholesale_price ?? 15);
+      return {
+        success: true,
+        balance,
+        currency: data.partner.currency || "GHS",
+        wholesalePrice,
+        partnerName: data.partner.name || "Bigjay",
+        availableAccounts: wholesalePrice > 0 ? Math.floor(balance / wholesalePrice) : 0,
+        accountEmail: data.netflix?.account_email,
+      };
+    }
+
+    return {
+      success: false,
+      balance: 0,
+      currency: "GHS",
+      wholesalePrice: 15,
+      partnerName: "Bigjay",
+      availableAccounts: 0,
+      error: data.message || "Could not retrieve Data1 partner info",
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      balance: 0,
+      currency: "GHS",
+      wholesalePrice: 15,
+      partnerName: "Bigjay",
+      availableAccounts: 0,
+      error: err?.message || "Failed to contact Data1 partner API",
+    };
+  }
 }
 
 /**
@@ -109,13 +162,6 @@ export async function createNetflixOrder(params: NetflixOrderParams): Promise<Ne
     const data = await res.json().catch(() => ({}));
 
     if (data.status === "success" && data.order) {
-      // Auto-deduct wholesale rate from tracked Netflix partner balance
-      try {
-        await deductNetflixBalance(15);
-      } catch (deductErr) {
-        console.warn("[Netflix Balance] Deduct warning:", deductErr);
-      }
-
       return {
         success: true,
         reference: data.order.reference,

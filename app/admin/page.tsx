@@ -57,47 +57,6 @@ export default function AdminDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [isDirectBuyOpen, setIsDirectBuyOpen] = useState(false);
 
-  // Netflix Balance modal state
-  const [isNetflixBalanceModalOpen, setIsNetflixBalanceModalOpen] = useState(false);
-  const [balanceModalMode, setBalanceModalMode] = useState<"topup" | "set">("topup");
-  const [balanceAmount, setBalanceAmount] = useState("150");
-  const [balanceSaving, setBalanceSaving] = useState(false);
-  const [balanceMsg, setBalanceMsg] = useState<{ success: boolean; text: string } | null>(null);
-
-  const handleUpdateNetflixBalance = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setBalanceSaving(true);
-    setBalanceMsg(null);
-    try {
-      const endpoint = "/api/admin/netflix";
-      const body =
-        balanceModalMode === "topup"
-          ? { action: "top_up_balance", amount: Number(balanceAmount) }
-          : { action: "update_balance", balance: Number(balanceAmount) };
-
-      const res = await fetch(endpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      const data = await res.json();
-      if (data.success) {
-        setBalanceMsg({ success: true, text: data.message || "Balance updated successfully!" });
-        await fetchStats(selectedDate);
-        setTimeout(() => {
-          setIsNetflixBalanceModalOpen(false);
-          setBalanceMsg(null);
-        }, 1200);
-      } else {
-        setBalanceMsg({ success: false, text: data.message || "Failed to update balance." });
-      }
-    } catch (err: any) {
-      setBalanceMsg({ success: false, text: err?.message || "Error updating balance." });
-    } finally {
-      setBalanceSaving(false);
-    }
-  };
-
   const fetchStats = async (date: string) => {
     setLoading(true);
     try {
@@ -225,23 +184,18 @@ export default function AdminDashboardPage() {
                 ? `GHS ${stats.netflixBalance.balance.toFixed(2)}`
                 : loading
                 ? "..."
-                : "GHS 150.00"}
+                : "Active"}
             </div>
             <div className="flex items-center justify-between mt-2 text-[11px] text-slate-400">
               <span className="truncate">
-                ~{stats.netflixBalance?.availableAccounts ?? Math.floor((stats.netflixBalance?.balance ?? 150) / 15)} accounts (@ GH₵ 15)
+                {stats.netflixBalance?.partnerName ? `${stats.netflixBalance.partnerName} (Data1)` : "Data1 Reseller"} • ~{stats.netflixBalance?.availableAccounts ?? 0} acc
               </span>
-              <button
-                type="button"
-                onClick={() => {
-                  setBalanceAmount("150");
-                  setBalanceModalMode("topup");
-                  setIsNetflixBalanceModalOpen(true);
-                }}
+              <Link
+                href="/admin/netflix"
                 className="text-red-400 hover:text-red-300 font-semibold text-[10px] uppercase hover:underline ml-1 shrink-0"
               >
-                Top up →
-              </button>
+                Hub →
+              </Link>
             </div>
           </div>
 
@@ -515,186 +469,6 @@ export default function AdminDashboardPage() {
           currentBalance={stats.datamartBalance?.balance}
           onSuccess={() => fetchStats(selectedDate)}
         />
-
-        {/* Netflix Reseller Balance Top-Up / Update Modal */}
-        {isNetflixBalanceModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
-            <div className="bg-slate-900 border border-red-500/30 rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl relative space-y-6">
-              <button
-                type="button"
-                onClick={() => {
-                  setIsNetflixBalanceModalOpen(false);
-                  setBalanceMsg(null);
-                }}
-                className="absolute top-5 right-5 p-2 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 transition-colors"
-              >
-                <X className="w-5 h-5" />
-              </button>
-
-              <div className="space-y-1.5">
-                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-red-500/10 border border-red-500/20 text-red-400 text-xs font-black uppercase tracking-wider">
-                  <Tv className="w-3.5 h-3.5" />
-                  Data1 Netflix Partner Wallet
-                </div>
-                <h3 className="text-xl font-black text-white">Netflix Reseller Balance</h3>
-                <p className="text-xs text-slate-400">
-                  Update your active balance to track remaining wholesale accounts. Wholesale cost: GH₵ 15 / 30 days.
-                </p>
-              </div>
-
-              {/* Current Balance Display */}
-              <div className="p-4 rounded-2xl bg-black/40 border border-slate-800 flex items-center justify-between">
-                <div>
-                  <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Current Balance</div>
-                  <div className="text-2xl font-black text-red-400 font-mono mt-0.5">
-                    GHS {stats.netflixBalance?.balance !== undefined ? stats.netflixBalance.balance.toFixed(2) : "150.00"}
-                  </div>
-                </div>
-                <div className="text-right">
-                  <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Stock Available</div>
-                  <div className="text-lg font-black text-white mt-0.5">
-                    ~{stats.netflixBalance?.availableAccounts ?? Math.floor((stats.netflixBalance?.balance ?? 150) / 15)} accounts
-                  </div>
-                </div>
-              </div>
-
-              {/* Mode Toggle Tabs */}
-              <div className="grid grid-cols-2 p-1 bg-slate-950/80 rounded-2xl border border-slate-800 text-xs font-bold">
-                <button
-                  type="button"
-                  onClick={() => setBalanceModalMode("topup")}
-                  className={`py-2 rounded-xl transition-all ${
-                    balanceModalMode === "topup"
-                      ? "bg-red-600 text-white shadow-lg"
-                      : "text-slate-400 hover:text-white"
-                  }`}
-                >
-                  + Add Top-Up Deposit
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setBalanceModalMode("set");
-                    setBalanceAmount(String(stats.netflixBalance?.balance ?? 150));
-                  }}
-                  className={`py-2 rounded-xl transition-all ${
-                    balanceModalMode === "set"
-                      ? "bg-red-600 text-white shadow-lg"
-                      : "text-slate-400 hover:text-white"
-                  }`}
-                >
-                  Set Exact Balance
-                </button>
-              </div>
-
-              <form onSubmit={handleUpdateNetflixBalance} className="space-y-4">
-                {/* Presets (when topping up) */}
-                {balanceModalMode === "topup" && (
-                  <div className="space-y-2">
-                    <label className="text-xs font-bold text-slate-300">Quick Top-Up Presets</label>
-                    <div className="grid grid-cols-2 gap-2">
-                      {[
-                        { label: "+GH₵ 75 (5 acc)", val: "75" },
-                        { label: "+GH₵ 150 (10 acc)", val: "150" },
-                        { label: "+GH₵ 300 (20 acc)", val: "300" },
-                        { label: "+GH₵ 750 (50 acc)", val: "750" },
-                      ].map((preset) => (
-                        <button
-                          key={preset.val}
-                          type="button"
-                          onClick={() => setBalanceAmount(preset.val)}
-                          className={`p-2.5 rounded-xl border text-xs font-bold text-left transition-all ${
-                            balanceAmount === preset.val
-                              ? "bg-red-500/20 border-red-500 text-white"
-                              : "bg-slate-950 border-slate-800 text-slate-400 hover:text-white hover:border-slate-700"
-                          }`}
-                        >
-                          {preset.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Amount Input */}
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-300">
-                    {balanceModalMode === "topup" ? "Top-Up Deposit Amount (GHS)" : "New Balance (GHS)"}
-                  </label>
-                  <div className="relative">
-                    <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400 font-bold text-sm">
-                      GH₵
-                    </div>
-                    <input
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      required
-                      value={balanceAmount}
-                      onChange={(e) => setBalanceAmount(e.target.value)}
-                      className="w-full pl-12 pr-4 py-3 bg-slate-950 border border-slate-800 rounded-2xl text-white font-mono font-bold focus:outline-none focus:border-red-500"
-                      placeholder="e.g. 150.00"
-                    />
-                  </div>
-                  <p className="text-[11px] text-slate-500">
-                    {balanceModalMode === "topup"
-                      ? `Adding GH₵ ${Number(balanceAmount || 0)} gives ~${Math.floor(Number(balanceAmount || 0) / 15)} additional 30-day Netflix accounts.`
-                      : `GH₵ ${Number(balanceAmount || 0)} covers ~${Math.floor(Number(balanceAmount || 0) / 15)} 30-day Netflix accounts.`}
-                  </p>
-                </div>
-
-                {/* Feedback message */}
-                {balanceMsg && (
-                  <div
-                    className={`p-3 rounded-xl text-xs font-bold flex items-center gap-2 ${
-                      balanceMsg.success
-                        ? "bg-emerald-950/60 border border-emerald-500/40 text-emerald-200"
-                        : "bg-red-950/60 border border-red-500/40 text-red-200"
-                    }`}
-                  >
-                    <span>{balanceMsg.text}</span>
-                  </div>
-                )}
-
-                {/* Submit button */}
-                <button
-                  type="submit"
-                  disabled={balanceSaving || !balanceAmount || Number(balanceAmount) < 0}
-                  className="w-full py-3.5 px-4 rounded-2xl bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 text-white font-black text-sm shadow-xl shadow-red-950/50 flex items-center justify-center gap-2 transition-all disabled:opacity-50"
-                >
-                  {balanceSaving ? (
-                    <>
-                      <RefreshCw className="w-4 h-4 animate-spin" />
-                      Saving Balance...
-                    </>
-                  ) : (
-                    <>
-                      <CheckCircle2 className="w-4 h-4" />
-                      {balanceModalMode === "topup" ? "Confirm Top-Up" : "Save Balance"}
-                    </>
-                  )}
-                </button>
-              </form>
-
-              <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between text-xs">
-                <Link
-                  href="/admin/netflix"
-                  onClick={() => setIsNetflixBalanceModalOpen(false)}
-                  className="text-red-400 hover:text-red-300 font-bold hover:underline inline-flex items-center gap-1"
-                >
-                  Open Full Netflix Hub →
-                </Link>
-                <button
-                  type="button"
-                  onClick={() => setIsNetflixBalanceModalOpen(false)}
-                  className="text-slate-500 hover:text-slate-300"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
     </AdminLayout>
   );
