@@ -1,12 +1,9 @@
-import type { NextConfig } from "next";
-
-const nextConfig: NextConfig = {
+/** @type {import('next').NextConfig} */
+const nextConfig = {
   typescript: {
-    // Prevent un-imported or dev type differences from halting production deployment
     ignoreBuildErrors: true,
   },
   eslint: {
-    // Prevent linter warnings from failing production build
     ignoreDuringBuilds: true,
   },
   images: {

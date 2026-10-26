@@ -1,11 +1,8 @@
-import { sendSecurityAlert } from "./alerts";
-
 export const INTRUSION_SIGNATURES: {
   category: string;
   pattern: RegExp;
   severity: "critical" | "warning";
 }[] = [
-  // 1. PowerShell & Windows Command Execution
   {
     category: "PowerShell RCE Injection",
     pattern: /\b(?:powershell(?:\.exe)?|pwsh(?:\.exe)?|invoke-expression|\biex\b|downloadstring|downloadfile|system\.management\.automation|invoke-webrequest|\biwr\b|start-process|set-executionpolicy|new-object\s+net\.webclient|invoke-command|get-process|get-service|get-wmiobject|get-ciminstance|get-content|powershell\s+-[a-zA-Z])\b/i,
@@ -16,8 +13,6 @@ export const INTRUSION_SIGNATURES: {
     pattern: /\b(?:cmd(?:\.exe)?\s*\/(?:c|k)|certutil(?:\.exe)?\s*-(?:urlcache|decode|f)|bitsadmin(?:\.exe)?|rundll32(?:\.exe)?|cscript(?:\.exe)?|wscript(?:\.exe)?|regsvr32(?:\.exe)?|vssadmin|wmic(?:\.exe)?|whoami(?:\.exe)?|systeminfo(?:\.exe)?|tasklist(?:\.exe)?|ipconfig\s*\/all|net\s+(?:user|localgroup|share))\b/i,
     severity: "critical",
   },
-
-  // 2. Linux Shell / OS Command Injection
   {
     category: "Unix Shell / Bash Command Injection",
     pattern: /(?:\/bin\/(?:bash|sh|zsh|dash)|(?:^|[;&|`\n])\s*(?:bash|sh|zsh)\s+-c|(?:^|[;&|`\n])\s*(?:curl|wget)\s+https?:\/\/|\|\s*(?:bash|sh|zsh)\b)/i,
@@ -33,22 +28,16 @@ export const INTRUSION_SIGNATURES: {
     pattern: /(?:\b(?:eval|passthru|shell_exec|proc_open|popen|system)\s*\(|child_process(?:\.exec|\.spawn))/i,
     severity: "critical",
   },
-
-  // 3. System Probing & Secret Extraction ("Questioning the System")
   {
     category: "System Probing & Secret Extraction",
     pattern: /(?:\b(?:ignore\s+(?:all\s+)?previous\s+instructions|system\s+prompt|reveal\s+(?:your\s+)?secret|dump\s+database|show\s+(?:all\s+)?passwords|database\s+password|supabase_service_role|paystack_secret|datamart_key|datamart_api_key|arkesel_api_key|admin_secret_key|access_token|process\.env|show\s+me\s+the\s+keys)\b)/i,
     severity: "critical",
   },
-
-  // 4. SQL Injection
   {
     category: "SQL Injection Probe",
     pattern: /(?:\bunion\s+(?:all\s+)?select\b|\b(?:and|or)\s+['"]?1['"]?\s*=\s*['"]?1\b|\bwaitfor\s+delay\b|\bpg_sleep\s*\(|\bbenchmark\s*\(|;\s*drop\s+(?:table|database|schema)\b|information_schema\.(?:tables|columns)|xp_cmdshell)/i,
     severity: "critical",
   },
-
-  // 5. Path Traversal & Sensitive File Harvesting
   {
     category: "Path Traversal Probe",
     pattern: /(?:\.\.[\/\\]\.\.[\/\\]|\/etc\/(?:passwd|shadow|hosts)|[a-zA-Z]:\\windows\\system32|win\.ini)/i,
