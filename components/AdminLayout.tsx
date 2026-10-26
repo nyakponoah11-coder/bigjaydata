@@ -179,6 +179,7 @@ export default function AdminLayout({ children }: Props) {
   const navItems = [
     { label: "Dashboard", href: "/admin", icon: LayoutDashboard },
     { label: "Orders", href: "/admin/orders", icon: ShoppingCart },
+    { label: "Security & Firewall", href: "/admin/security", icon: ShieldAlert, badge: "Alerts" },
     { label: "Registered Accounts", href: "/admin/registered-accounts", icon: UserCheck, badge: "Wallets" },
     { label: "Customer Leads", href: "/admin/customers", icon: Users, badge: "Contacts" },
     { label: "Direct Purchase", href: "/admin/direct-purchase", icon: Zap, badge: "DataMart" },

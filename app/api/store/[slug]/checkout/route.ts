@@ -4,6 +4,7 @@ import { sendDataMartDelivery } from "@/lib/datamart";
 import { verifyPaystackTransaction } from "@/lib/paystack";
 import { decodeAgentToken } from "@/lib/agent-link";
 import { createNetflixOrder } from "@/lib/netflix";
+import { getClientIp, isEntityBlocked, recordSecurityIncidentAndAlert } from "@/lib/security";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -13,6 +14,7 @@ export async function POST(
   { params }: { params: Promise<{ slug: string }> }
 ) {
   try {
+    const clientIp = getClientIp(req);
     const { slug } = await params;
     const cleanSlug = decodeURIComponent(slug).toLowerCase().trim();
 
@@ -40,6 +42,16 @@ export async function POST(
 
     const body = await req.json();
     const { reference, network, package_size, phone, amount, paystack_ref } = body;
+
+    // 0. Firewall check: Reject blacklisted IP or Phone immediately
+    const blockCheck = await isEntityBlocked(clientIp, phone);
+    if (blockCheck.blocked) {
+      console.warn(`[Firewall Block] Agent checkout denied blacklisted target: ${blockCheck.target} (${blockCheck.reason})`);
+      return NextResponse.json(
+        { success: false, message: "Access Denied: Your IP or Phone has been flagged and blocked due to security violations." },
+        { status: 403 }
+      );
+    }
 
     if (!reference || !network || !package_size || !phone || amount === undefined) {
       return NextResponse.json(
@@ -85,8 +97,19 @@ export async function POST(
     // 2. Paystack verification - STRICT ZERO-TOLERANCE
     if (!paystack_ref || paystack_ref.startsWith("demo_") || paystack_ref.startsWith("test_") || paystack_ref.startsWith("sim_")) {
       console.warn(`[Security Block] Agent checkout rejected unverified/demo ref: ${reference}, paystack_ref: ${paystack_ref}`);
+      await recordSecurityIncidentAndAlert({
+        type: "demo_reference",
+        severity: "critical",
+        ip: clientIp,
+        phone,
+        reference,
+        paystack_ref,
+        amount_claimed: paidAmount,
+        details: `Agent Store (${agent.store_slug}) checkout attempted with fake/demo payment reference: ${paystack_ref || "EMPTY"}.`,
+      });
+
       return NextResponse.json(
-        { success: false, message: "Valid payment reference is required to complete purchase." },
+        { success: false, message: "Valid payment reference is required to complete purchase. Your IP has been recorded." },
         { status: 400 }
       );
     }
@@ -99,8 +122,19 @@ export async function POST(
 
     if (!verification.success) {
       console.error(`[Security Block] Agent checkout payment verification failed for ${paystack_ref}:`, verification.message);
+      await recordSecurityIncidentAndAlert({
+        type: "unverified_payment",
+        severity: "critical",
+        ip: clientIp,
+        phone,
+        reference,
+        paystack_ref,
+        amount_claimed: paidAmount,
+        details: `Agent Store (${agent.store_slug}) payment verification failed (${verification.message}). Attacker attempting unpaid dispatch.`,
+      });
+
       return NextResponse.json(
-        { success: false, message: `Payment verification failed: ${verification.message}. Delivery aborted.` },
+        { success: false, message: `Payment verification failed: ${verification.message}. Delivery aborted and incident logged.` },
         { status: 402 }
       );
     }
@@ -108,6 +142,18 @@ export async function POST(
     // Verify paid amount matches expected price
     if (verification.amount <= 0 || verification.amount < paidAmount - 0.05) {
       console.error(`[Security Block] Agent checkout underpaid: expected GHS ${paidAmount}, received GHS ${verification.amount}`);
+      await recordSecurityIncidentAndAlert({
+        type: "underpayment",
+        severity: "high",
+        ip: clientIp,
+        phone,
+        reference,
+        paystack_ref,
+        amount_claimed: paidAmount,
+        amount_received: verification.amount,
+        details: `Agent Store (${agent.store_slug}) price tampering detected: expected GHS ${paidAmount}, received GHS ${verification.amount}.`,
+      });
+
       return NextResponse.json(
         { success: false, message: "Paid amount does not match package price." },
         { status: 400 }

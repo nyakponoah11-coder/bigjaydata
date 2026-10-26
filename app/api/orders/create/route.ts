@@ -3,11 +3,23 @@ import { db } from "@/lib/db";
 import { sendDataMartDelivery } from "@/lib/datamart";
 import { verifyPaystackTransaction } from "@/lib/paystack";
 import { createNetflixOrder } from "@/lib/netflix";
+import { getClientIp, isEntityBlocked, recordSecurityIncidentAndAlert } from "@/lib/security";
 
 export async function POST(request: Request) {
   try {
+    const clientIp = getClientIp(request);
     const body = await request.json();
     const { reference, network, package_size, phone, amount, paystack_ref, customer_id, customer_name, customer_email, service_type } = body;
+
+    // 0. Firewall check: Reject immediately if IP or Phone has been blacklisted
+    const blockCheck = await isEntityBlocked(clientIp, phone);
+    if (blockCheck.blocked) {
+      console.warn(`[Firewall Block] Denied access to blacklisted target: ${blockCheck.target} (${blockCheck.reason})`);
+      return NextResponse.json(
+        { success: false, message: "Access Denied: Your IP or Phone has been flagged and blocked due to suspicious activity." },
+        { status: 403 }
+      );
+    }
 
     if (!reference || !network || !package_size || !phone || amount === undefined) {
       return NextResponse.json(
@@ -18,11 +30,22 @@ export async function POST(request: Request) {
 
     const isNetflix = (network || "").toLowerCase() === "netflix" || service_type === "netflix";
 
-    // Security check: Block any demo, sim, or mock references from receiving live bundle deliveries
+    // Security check: Block and alert on demo/test/mock/empty references
     if (!paystack_ref || paystack_ref.startsWith("demo_") || paystack_ref.startsWith("test_") || paystack_ref.startsWith("sim_")) {
       console.warn(`[Security Block] Rejected unverified/demo order attempt: ref=${reference}, paystack_ref=${paystack_ref}`);
+      await recordSecurityIncidentAndAlert({
+        type: "demo_reference",
+        severity: "critical",
+        ip: clientIp,
+        phone,
+        reference,
+        paystack_ref,
+        amount_claimed: Number(amount),
+        details: `Customer/Bot attempted checkout with fake or demo payment reference: ${paystack_ref || "EMPTY"}.`,
+      });
+
       return NextResponse.json(
-        { success: false, message: "Invalid payment reference. Orders cannot be fulfilled without verified payment." },
+        { success: false, message: "Invalid payment reference. Orders cannot be fulfilled without verified payment. Your IP has been recorded." },
         { status: 400 }
       );
     }
@@ -35,11 +58,22 @@ export async function POST(request: Request) {
       verification = await verifyPaystackTransaction(paystack_ref);
     }
 
-    // STRICT ZERO-TOLERANCE CHECK: If Paystack verification did not succeed, IMMEDIATELY BLOCK
+    // STRICT ZERO-TOLERANCE CHECK: If Paystack verification did not succeed, AUTO-BLOCK and ALERT
     if (!verification.success) {
       console.error(`[Security Block] Paystack verification failed for ${paystack_ref}:`, verification.message);
+      await recordSecurityIncidentAndAlert({
+        type: "unverified_payment",
+        severity: "critical",
+        ip: clientIp,
+        phone,
+        reference,
+        paystack_ref,
+        amount_claimed: Number(amount),
+        details: `Paystack transaction verification failed (${verification.message}). Attacker attempting unpaid dispatch.`,
+      });
+
       return NextResponse.json(
-        { success: false, message: `Payment verification failed: ${verification.message}. Delivery aborted.` },
+        { success: false, message: `Payment verification failed: ${verification.message}. Delivery aborted and incident logged.` },
         { status: 402 }
       );
     }
@@ -48,6 +82,18 @@ export async function POST(request: Request) {
     const expectedAmount = Number(amount);
     if (verification.amount <= 0 || verification.amount < expectedAmount - 0.05) {
       console.error(`[Security Block] Underpaid: expected GHS ${expectedAmount}, received GHS ${verification.amount}`);
+      await recordSecurityIncidentAndAlert({
+        type: "underpayment",
+        severity: "high",
+        ip: clientIp,
+        phone,
+        reference,
+        paystack_ref,
+        amount_claimed: expectedAmount,
+        amount_received: verification.amount,
+        details: `Price tampering detected: expected GHS ${expectedAmount}, received GHS ${verification.amount}.`,
+      });
+
       return NextResponse.json(
         { success: false, message: "Paid amount does not match package price." },
         { status: 400 }
