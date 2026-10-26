@@ -15,13 +15,27 @@ export async function GET(req: Request) {
       db.getCustomerTransactions().catch(() => []),
     ]);
 
-    // Filter strictly to genuine registered customer accounts (must have Google OAuth, password PIN, or registered email)
+    // Filter strictly to genuine registered customer accounts (must have Google OAuth or real password PIN)
     const registeredOnly = customers.filter((c) => {
       if (!c || !c.phone) return false;
-      const isGoogle = c.provider === "google" || Boolean(c.google_id);
-      const hasPass = typeof c.password_hash === "string" && c.password_hash.trim().length >= 4 && c.password_hash !== "guest";
-      const hasEmail = Boolean(c.email && c.email.includes("@"));
-      return isGoogle || hasPass || hasEmail;
+      const isGoogle =
+        c.provider === "google" ||
+        Boolean(c.google_id) ||
+        c.password_hash === "GOOGLE_OAUTH_ACCOUNT";
+
+      const hasRealPassword =
+        typeof c.password_hash === "string" &&
+        c.password_hash.trim().length >= 4 &&
+        c.password_hash.toLowerCase() !== "guest" &&
+        c.password_hash.toLowerCase() !== "none" &&
+        c.password_hash.toLowerCase() !== "null";
+
+      const isGuestBuyer =
+        c.is_guest === true ||
+        c.role === "guest" ||
+        String(c.email || "").endsWith("@customer.bundlemartgh.com");
+
+      return (isGoogle || hasRealPassword) && !isGuestBuyer;
     });
 
     // Map order counts and metrics per customer

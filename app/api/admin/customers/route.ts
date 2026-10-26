@@ -72,9 +72,28 @@ export async function GET(req: Request) {
     // Build lookup for verified registered customer accounts
     const registeredPhoneMap = new Map<string, any>();
     registeredCustomers.forEach((rc: any) => {
-      const clean = String(rc.phone || "").replace(/[^0-9]/g, "");
-      if (clean) registeredPhoneMap.set(clean, rc);
-      if (clean.length >= 9) registeredPhoneMap.set(clean.slice(-9), rc);
+      const isGoogle =
+        rc.provider === "google" ||
+        Boolean(rc.google_id) ||
+        rc.password_hash === "GOOGLE_OAUTH_ACCOUNT";
+
+      const hasRealPassword =
+        typeof rc.password_hash === "string" &&
+        rc.password_hash.trim().length >= 4 &&
+        rc.password_hash.toLowerCase() !== "guest" &&
+        rc.password_hash.toLowerCase() !== "none" &&
+        rc.password_hash.toLowerCase() !== "null";
+
+      const isGuestBuyer =
+        rc.is_guest === true ||
+        rc.role === "guest" ||
+        String(rc.email || "").endsWith("@customer.bundlemartgh.com");
+
+      if ((isGoogle || hasRealPassword) && !isGuestBuyer) {
+        const clean = String(rc.phone || "").replace(/[^0-9]/g, "");
+        if (clean) registeredPhoneMap.set(clean, rc);
+        if (clean.length >= 9) registeredPhoneMap.set(clean.slice(-9), rc);
+      }
     });
 
     const customerMap = new Map<string, CustomerRecord>();

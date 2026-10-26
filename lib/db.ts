@@ -371,6 +371,8 @@ export interface Customer {
   pending_new_email?: string | null;
   email_change_code?: string | null;
   email_change_expires_at?: number | null;
+  is_guest?: boolean;
+  role?: string;
   created_at: string;
   updated_at?: string;
 }
@@ -5289,13 +5291,26 @@ export const db = {
           .order("created_at", { ascending: false });
         if (!error && Array.isArray(data)) {
           for (const raw of data) {
-            // Filter to genuine registered customer accounts (Google OAuth, password hash >= 4, or registered email)
-            const isRegistered =
+            // Strictly filter to genuine registered customer accounts (must have Google OAuth or real password/PIN)
+            const isGoogle =
               raw.provider === "google" ||
               Boolean(raw.google_id) ||
-              (typeof raw.password_hash === "string" && raw.password_hash.trim().length >= 4 && raw.password_hash !== "guest") ||
-              (Boolean(raw.email) && String(raw.email).includes("@") && String(raw.id || "").startsWith("cust-"));
+              raw.password_hash === "GOOGLE_OAUTH_ACCOUNT";
 
+            const hasRealPassword =
+              typeof raw.password_hash === "string" &&
+              raw.password_hash.trim().length >= 4 &&
+              raw.password_hash.toLowerCase() !== "guest" &&
+              raw.password_hash.toLowerCase() !== "none" &&
+              raw.password_hash.toLowerCase() !== "null";
+
+            // If the row was auto-generated for a storefront guest buyer checkout, skip it
+            const isGuestBuyer =
+              raw.is_guest === true ||
+              raw.role === "guest" ||
+              String(raw.email || "").endsWith("@customer.bundlemartgh.com");
+
+            const isRegistered = (isGoogle || hasRealPassword) && !isGuestBuyer;
             if (!isRegistered) continue; // Skip non-registered guest buyer rows
 
             const p = String(raw.phone || "").replace(/[^0-9]/g, "");
