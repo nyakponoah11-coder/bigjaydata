@@ -26,6 +26,7 @@ export async function GET(req: Request) {
         wholesalePrice: 15,
         partnerName: "Bigjay",
         availableAccounts: 0,
+        accountEmail: "",
       })),
       db.getOrders(),
     ]);

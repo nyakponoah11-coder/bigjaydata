@@ -46,6 +46,7 @@ export default function AdminDashboardPage() {
       availableAccounts: number;
       currency: string;
       isEnabled: boolean;
+      partnerName?: string;
     };
   }>({
     totalOrdersToday: 0,

@@ -58,6 +58,7 @@ export default async function BuyNetworkPage({
         network: "netflix",
         size: "30-Day Premium Access",
         price: Number(settings.netflix_price || 25),
+        cost_price: 15,
         is_active: settings.netflix_enabled !== false,
         created_at: new Date().toISOString(),
       },
