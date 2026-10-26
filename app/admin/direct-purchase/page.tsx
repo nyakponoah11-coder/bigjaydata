@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import AdminLayout from "@/components/AdminLayout";
+import Link from "next/link";
 import {
   Zap,
   Wallet,
@@ -13,12 +14,14 @@ import {
   RefreshCw,
   Clock,
   ShieldCheck,
+  Tv,
 } from "lucide-react";
 
 const COMMON_BUNDLES = ["1GB", "2GB", "3GB", "5GB", "10GB", "20GB"];
 
 export default function AdminDirectPurchasePage() {
   const [balance, setBalance] = useState<number | null>(null);
+  const [netflixBalance, setNetflixBalance] = useState<number | null>(null);
   const [balanceLoading, setBalanceLoading] = useState(true);
   const [phone, setPhone] = useState("");
   const [network, setNetwork] = useState("mtn");
@@ -33,11 +36,16 @@ export default function AdminDirectPurchasePage() {
     try {
       const res = await fetch("/api/admin/stats");
       const data = await res.json();
-      if (data.success && data.stats?.datamartBalance) {
-        setBalance(data.stats.datamartBalance.balance);
+      if (data.success) {
+        if (data.stats?.datamartBalance) {
+          setBalance(data.stats.datamartBalance.balance);
+        }
+        if (data.stats?.netflixBalance) {
+          setNetflixBalance(data.stats.netflixBalance.balance);
+        }
       }
     } catch (err) {
-      console.error("Failed to fetch DataMart balance:", err);
+      console.error("Failed to fetch balance:", err);
     } finally {
       setBalanceLoading(false);
     }
@@ -111,33 +119,62 @@ export default function AdminDirectPurchasePage() {
             </p>
           </div>
 
-          {/* Balance Pill */}
-          <div className="flex items-center gap-3 bg-slate-900 border border-slate-800 rounded-2xl p-3 shadow-md">
-            <div className="w-10 h-10 rounded-xl bg-emerald-950/80 border border-emerald-500/30 text-emerald-400 flex items-center justify-center">
-              <Wallet className="w-5 h-5" />
-            </div>
-            <div>
-              <div className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">
-                Reseller Balance
+          {/* Balance Pills */}
+          <div className="flex flex-wrap sm:flex-nowrap items-center gap-3">
+            {/* DataMart Balance */}
+            <div className="flex items-center gap-3 bg-slate-900 border border-slate-800 rounded-2xl p-3 shadow-md">
+              <div className="w-10 h-10 rounded-xl bg-emerald-950/80 border border-emerald-500/30 text-emerald-400 flex items-center justify-center">
+                <Wallet className="w-5 h-5" />
               </div>
-              <div className="text-base sm:text-lg font-black font-mono text-white">
-                {balanceLoading ? (
-                  <span className="text-xs text-slate-500">Checking...</span>
-                ) : balance !== null ? (
-                  <span className="text-emerald-400">GHS {balance.toFixed(2)}</span>
-                ) : (
-                  "Active"
-                )}
+              <div>
+                <div className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">
+                  DataMart Balance
+                </div>
+                <div className="text-base sm:text-lg font-black font-mono text-white">
+                  {balanceLoading ? (
+                    <span className="text-xs text-slate-500">Checking...</span>
+                  ) : balance !== null ? (
+                    <span className="text-emerald-400">GHS {balance.toFixed(2)}</span>
+                  ) : (
+                    "Active"
+                  )}
+                </div>
               </div>
+              <button
+                onClick={fetchBalance}
+                disabled={balanceLoading}
+                className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors"
+                title="Refresh Balance"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${balanceLoading ? "animate-spin" : ""}`} />
+              </button>
             </div>
-            <button
-              onClick={fetchBalance}
-              disabled={balanceLoading}
-              className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors"
-              title="Refresh Balance"
+
+            {/* Netflix Balance */}
+            <Link
+              href="/admin/netflix"
+              className="flex items-center gap-3 bg-slate-900 border border-red-500/30 hover:border-red-500/60 rounded-2xl p-3 shadow-md transition-all group"
+              title="Go to Netflix Reseller Hub"
             >
-              <RefreshCw className={`w-3.5 h-3.5 ${balanceLoading ? "animate-spin" : ""}`} />
-            </button>
+              <div className="w-10 h-10 rounded-xl bg-red-950/80 border border-red-500/30 text-red-400 flex items-center justify-center">
+                <Tv className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="text-[10px] text-red-400 uppercase font-bold tracking-wider flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse" />
+                  Netflix Balance
+                </div>
+                <div className="text-base sm:text-lg font-black font-mono text-white group-hover:text-red-400 transition-colors">
+                  {balanceLoading ? (
+                    <span className="text-xs text-slate-500">Checking...</span>
+                  ) : netflixBalance !== null ? (
+                    `GHS ${netflixBalance.toFixed(2)}`
+                  ) : (
+                    "GHS 150.00"
+                  )}
+                </div>
+              </div>
+            </Link>
           </div>
         </div>
 

@@ -151,6 +151,7 @@ export interface Settings {
   netflix_api_url?: string;
   netflix_price?: number;
   netflix_agent_base_price?: number;
+  netflix_balance?: number;
   created_at?: string;
   updated_at?: string;
 }
@@ -394,6 +395,7 @@ let initialSettings: Settings = {
   netflix_api_url: "https://www.data1gh.com/api/partner/netflix",
   netflix_price: 25,
   netflix_agent_base_price: 18,
+  netflix_balance: 150,
   created_at: new Date().toISOString(),
   updated_at: new Date().toISOString(),
 };
@@ -793,6 +795,7 @@ export const db = {
               if (nf.netflix_enabled !== undefined) merged.netflix_enabled = Boolean(nf.netflix_enabled);
               if (nf.netflix_price !== undefined) merged.netflix_price = Number(nf.netflix_price);
               if (nf.netflix_agent_base_price !== undefined) merged.netflix_agent_base_price = Number(nf.netflix_agent_base_price);
+              if (nf.netflix_balance !== undefined) merged.netflix_balance = Number(nf.netflix_balance);
             } catch {}
           }
           if (defaultData.netflix_api_key) merged.netflix_api_key = defaultData.netflix_api_key;
@@ -800,6 +803,7 @@ export const db = {
           if (defaultData.netflix_enabled !== undefined) merged.netflix_enabled = Boolean(defaultData.netflix_enabled);
           if (defaultData.netflix_price !== undefined) merged.netflix_price = Number(defaultData.netflix_price);
           if (defaultData.netflix_agent_base_price !== undefined) merged.netflix_agent_base_price = Number(defaultData.netflix_agent_base_price);
+          if (defaultData.netflix_balance !== undefined) merged.netflix_balance = Number(defaultData.netflix_balance);
 
           // Email Gateway Configuration
           if (emailRow?.store_name && String(emailRow.store_name).startsWith("{")) {
@@ -1008,7 +1012,8 @@ export const db = {
           safeUpdates.netflix_enabled !== undefined ||
           safeUpdates.netflix_price !== undefined ||
           safeUpdates.netflix_agent_base_price !== undefined ||
-          safeUpdates.netflix_api_url !== undefined
+          safeUpdates.netflix_api_url !== undefined ||
+          safeUpdates.netflix_balance !== undefined
         ) {
           try {
             const currentNetflixConfig = {
@@ -1017,6 +1022,7 @@ export const db = {
               netflix_price: safeUpdates.netflix_price !== undefined ? Number(safeUpdates.netflix_price) : (globalStore.__bmgh_settings?.netflix_price || 25),
               netflix_agent_base_price: safeUpdates.netflix_agent_base_price !== undefined ? Number(safeUpdates.netflix_agent_base_price) : (globalStore.__bmgh_settings?.netflix_agent_base_price || 18),
               netflix_api_url: safeUpdates.netflix_api_url !== undefined ? safeUpdates.netflix_api_url : (globalStore.__bmgh_settings?.netflix_api_url || "https://www.data1gh.com/api/partner/netflix"),
+              netflix_balance: safeUpdates.netflix_balance !== undefined ? Number(safeUpdates.netflix_balance) : Number(globalStore.__bmgh_settings?.netflix_balance !== undefined ? globalStore.__bmgh_settings.netflix_balance : 150),
             };
             await supabaseAdmin.from("settings").upsert({
               id: "netflix_config",

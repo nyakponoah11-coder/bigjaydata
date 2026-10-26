@@ -6,6 +6,8 @@ import {
   createNetflixOrder,
   fetchNetflixSignInCode,
   testNetflixConnection,
+  updateNetflixBalance,
+  topUpNetflixBalance,
 } from "@/lib/netflix";
 
 export const dynamic = "force-dynamic";
@@ -31,6 +33,8 @@ export async function GET(req: Request) {
     return NextResponse.json({
       success: true,
       config,
+      balance: config.balance,
+      available_accounts: Math.floor(config.balance / 15),
       wholesale_cost: 15,
       orders: netflixOrders,
       orders_count: netflixOrders.length,
@@ -58,13 +62,14 @@ export async function POST(req: Request) {
 
     // 1. Update Netflix Configuration & Pricing
     if (action === "update_config") {
-      const { netflix_enabled, netflix_api_key, netflix_price, netflix_agent_base_price } = body;
+      const { netflix_enabled, netflix_api_key, netflix_price, netflix_agent_base_price, netflix_balance } = body;
 
       const updated = await db.updateSettings({
         netflix_enabled: netflix_enabled !== undefined ? Boolean(netflix_enabled) : undefined,
         netflix_api_key: netflix_api_key !== undefined ? String(netflix_api_key).trim() : undefined,
         netflix_price: netflix_price !== undefined ? Number(netflix_price) : undefined,
         netflix_agent_base_price: netflix_agent_base_price !== undefined ? Number(netflix_agent_base_price) : undefined,
+        netflix_balance: netflix_balance !== undefined ? Math.max(0, Number(netflix_balance)) : undefined,
       });
 
       return NextResponse.json({
@@ -75,7 +80,40 @@ export async function POST(req: Request) {
           netflix_api_key: updated.netflix_api_key,
           netflix_price: updated.netflix_price,
           netflix_agent_base_price: updated.netflix_agent_base_price,
+          netflix_balance: updated.netflix_balance,
         },
+      });
+    }
+
+    // 1b. Update Balance Directly
+    if (action === "update_balance") {
+      const { balance } = body;
+      if (balance === undefined || isNaN(Number(balance))) {
+        return NextResponse.json({ success: false, message: "Invalid balance value." }, { status: 400 });
+      }
+      const numBal = Math.max(0, Number(balance));
+      await updateNetflixBalance(numBal);
+      return NextResponse.json({
+        success: true,
+        message: `Netflix balance updated to GH₵ ${numBal.toFixed(2)}.`,
+        balance: numBal,
+        available_accounts: Math.floor(numBal / 15),
+      });
+    }
+
+    // 1c. Top Up Balance
+    if (action === "top_up_balance") {
+      const { amount } = body;
+      if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) {
+        return NextResponse.json({ success: false, message: "Please provide a valid top-up amount." }, { status: 400 });
+      }
+      const updated = await topUpNetflixBalance(Number(amount));
+      const bal = Number(updated.netflix_balance || 0);
+      return NextResponse.json({
+        success: true,
+        message: `Added GH₵ ${Number(amount).toFixed(2)} to Netflix balance! New balance: GH₵ ${bal.toFixed(2)}.`,
+        balance: bal,
+        available_accounts: Math.floor(bal / 15),
       });
     }
 

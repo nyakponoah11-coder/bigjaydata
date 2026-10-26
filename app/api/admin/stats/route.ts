@@ -7,7 +7,7 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const dateParam = searchParams.get("date") || new Date().toISOString().slice(0, 10);
 
-    const [allOrders, datamartBalance] = await Promise.all([
+    const [allOrders, datamartBalance, settings] = await Promise.all([
       db.getOrders(),
       fetchDataMartBalance().catch((err) => ({
         success: false,
@@ -15,7 +15,11 @@ export async function GET(request: Request) {
         currency: "GHS",
         message: err?.message,
       })),
+      db.getSettings().catch(() => null),
     ]);
+
+    const netflixBal = Number(settings?.netflix_balance !== undefined ? settings.netflix_balance : 150);
+    const netflixWholesale = 15;
 
     const ordersForDate = allOrders.filter((o) => o.created_at.startsWith(dateParam));
 
@@ -42,6 +46,13 @@ export async function GET(request: Request) {
         pendingOrdersCount,
         failedOrdersCount,
         datamartBalance,
+        netflixBalance: {
+          balance: netflixBal,
+          wholesaleCost: netflixWholesale,
+          availableAccounts: Math.floor(netflixBal / netflixWholesale),
+          currency: "GHS",
+          isEnabled: settings?.netflix_enabled !== false,
+        },
       },
       recentOrders,
     });

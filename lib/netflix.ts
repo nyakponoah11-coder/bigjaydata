@@ -43,6 +43,7 @@ export async function getNetflixConfig() {
   const retailPrice = Number(settings.netflix_price) > 0 ? Number(settings.netflix_price) : 25;
   const agentBasePrice = Number(settings.netflix_agent_base_price) > 0 ? Number(settings.netflix_agent_base_price) : 18;
   const wholesaleCost = 15; // GH₵ 15 Data1 wholesale rate
+  const balance = Number(settings.netflix_balance !== undefined ? settings.netflix_balance : 150);
 
   return {
     apiKey,
@@ -51,7 +52,27 @@ export async function getNetflixConfig() {
     retailPrice,
     agentBasePrice,
     wholesaleCost,
+    balance,
   };
+}
+
+export async function updateNetflixBalance(newBalance: number) {
+  const clean = Math.max(0, Number(newBalance) || 0);
+  return await db.updateSettings({ netflix_balance: clean });
+}
+
+export async function deductNetflixBalance(amount: number = 15) {
+  const settings = await db.getSettings();
+  const current = Number(settings.netflix_balance !== undefined ? settings.netflix_balance : 150);
+  const updated = Math.max(0, Number((current - amount).toFixed(2)));
+  return await db.updateSettings({ netflix_balance: updated });
+}
+
+export async function topUpNetflixBalance(amount: number) {
+  const settings = await db.getSettings();
+  const current = Number(settings.netflix_balance !== undefined ? settings.netflix_balance : 0);
+  const updated = Number((current + Number(amount)).toFixed(2));
+  return await db.updateSettings({ netflix_balance: updated });
 }
 
 /**
@@ -88,6 +109,13 @@ export async function createNetflixOrder(params: NetflixOrderParams): Promise<Ne
     const data = await res.json().catch(() => ({}));
 
     if (data.status === "success" && data.order) {
+      // Auto-deduct wholesale rate from tracked Netflix partner balance
+      try {
+        await deductNetflixBalance(15);
+      } catch (deductErr) {
+        console.warn("[Netflix Balance] Deduct warning:", deductErr);
+      }
+
       return {
         success: true,
         reference: data.order.reference,
