@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { db, Customer } from "@/lib/db";
+import { db, Customer, isGenuineCustomer } from "@/lib/db";
 import { requireAdminAuth } from "@/lib/admin-auth";
 
 export const dynamic = "force-dynamic";
@@ -15,28 +15,8 @@ export async function GET(req: Request) {
       db.getCustomerTransactions().catch(() => []),
     ]);
 
-    // Filter strictly to genuine registered customer accounts (must have Google OAuth or real password PIN)
-    const registeredOnly = customers.filter((c) => {
-      if (!c || !c.phone) return false;
-      const isGoogle =
-        c.provider === "google" ||
-        Boolean(c.google_id) ||
-        c.password_hash === "GOOGLE_OAUTH_ACCOUNT";
-
-      const hasRealPassword =
-        typeof c.password_hash === "string" &&
-        c.password_hash.trim().length >= 4 &&
-        c.password_hash.toLowerCase() !== "guest" &&
-        c.password_hash.toLowerCase() !== "none" &&
-        c.password_hash.toLowerCase() !== "null";
-
-      const isGuestBuyer =
-        c.is_guest === true ||
-        c.role === "guest" ||
-        String(c.email || "").endsWith("@customer.bundlemartgh.com");
-
-      return (isGoogle || hasRealPassword) && !isGuestBuyer;
-    });
+    // Filter strictly to genuine registered customer accounts (must be verified or Google auth or have wallet float)
+    const registeredOnly = customers.filter((c) => isGenuineCustomer(c));
 
     // Map order counts and metrics per customer
     const enrichedCustomers = registeredOnly.map((c) => {
@@ -106,6 +86,16 @@ export async function PATCH(req: Request) {
   try {
     const body = await req.json();
     const { customer_id, action, amount, reason, is_active } = body;
+
+    // Action 0: Purge Unverified Guest Placeholders from Supabase customers table
+    if (action === "purge_guest_leads") {
+      const purgeResult = await db.purgeUnverifiedGuestCustomers();
+      return NextResponse.json({
+        success: true,
+        message: purgeResult.message,
+        purged_count: purgeResult.count,
+      });
+    }
 
     if (!customer_id) {
       return NextResponse.json(

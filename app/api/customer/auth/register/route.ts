@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { db, isGenuineCustomer } from "@/lib/db";
 
 export async function POST(req: Request) {
   try {
@@ -39,9 +39,9 @@ export async function POST(req: Request) {
       );
     }
 
-    // Check existing customer by phone
+    // Check existing customer by phone (only block if already genuine registered account)
     const existingCustomer = await db.getCustomerByPhone(cleanPhone);
-    if (existingCustomer) {
+    if (existingCustomer && isGenuineCustomer(existingCustomer)) {
       return NextResponse.json(
         {
           success: false,
@@ -53,7 +53,7 @@ export async function POST(req: Request) {
 
     if (cleanEmail) {
       const existingEmail = await db.getCustomerByEmail(cleanEmail);
-      if (existingEmail) {
+      if (existingEmail && isGenuineCustomer(existingEmail)) {
         return NextResponse.json(
           {
             success: false,
@@ -68,16 +68,31 @@ export async function POST(req: Request) {
     const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
     const expiresAt = Date.now() + 10 * 60 * 1000;
 
-    const newCustomer = await db.createCustomer({
-      name: cleanName,
-      phone: cleanPhone,
-      email: cleanEmail,
-      password_hash: cleanPass,
-      is_verified: false,
-      verification_code: verificationCode,
-      verification_code_expires_at: expiresAt,
-      provider: "local",
-    });
+    let newCustomer: any;
+    if (existingCustomer && !isGenuineCustomer(existingCustomer)) {
+      // Upgrade existing unverified guest placeholder into genuine registered account
+      newCustomer = await db.updateCustomer(existingCustomer.id, {
+        name: cleanName,
+        phone: cleanPhone,
+        email: cleanEmail,
+        password_hash: cleanPass,
+        is_verified: false,
+        verification_code: verificationCode,
+        verification_code_expires_at: expiresAt,
+        provider: "local",
+      });
+    } else {
+      newCustomer = await db.createCustomer({
+        name: cleanName,
+        phone: cleanPhone,
+        email: cleanEmail,
+        password_hash: cleanPass,
+        is_verified: false,
+        verification_code: verificationCode,
+        verification_code_expires_at: expiresAt,
+        provider: "local",
+      });
+    }
 
     // 1. Send verification email to respective email account
     let emailSent = false;

@@ -83,6 +83,36 @@ export default function AdminRegisteredAccountsPage() {
   // Delete Customer State
   const [customerToDelete, setCustomerToDelete] = useState<EnrichedCustomer | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isPurging, setIsPurging] = useState(false);
+
+  const handlePurgeGuestPlaceholders = async () => {
+    if (
+      !window.confirm(
+        "Clean unverified guest order records from the Supabase registered customers table? Genuine registered customer accounts with balances/logins and all order records in Guest Buyer Leads are 100% safe."
+      )
+    ) {
+      return;
+    }
+    try {
+      setIsPurging(true);
+      const res = await fetch("/api/admin/registered-accounts", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "purge_guest_leads" }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        triggerToast(data.message || "Guest buyer placeholders successfully cleaned!");
+        await fetchAccounts();
+      } else {
+        alert(data.message || "Failed to purge guest placeholders.");
+      }
+    } catch (err: any) {
+      alert(err?.message || "An error occurred while cleaning guest records.");
+    } finally {
+      setIsPurging(false);
+    }
+  };
 
   const fetchAccounts = async () => {
     try {
@@ -293,6 +323,20 @@ export default function AdminRegisteredAccountsPage() {
             >
               <Copy className="w-3.5 h-3.5 text-amber-400" />
               <span>Copy Phones</span>
+            </button>
+
+            <button
+              onClick={handlePurgeGuestPlaceholders}
+              disabled={isPurging || loading}
+              className="px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-rose-300 hover:text-white text-xs font-bold flex items-center gap-1.5 transition-colors disabled:opacity-50"
+              title="Purge unverified guest records from customers table in database"
+            >
+              {isPurging ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-rose-400" />
+              ) : (
+                <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+              )}
+              <span>Clean Guest Records</span>
             </button>
 
             <button

@@ -377,6 +377,40 @@ export interface Customer {
   updated_at?: string;
 }
 
+export function isGenuineCustomer(c: any): boolean {
+  if (!c || !c.phone) return false;
+
+  // 1. Explicit guest flag or guest role
+  if (c.is_guest === true || c.role === "guest") return false;
+  const email = String(c.email || "").trim().toLowerCase();
+  if (email.endsWith("@customer.bundlemartgh.com")) return false;
+
+  // 2. Google OAuth accounts
+  const isGoogle =
+    c.provider === "google" ||
+    Boolean(c.google_id) ||
+    Boolean(c.avatar_url && String(c.avatar_url).startsWith("http")) ||
+    c.password_hash === "GOOGLE_OAUTH_ACCOUNT";
+  if (isGoogle) return true;
+
+  // 3. Verified customer (completed email or phone OTP verification)
+  const isVerified = c.is_verified === true || String(c.is_verified) === "true";
+  if (isVerified) return true;
+
+  // 4. In-flight registration with active verification code
+  const isPendingVerification = Boolean(
+    c.verification_code &&
+    c.verification_code_expires_at &&
+    Number(c.verification_code_expires_at) > 0
+  );
+  if (isPendingVerification) return true;
+
+  // 5. Has real wallet float
+  if (Number(c.wallet_balance || 0) > 0) return true;
+
+  return false;
+}
+
 export interface CustomerTransaction {
   id: string;
   customer_id: string;
@@ -5285,45 +5319,49 @@ export const db = {
 
     if (isSupabaseConfigured && supabaseAdmin) {
       try {
-        const { data, error } = await supabaseAdmin
+        // Query genuine registered accounts directly on Supabase server to bypass 10,000 unverified guest rows
+        const { data: genuineData, error: genuineErr } = await supabaseAdmin
           .from("customers")
           .select("*")
+          .or("is_verified.eq.true,provider.eq.google,wallet_balance.gt.0,verification_code.not.is.null")
           .order("created_at", { ascending: false });
-        if (!error && Array.isArray(data)) {
-          for (const raw of data) {
-            // Strictly filter to genuine registered customer accounts (must have Google OAuth or real password/PIN)
-            const isGoogle =
-              raw.provider === "google" ||
-              Boolean(raw.google_id) ||
-              raw.password_hash === "GOOGLE_OAUTH_ACCOUNT";
 
-            const hasRealPassword =
-              typeof raw.password_hash === "string" &&
-              raw.password_hash.trim().length >= 4 &&
-              raw.password_hash.toLowerCase() !== "guest" &&
-              raw.password_hash.toLowerCase() !== "none" &&
-              raw.password_hash.toLowerCase() !== "null";
+        let rows: any[] = [];
+        if (!genuineErr && Array.isArray(genuineData)) {
+          rows = genuineData;
+        }
 
-            // If the row was auto-generated for a storefront guest buyer checkout, skip it
-            const isGuestBuyer =
-              raw.is_guest === true ||
-              raw.role === "guest" ||
-              String(raw.email || "").endsWith("@customer.bundlemartgh.com");
-
-            const isRegistered = (isGoogle || hasRealPassword) && !isGuestBuyer;
-            if (!isRegistered) continue; // Skip non-registered guest buyer rows
-
-            const p = String(raw.phone || "").replace(/[^0-9]/g, "");
-            if (!p) continue;
-
-            const existing = accountMap.get(p);
-            const cust: Customer = {
-              ...(existing || {}),
-              ...raw,
-              wallet_balance: Math.max(Number(existing?.wallet_balance || 0), Number(raw.wallet_balance || 0)),
-            };
-            accountMap.set(p, cust);
+        // Also fetch any cust-* id records that were created by the registration system
+        try {
+          const { data: custRows } = await supabaseAdmin
+            .from("customers")
+            .select("*")
+            .ilike("id", "cust-%")
+            .order("created_at", { ascending: false });
+          if (Array.isArray(custRows)) {
+            const seenIds = new Set(rows.map((r) => r.id));
+            for (const cr of custRows) {
+              if (!seenIds.has(cr.id)) {
+                rows.push(cr);
+                seenIds.add(cr.id);
+              }
+            }
           }
+        } catch {}
+
+        for (const raw of rows) {
+          if (!isGenuineCustomer(raw)) continue; // Skip non-registered guest buyer rows
+
+          const p = String(raw.phone || "").replace(/[^0-9]/g, "");
+          if (!p) continue;
+
+          const existing = accountMap.get(p);
+          const cust: Customer = {
+            ...(existing || {}),
+            ...raw,
+            wallet_balance: Math.max(Number(existing?.wallet_balance || 0), Number(raw.wallet_balance || 0)),
+          };
+          accountMap.set(p, cust);
         }
       } catch (err) {
         console.warn("Supabase customers fetch error:", err);
@@ -5362,49 +5400,65 @@ export const db = {
     return local.find((c) => c.id === cleanId) || null;
   },
 
-  async getCustomerByPhone(phone: string): Promise<Customer | null> {
+  async getCustomerByPhone(phone: string, registeredOnly: boolean = false): Promise<Customer | null> {
     const clean = phone.replace(/[^0-9]/g, "");
     if (!clean) return null;
     if (isSupabaseConfigured && supabaseAdmin) {
       try {
-        const { data, error } = await supabaseAdmin
+        let query = supabaseAdmin
           .from("customers")
           .select("*")
-          .ilike("phone", `%${clean.slice(-9)}%`)
-          .limit(1)
-          .maybeSingle();
+          .ilike("phone", `%${clean.slice(-9)}%`);
+        if (registeredOnly) {
+          query = query.or("is_verified.eq.true,provider.eq.google,wallet_balance.gt.0,verification_code.not.is.null");
+        }
+        const { data, error } = await query.limit(1).maybeSingle();
         if (!error && data) {
-          return { ...data, wallet_balance: Number(data.wallet_balance || 0) };
+          if (!registeredOnly || isGenuineCustomer(data)) {
+            return { ...data, wallet_balance: Number(data.wallet_balance || 0) };
+          }
         }
       } catch {}
     }
-    const local = globalStore.__bmgh_customers || [];
+    const local = await this.getCustomers();
     return (
       local.find((c) => {
         const cPhone = c.phone.replace(/[^0-9]/g, "");
-        return cPhone === clean || (clean.length >= 9 && cPhone.endsWith(clean.slice(-9)));
+        const matches = cPhone === clean || (clean.length >= 9 && cPhone.endsWith(clean.slice(-9)));
+        return matches && (!registeredOnly || isGenuineCustomer(c));
       }) || null
     );
   },
 
-  async getCustomerByEmail(email: string): Promise<Customer | null> {
+  async getCustomerByEmail(email: string, registeredOnly: boolean = false): Promise<Customer | null> {
     const clean = email.toLowerCase().trim();
     if (!clean) return null;
     if (isSupabaseConfigured && supabaseAdmin) {
       try {
-        const { data, error } = await supabaseAdmin
+        let query = supabaseAdmin
           .from("customers")
           .select("*")
-          .ilike("email", clean)
-          .limit(1)
-          .maybeSingle();
+          .ilike("email", clean);
+        if (registeredOnly) {
+          query = query.or("is_verified.eq.true,provider.eq.google,wallet_balance.gt.0,verification_code.not.is.null");
+        }
+        const { data, error } = await query.limit(1).maybeSingle();
         if (!error && data) {
-          return { ...data, wallet_balance: Number(data.wallet_balance || 0) };
+          if (!registeredOnly || isGenuineCustomer(data)) {
+            return { ...data, wallet_balance: Number(data.wallet_balance || 0) };
+          }
         }
       } catch {}
     }
-    const local = globalStore.__bmgh_customers || [];
-    return local.find((c) => c.email && c.email.toLowerCase().trim() === clean) || null;
+    const local = await this.getCustomers();
+    return (
+      local.find(
+        (c) =>
+          c.email &&
+          c.email.toLowerCase().trim() === clean &&
+          (!registeredOnly || isGenuineCustomer(c))
+      ) || null
+    );
   },
 
   async getCustomerByGoogleId(googleId: string): Promise<Customer | null> {
@@ -5519,6 +5573,38 @@ export const db = {
       }
     }
     return true;
+  },
+
+  async purgeUnverifiedGuestCustomers(): Promise<{ success: boolean; count: number; message: string }> {
+    invalidateServerCache("customers");
+    let purgedCount = 0;
+    if (isSupabaseConfigured && supabaseAdmin) {
+      try {
+        const { data, error } = await supabaseAdmin
+          .from("customers")
+          .delete()
+          .eq("is_verified", false)
+          .neq("provider", "google")
+          .is("google_id", null)
+          .is("verification_code", null)
+          .lte("wallet_balance", 0)
+          .not("id", "ilike", "cust-%")
+          .select("id");
+        if (!error && Array.isArray(data)) {
+          purgedCount = data.length;
+        }
+      } catch (err) {
+        console.warn("Error purging guest customer rows:", err);
+      }
+    }
+    // Refresh local cache with only genuine customers
+    globalStore.__bmgh_customers = undefined;
+    await this.getCustomers();
+    return {
+      success: true,
+      count: purgedCount,
+      message: `Successfully cleaned ${purgedCount} guest buyer placeholders from registered accounts. Genuine customer accounts preserved.`,
+    };
   },
 
   async creditCustomerWallet(
