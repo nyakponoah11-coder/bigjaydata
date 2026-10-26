@@ -47,10 +47,19 @@ export default function AdminLayout({ children }: Props) {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
 
   useEffect(() => {
+    let isMounted = true;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => {
+      if (isMounted) {
+        setIsAuthenticated((prev) => (prev === null ? false : prev));
+      }
+    }, 2500);
+
     // Check initial auth state & whether an admin account exists in Supabase
-    fetch("/api/admin/auth")
+    fetch("/api/admin/auth", { signal: controller.signal })
       .then((res) => res.json())
       .then((data) => {
+        if (!isMounted) return;
         setIsConfigured(data.isConfigured !== false);
         if (data.authenticated) {
           setIsAuthenticated(true);
@@ -62,9 +71,11 @@ export default function AdminLayout({ children }: Props) {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ tokenSync: token }),
+              signal: controller.signal,
             })
               .then((r) => r.json())
               .then((syncData) => {
+                if (!isMounted) return;
                 if (syncData.success) {
                   setIsAuthenticated(true);
                   if (syncData.email) setActiveAdminEmail(syncData.email);
@@ -73,15 +84,26 @@ export default function AdminLayout({ children }: Props) {
                   setIsAuthenticated(false);
                 }
               })
-              .catch(() => setIsAuthenticated(false));
+              .catch(() => {
+                if (isMounted) setIsAuthenticated(false);
+              });
           } else {
             setIsAuthenticated(false);
           }
         }
       })
       .catch(() => {
-        setIsAuthenticated(false);
+        if (isMounted) setIsAuthenticated(false);
+      })
+      .finally(() => {
+        clearTimeout(timeoutId);
       });
+
+    return () => {
+      isMounted = false;
+      controller.abort();
+      clearTimeout(timeoutId);
+    };
   }, []);
 
   // Close drawer on path change

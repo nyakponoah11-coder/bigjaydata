@@ -62,7 +62,37 @@ export async function getDatabaseAdminUser(targetEmail?: string): Promise<AdminU
   }
 
   try {
-    // 1. Try querying dedicated admin_users table in Supabase
+    // 1. Query settings table row 'admin_auth_config' (fast & guaranteed by supabase-schema)
+    try {
+      const { data: setRow } = await supabaseAdmin
+        .from("settings")
+        .select("id, store_name")
+        .eq("id", "admin_auth_config")
+        .maybeSingle();
+
+      if (setRow && setRow.store_name) {
+        try {
+          const parsed = JSON.parse(setRow.store_name);
+          if (parsed.email && parsed.password_hash) {
+            if (!targetEmail || parsed.email.toLowerCase() === targetEmail.toLowerCase().trim()) {
+              const record: AdminUserRecord = {
+                id: parsed.id || "admin_settings_1",
+                email: String(parsed.email).toLowerCase().trim(),
+                password_hash: String(parsed.password_hash),
+                salt: String(parsed.salt || ""),
+                role: String(parsed.role || "admin"),
+                updated_at: parsed.updated_at,
+              };
+              cachedAdminUser = record;
+              cacheTimestamp = now;
+              return record;
+            }
+          }
+        } catch (_) {}
+      }
+    } catch (_) {}
+
+    // 2. Fallback: check admin_users table if it exists
     try {
       let query = supabaseAdmin.from("admin_users").select("*");
       if (targetEmail) {
@@ -85,37 +115,7 @@ export async function getDatabaseAdminUser(targetEmail?: string): Promise<AdminU
         cacheTimestamp = now;
         return record;
       }
-    } catch (_) {
-      // admin_users table might not exist yet, fallback to settings
-    }
-
-    // 2. Query settings table row 'admin_auth_config'
-    const { data: setRow } = await supabaseAdmin
-      .from("settings")
-      .select("id, store_name")
-      .eq("id", "admin_auth_config")
-      .maybeSingle();
-
-    if (setRow && setRow.store_name) {
-      try {
-        const parsed = JSON.parse(setRow.store_name);
-        if (parsed.email && parsed.password_hash) {
-          if (!targetEmail || parsed.email.toLowerCase() === targetEmail.toLowerCase().trim()) {
-            const record: AdminUserRecord = {
-              id: parsed.id || "admin_settings_1",
-              email: String(parsed.email).toLowerCase().trim(),
-              password_hash: String(parsed.password_hash),
-              salt: String(parsed.salt || ""),
-              role: String(parsed.role || "admin"),
-              updated_at: parsed.updated_at,
-            };
-            cachedAdminUser = record;
-            cacheTimestamp = now;
-            return record;
-          }
-        }
-      } catch (_) {}
-    }
+    } catch (_) {}
   } catch (err) {
     console.warn("[AdminAuth] Error retrieving admin from Supabase:", err);
   }
