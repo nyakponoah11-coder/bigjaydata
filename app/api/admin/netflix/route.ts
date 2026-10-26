@@ -38,12 +38,20 @@ export async function GET(req: Request) {
         service_type: "netflix",
       }));
 
+    const effectiveBalance =
+      partnerInfo.balance !== undefined && !isNaN(Number(partnerInfo.balance))
+        ? Number(partnerInfo.balance)
+        : Number(config.fallbackBalance || 0);
+
     return NextResponse.json({
       success: true,
-      config,
-      balance: partnerInfo.balance,
+      config: {
+        ...config,
+        balance: effectiveBalance,
+      },
+      balance: effectiveBalance,
       partner_name: partnerInfo.partnerName || "Bigjay",
-      available_accounts: partnerInfo.availableAccounts,
+      available_accounts: Math.floor(effectiveBalance / (partnerInfo.wholesalePrice || 15)),
       wholesale_cost: partnerInfo.wholesalePrice || 15,
       currency: partnerInfo.currency || "GHS",
       account_email: partnerInfo.accountEmail,
@@ -71,8 +79,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, message: "Missing action." }, { status: 400 });
     }
 
-    // 1. Update Netflix Configuration & Pricing
-    if (action === "update_config") {
+    // 1. Update Netflix Configuration & Pricing / Manual Balance
+    if (action === "update_config" || action === "update_balance") {
       const { netflix_enabled, netflix_api_key, netflix_price, netflix_agent_base_price, netflix_balance } = body;
 
       const updated = await db.updateSettings({
@@ -85,12 +93,14 @@ export async function POST(req: Request) {
 
       return NextResponse.json({
         success: true,
-        message: "Netflix reseller settings and pricing updated successfully.",
+        message: "Netflix reseller settings and balance updated successfully.",
+        balance: updated.netflix_balance,
         config: {
           netflix_enabled: updated.netflix_enabled,
           netflix_api_key: updated.netflix_api_key,
           netflix_price: updated.netflix_price,
           netflix_agent_base_price: updated.netflix_agent_base_price,
+          netflix_balance: updated.netflix_balance,
         },
       });
     }

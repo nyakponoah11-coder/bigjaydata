@@ -43,8 +43,12 @@ export default function AdminNetflixPage() {
   const [agentBasePrice, setAgentBasePrice] = useState(18);
   const [wholesaleCost] = useState(15); // Fixed Data1 wholesale rate
 
-  // Balance state (read live from Data1 provider)
+  // Balance state (read live from Data1 provider or synced in database)
   const [balance, setBalance] = useState(0);
+  const [manualBalanceInput, setManualBalanceInput] = useState("");
+  const [isAdjustingBalance, setIsAdjustingBalance] = useState(false);
+  const [savingBalance, setSavingBalance] = useState(false);
+  const [balanceNotice, setBalanceNotice] = useState<string | null>(null);
   const [partnerName, setPartnerName] = useState("Bigjay");
   const [refreshingBalance, setRefreshingBalance] = useState(false);
 
@@ -65,14 +69,16 @@ export default function AdminNetflixPage() {
   // Fetch initial data
   const loadData = async () => {
     try {
-      const res = await fetch("/api/admin/netflix");
+      const res = await fetch("/api/admin/netflix", { cache: "no-store" });
       const data = await res.json();
       if (data.success && data.config) {
         setApiKey(data.config.apiKey || "");
         setIsEnabled(data.config.isEnabled !== false);
         setRetailPrice(Number(data.config.retailPrice) || 25);
         setAgentBasePrice(Number(data.config.agentBasePrice) || 18);
-        setBalance(Number(data.balance ?? 0));
+        const liveBal = Number(data.balance ?? 0);
+        setBalance(liveBal);
+        setManualBalanceInput(liveBal > 0 ? liveBal.toFixed(2) : "0.00");
         setPartnerName(data.partner_name || "Bigjay");
         setOrders(data.orders || []);
       }
@@ -91,6 +97,33 @@ export default function AdminNetflixPage() {
   const handleRefreshBalance = async () => {
     setRefreshingBalance(true);
     await loadData();
+  };
+
+  const handleSaveManualBalance = async () => {
+    const num = parseFloat(manualBalanceInput);
+    if (isNaN(num) || num < 0) return;
+    setSavingBalance(true);
+    try {
+      const res = await fetch("/api/admin/netflix", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "update_balance",
+          netflix_balance: num,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setBalance(num);
+        setIsAdjustingBalance(false);
+        setBalanceNotice("Wallet balance successfully synced and updated!");
+        setTimeout(() => setBalanceNotice(null), 4000);
+      }
+    } catch (err: any) {
+      console.error("Failed to update balance:", err);
+    } finally {
+      setSavingBalance(false);
+    }
   };
 
   const handleSaveConfig = async (e: React.FormEvent) => {
@@ -469,6 +502,66 @@ export default function AdminNetflixPage() {
                   </div>
                   <div className="text-[10px] text-slate-500 font-medium">Wholesale GH₵ 15 / acc</div>
                 </div>
+              </div>
+
+              {/* Live & Manual Sync Balance Toolbar */}
+              <div className="pt-3 border-t border-slate-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="text-xs text-slate-400">
+                  {balanceNotice ? (
+                    <span className="text-emerald-400 font-bold flex items-center gap-1.5 animate-pulse">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                      {balanceNotice}
+                    </span>
+                  ) : (
+                    <span>Provider balance syncs automatically. You can also manually adjust or set your funded balance:</span>
+                  )}
+                </div>
+
+                {!isAdjustingBalance ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setManualBalanceInput(balance > 0 ? balance.toFixed(2) : "");
+                      setIsAdjustingBalance(true);
+                    }}
+                    className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl border border-slate-700 transition-colors flex items-center gap-1.5 shrink-0 self-start sm:self-auto shadow"
+                  >
+                    <Wallet className="w-3.5 h-3.5 text-red-400" />
+                    <span>Set Exact Balance</span>
+                  </button>
+                ) : (
+                  <div className="flex items-center gap-2 shrink-0">
+                    <div className="relative">
+                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-xs">GH₵</span>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        autoFocus
+                        value={manualBalanceInput}
+                        onChange={(e) => setManualBalanceInput(e.target.value)}
+                        className="w-32 pl-11 pr-2 py-1.5 bg-slate-950 border border-red-500/60 rounded-xl text-white font-mono text-xs focus:outline-none focus:ring-2 focus:ring-red-500 font-bold"
+                        placeholder="150.00"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleSaveManualBalance}
+                      disabled={savingBalance}
+                      className="px-3.5 py-1.5 bg-red-600 hover:bg-red-500 text-white font-bold text-xs rounded-xl shadow-md transition-colors disabled:opacity-50 flex items-center gap-1"
+                    >
+                      {savingBalance ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Save"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsAdjustingBalance(false)}
+                      className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors"
+                      title="Cancel"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                )}
               </div>
 
               <p className="text-[11px] text-slate-500">

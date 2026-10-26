@@ -53,7 +53,7 @@ export async function getNetflixConfig() {
   const isEnabled = settings.netflix_enabled !== false;
   const retailPrice = Number(settings.netflix_price) > 0 ? Number(settings.netflix_price) : 25;
   const agentBasePrice = Number(settings.netflix_agent_base_price) > 0 ? Number(settings.netflix_agent_base_price) : 18;
-  const wholesaleCost = 15; // GH₵ 15 Data1 wholesale rate
+  const fallbackBalance = settings.netflix_balance !== undefined ? Number(settings.netflix_balance) : 0;
 
   return {
     apiKey,
@@ -62,6 +62,7 @@ export async function getNetflixConfig() {
     retailPrice,
     agentBasePrice,
     wholesaleCost,
+    fallbackBalance,
   };
 }
 
@@ -70,14 +71,16 @@ export async function getNetflixConfig() {
  */
 export async function fetchNetflixPartnerInfo(): Promise<NetflixPartnerInfoResult> {
   const config = await getNetflixConfig();
+  const fallbackBal = Number(config.fallbackBalance ?? 0);
+
   if (!config.apiKey) {
     return {
-      success: false,
-      balance: 0,
+      success: fallbackBal > 0,
+      balance: fallbackBal,
       currency: "GHS",
       wholesalePrice: 15,
       partnerName: "Bigjay",
-      availableAccounts: 0,
+      availableAccounts: Math.floor(fallbackBal / 15),
       error: "Data1 Netflix API key not configured",
     };
   }
@@ -87,42 +90,66 @@ export async function fetchNetflixPartnerInfo(): Promise<NetflixPartnerInfoResul
       method: "GET",
       headers: {
         "x-api-key": config.apiKey,
+        "Accept": "application/json",
       },
-      next: { revalidate: 15 },
+      cache: "no-store",
+      signal: AbortSignal.timeout(6000),
     });
 
     const data = await res.json().catch(() => ({}));
-    if (data.status === "success" && data.partner) {
-      const balance = Number(data.partner.wallet_balance ?? 0);
-      const wholesalePrice = Number(data.partner.wholesale_price ?? 15);
+    console.log("[Data1 Partner Info]", res.status, JSON.stringify(data));
+
+    // Extract balance from any standard or vendor format
+    const candidateBalance =
+      data.partner?.wallet_balance ??
+      data.partner?.balance ??
+      data.wallet_balance ??
+      data.balance ??
+      data.data?.wallet_balance ??
+      data.data?.balance ??
+      data.data?.partner?.wallet_balance ??
+      data.data?.partner?.balance ??
+      data.wallet?.balance;
+
+    if (candidateBalance !== undefined && candidateBalance !== null && !isNaN(Number(candidateBalance))) {
+      const balance = Number(candidateBalance);
+      const wholesalePrice = Number(data.partner?.wholesale_price ?? data.wholesale_price ?? 15);
+      const partnerName = data.partner?.name ?? data.name ?? "Bigjay";
+      const accountEmail = data.netflix?.account_email ?? data.account_email;
+
+      // Sync fresh live balance to database settings in background
+      db.updateSettings({ netflix_balance: balance }).catch(() => {});
+
       return {
         success: true,
         balance,
-        currency: data.partner.currency || "GHS",
+        currency: data.partner?.currency ?? data.currency ?? "GHS",
         wholesalePrice,
-        partnerName: data.partner.name || "Bigjay",
+        partnerName,
         availableAccounts: wholesalePrice > 0 ? Math.floor(balance / wholesalePrice) : 0,
-        accountEmail: data.netflix?.account_email,
+        accountEmail,
       };
     }
 
+    // If API responded but balance field not parsed, fallback to saved balance
     return {
-      success: false,
-      balance: 0,
+      success: fallbackBal > 0,
+      balance: fallbackBal,
       currency: "GHS",
       wholesalePrice: 15,
       partnerName: "Bigjay",
-      availableAccounts: 0,
+      availableAccounts: Math.floor(fallbackBal / 15),
       error: data.message || "Could not retrieve Data1 partner info",
     };
   } catch (err: any) {
+    console.warn("[Data1 Partner Info Exception]:", err?.message);
     return {
-      success: false,
-      balance: 0,
+      success: fallbackBal > 0,
+      balance: fallbackBal,
       currency: "GHS",
       wholesalePrice: 15,
       partnerName: "Bigjay",
-      availableAccounts: 0,
+      availableAccounts: Math.floor(fallbackBal / 15),
       error: err?.message || "Failed to contact Data1 partner API",
     };
   }
