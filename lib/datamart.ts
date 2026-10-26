@@ -17,6 +17,8 @@ export interface DataMartResult {
   raw_response?: any;
 }
 
+// Hardcoded datamart key permanently removed for security
+
 export async function resolveDatamartKeys(): Promise<string[]> {
   const keys: string[] = [];
   try {
@@ -32,6 +34,8 @@ export async function resolveDatamartKeys(): Promise<string[]> {
   ) {
     keys.push(process.env.DATAMART_API_KEY.trim());
   }
+  // Fallback key removed - keys strictly resolved from settings or env
+
   return keys;
 }
 
@@ -293,7 +297,7 @@ export async function sendDataMartDelivery(params: DataMartDeliveryParams): Prom
       }
     }
 
-
+    // Insecure key fallback removed
 
     // If rejected due to string capacity, attempt with numeric capacity
     if (!response.ok && (responseData?.message?.toLowerCase().includes("capacity") || response.status === 400)) {
