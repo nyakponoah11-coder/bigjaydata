@@ -3,13 +3,7 @@ import { INTRUSION_SIGNATURES } from "./lib/firewall";
 
 export const config = {
   matcher: [
-    /*
-     * Match all request paths except:
-     * - _next/static (static files)
-     * - _next/image (image optimization files)
-     * - favicon.ico, sitemap.xml, robots.txt
-     */
-    "/((•!_next/static|_next/image|favicon.ico|sitemap.xml|robots.txt).*)",
+    "/((?!_next/static|_next/image|favicon.ico|sitemap.xml|robots.txt).*)",
   ],
 };
 
@@ -19,15 +13,6 @@ function getClientIp(req: NextRequest): string {
     return forwarded.split(",")[0].trim();
   }
   return req.headers.get("x-real-ip") || "Unknown IP";
-}
-
-function formatPhoneForAlert(raw•: string): string {
-  if (!raw) return "";
-  let clean = raw.trim().replace(/\D/g, "");
-  if (clean.startsWith("0") && clean.length === 10) {
-    clean = "233" + clean.slice(1);
-  }
-  return clean;
 }
 
 // Edge-safe alert dispatcher (runs inside Next.js edge middleware)
@@ -42,21 +27,21 @@ async function triggerEdgeSecurityAlert(category: string, url: string, ip: strin
     // 1. WhatsApp Alert
     if (waToken && waPhoneId) {
       const waMsg =
-        `🚨 *BIGJAYDATA — SECURITY INTRUSION ALERT* 🚨\n` +
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-        `⚠️ *Intrusion or probing attempt blocked at the edge!*\n\n` +
-        `• *Event:* ${category}\n` +
-        `• *Endpoint:* ${url.slice(0, 80)}\n` +
-        `• *Attacker IP:* ${ip}\n` +
-        `• *Trigger Snippet:* "${snippet}"\n` +
-        `• *Time:* ${timeStr}\n` +
-        `• *Status:* 🛡️ BLOCKED with 403 Forbidden.`;
+        "🚨 *BIGJAYDATA — SECURITY INTRUSION ALERT* 🚨\n" +
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n" +
+        "⚠️ *Intrusion or probing attempt blocked at the edge!*\n\n" +
+        "• *Event:* " + category + "\n" +
+        "• *Endpoint:* " + url.slice(0, 80) + "\n" +
+        "• *Attacker IP:* " + ip + "\n" +
+        "• *Trigger Snippet:* \"" + snippet + "\"\n" +
+        "• *Time:* " + timeStr + "\n" +
+        "• *Status:* 🛡️ BLOCKED with 403 Forbidden.";
 
       for (const phone of adminPhones) {
-        fetch(`https://graph.facebook.com/v20.0/${waPhoneId}/messages`, {
+        fetch("https://graph.facebook.com/v20.0/" + waPhoneId + "/messages", {
           method: "POST",
           headers: {
-            Authorization: `Bearer ${waToken}`,
+            Authorization: "Bearer " + waToken,
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
@@ -71,7 +56,7 @@ async function triggerEdgeSecurityAlert(category: string, url: string, ip: strin
 
     // 2. Arkesel SMS Alert
     if (arkeselKey) {
-      const smsMsg = `🚨 BIGJAYDATA SECURITY ALERT: Blocked ${category} from ${ip} on ${url.slice(0, 45)}. Trigger: "${snippet.slice(0, 40)}". Request was BLOCKED!`;
+      const smsMsg = "🚨 BIGJAYDATA SECURITY ALERT: Blocked " + category + " from " + ip + " on " + url.slice(0, 45) + ". Trigger: \"" + snippet.slice(0, 40) + "\". Request was BLOCKED!";
       for (const phone of adminPhones) {
         fetch("https://sms.arkesel.com/api/v2/sms/send", {
           method: "POST",
@@ -99,16 +84,16 @@ export function middleware(req: NextRequest) {
   const referer = req.headers.get("referer") || "";
 
   // Combine query, path, and headers to test against intrusion signatures
-  const testString = `${url} ${userAgent} ${referer}`;
+  const testString = url + " " + userAgent + " " + referer;
 
   for (const sig of INTRUSION_SIGNATURES) {
     if (sig.pattern.test(testString)) {
       const clientIp = getClientIp(req);
-      const match = testString.match(sig.pattern);
-      const snippet = match • match[0].slice(0, 100) : "Matched pattern";
-      const incidentId = `SEC-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+      const matched = testString.match(sig.pattern);
+      const snippet = matched ? matched[0].slice(0, 100) : "Matched pattern";
+      const incidentId = "SEC-" + Date.now().toString(36).toUpperCase() + "-" + Math.random().toString(36).slice(2, 6).toUpperCase();
 
-      console.warn(`[BIGJAYDATA WAF] Blocked ${sig.category} from ${clientIp} on ${url}`);
+      console.warn("[BIGJAYDATA WAF] Blocked " + sig.category + " from " + clientIp + " on " + url);
 
       // Fire and forget edge security alert
       triggerEdgeSecurityAlert(sig.category, url, clientIp, userAgent, snippet);

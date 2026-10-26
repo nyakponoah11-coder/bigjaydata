@@ -3,13 +3,13 @@ import { supabaseAdmin } from "./supabase";
 export interface SecurityAlertPayload {
   type: string;
   endpoint: string;
-  ip•: string;
-  userAgent•: string;
+  ip?: string;
+  userAgent?: string;
   details: string;
   severity: "critical" | "warning";
 }
 
-function formatPhoneForAlert(raw•: string): string {
+function formatPhoneForAlert(raw?: string): string {
   if (!raw) return "";
   let clean = raw.trim().replace(/\D/g, "");
   if (clean.startsWith("0") && clean.length === 10) {
@@ -54,16 +54,16 @@ export async function sendSecurityAlert(alert: SecurityAlertPayload): Promise<vo
     if (formattedPhones.length === 0) return;
 
     const alertMessage =
-      `🚨 *BIGJAYDATA — SECURITY INTRUSION ALERT* 🚨\n` +
-      `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-      `⚠️ *Someone is attempting unauthorized access / tampering with BigJayData!*\n\n` +
-      `• *Event:* ${alert.type}\n` +
-      `• *Target Endpoint:* ${alert.endpoint}\n` +
-      `• *Attacker IP / ID:* ${alert.ip || "Unknown"}\n` +
-      `• *Time:* ${timeStr}\n` +
-      `• *Details:* ${alert.details}\n\n` +
-      `🛡️ *Status:* BLOCKED by System Security Firewall.\n\n` +
-      `👉 *Action Taken:* Request was terminated with HTTP 403 Forbidden. No confidential information or balance was disclosed.`;
+      "🚨 *BIGJAYDATA — SECURITY INTRUSION ALERT* 🚨\n" +
+      "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n" +
+      "⚠️ *Someone is attempting unauthorized access / tampering with BigJayData!*\n\n" +
+      "• *Event:* " + alert.type + "\n" +
+      "• *Target Endpoint:* " + alert.endpoint + "\n" +
+      "• *Attacker IP:* " + (alert.ip || "Unknown") + "\n" +
+      "• *Time:* " + timeStr + "\n" +
+      "• *Details:* " + alert.details + "\n\n" +
+      "🛡️ *Status:* BLOCKED by System Security Firewall.\n\n" +
+      "👉 *Action Taken:* Request was terminated with HTTP 403 Forbidden. No confidential information or balance was disclosed.";
 
     // 3. Dispatch via WhatsApp Meta Cloud API (if configured)
     const waToken = process.env.WHATSAPP_ACCESS_TOKEN || process.env.ACCESS_TOKEN;
@@ -72,10 +72,10 @@ export async function sendSecurityAlert(alert: SecurityAlertPayload): Promise<vo
     if (waToken && waPhoneId) {
       for (const phone of formattedPhones) {
         try {
-          await fetch(`https://graph.facebook.com/v20.0/${waPhoneId}/messages`, {
+          await fetch("https://graph.facebook.com/v20.0/" + waPhoneId + "/messages", {
             method: "POST",
             headers: {
-              Authorization: `Bearer ${waToken}`,
+              Authorization: "Bearer " + waToken,
               "Content-Type": "application/json",
             },
             body: JSON.stringify({
@@ -86,7 +86,7 @@ export async function sendSecurityAlert(alert: SecurityAlertPayload): Promise<vo
             }),
           });
         } catch (waErr) {
-          console.warn(`WhatsApp alert dispatch note for ${phone}:`, waErr);
+          console.warn("WhatsApp alert dispatch note for " + phone + ":", waErr);
         }
       }
     }
@@ -100,7 +100,7 @@ export async function sendSecurityAlert(alert: SecurityAlertPayload): Promise<vo
     ).trim();
 
     if (arkeselKey) {
-      const smsMsg = `🚨 BIGJAYDATA SECURITY ALERT: Blocked ${alert.type} on ${alert.endpoint} from IP ${alert.ip || "Unknown"}. Trigger: ${alert.details.slice(0, 75)}. Intrusion was BLOCKED!`;
+      const smsMsg = "🚨 BIGJAYDATA SECURITY ALERT: Blocked " + alert.type + " on " + alert.endpoint + " from IP " + (alert.ip || "Unknown") + ". Trigger: " + alert.details.slice(0, 75) + ". Intrusion was BLOCKED!";
       for (const phone of formattedPhones) {
         try {
           await fetch("https://sms.arkesel.com/api/v2/sms/send", {
@@ -117,7 +117,7 @@ export async function sendSecurityAlert(alert: SecurityAlertPayload): Promise<vo
             }),
           });
         } catch (smsErr) {
-          console.warn(`Arkesel SMS alert note for ${phone}:`, smsErr);
+          console.warn("Arkesel SMS alert note for " + phone + ":", smsErr);
         }
       }
     }
