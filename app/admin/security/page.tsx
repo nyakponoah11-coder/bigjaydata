@@ -22,6 +22,10 @@ import {
   Lock,
   Power,
   AlertOctagon,
+  Mail,
+  Key,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 
 interface BlockedItem {
@@ -69,6 +73,14 @@ export default function AdminSecurityPage() {
   const [testingAlert, setTestingAlert] = useState(false);
   const [alertNotice, setAlertNotice] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
+  // Database-Driven Admin Credentials State
+  const [adminEmail, setAdminEmail] = useState("");
+  const [newAdminEmail, setNewAdminEmail] = useState("");
+  const [newAdminPassword, setNewAdminPassword] = useState("");
+  const [showNewAdminPassword, setShowNewAdminPassword] = useState(false);
+  const [savingAdminCreds, setSavingAdminCreds] = useState(false);
+  const [adminCredsNotice, setAdminCredsNotice] = useState<{ type: "success" | "error"; message: string } | null>(null);
+
   // Manual Block State
   const [newTarget, setNewTarget] = useState("");
   const [newTargetType, setNewTargetType] = useState<"ip" | "phone">("ip");
@@ -115,6 +127,17 @@ export default function AdminSecurityPage() {
           }
         }
       }
+
+      // Fetch active admin email
+      fetch("/api/admin/auth")
+        .then((r) => r.json())
+        .then((authData) => {
+          if (authData.email) {
+            setAdminEmail(authData.email);
+            setNewAdminEmail(authData.email);
+          }
+        })
+        .catch(() => {});
     } catch (err) {
       console.error("Failed to fetch security data:", err);
     } finally {
@@ -251,6 +274,38 @@ export default function AdminSecurityPage() {
       console.error("Failed to block entity:", err);
     } finally {
       setBlockingTarget(false);
+    }
+  };
+
+  const handleUpdateAdminCreds = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newAdminEmail.trim() || !newAdminPassword.trim()) {
+      setAdminCredsNotice({ type: "error", message: "Both email and new password are required." });
+      return;
+    }
+    setSavingAdminCreds(true);
+    setAdminCredsNotice(null);
+    try {
+      const res = await fetch("/api/admin/auth", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "update_credentials",
+          email: newAdminEmail.trim(),
+          newPassword: newAdminPassword.trim(),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.message || "Failed to update admin credentials");
+      }
+      setAdminEmail(data.email || newAdminEmail.trim());
+      setNewAdminPassword("");
+      setAdminCredsNotice({ type: "success", message: "Admin credentials successfully updated in Supabase database." });
+    } catch (err: any) {
+      setAdminCredsNotice({ type: "error", message: err?.message || "Failed to update credentials" });
+    } finally {
+      setSavingAdminCreds(false);
     }
   };
 
@@ -572,6 +627,96 @@ export default function AdminSecurityPage() {
                 className="px-6 py-2.5 bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs rounded-xl border border-slate-600 transition-colors disabled:opacity-50 flex items-center gap-2 shadow-lg"
               >
                 {savingConfig ? <Loader2 className="w-4 h-4 animate-spin" /> : "Save All Security Preferences"}
+              </button>
+            </div>
+          </form>
+        </div>
+
+        {/* Database-Driven Admin Credentials Configuration Card */}
+        <div className="bg-gradient-to-br from-slate-900 via-slate-900 to-indigo-950/30 border border-slate-800 rounded-3xl p-6 sm:p-8 relative shadow-xl">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800/80 pb-6 mb-6">
+            <div>
+              <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                <Lock className="w-5 h-5 text-indigo-400" />
+                Master Admin Database Authentication
+              </h2>
+              <p className="text-xs text-slate-400 mt-1">
+                Your admin login is authenticated and securely salted &amp; hashed inside Supabase. Update your login email and password below.
+              </p>
+            </div>
+            {adminEmail && (
+              <div className="px-3 py-1.5 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 text-xs font-mono flex items-center gap-2">
+                <Mail className="w-3.5 h-3.5" />
+                <span>Active: <b>{adminEmail}</b></span>
+              </div>
+            )}
+          </div>
+
+          {adminCredsNotice && (
+            <div
+              className={`mb-6 p-4 rounded-xl border text-xs flex items-center gap-2.5 ${
+                adminCredsNotice.type === "success"
+                  ? "bg-emerald-950/40 border-emerald-800/80 text-emerald-300"
+                  : "bg-red-950/40 border-red-800/80 text-red-300"
+              }`}
+            >
+              {adminCredsNotice.type === "success" ? (
+                <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
+              ) : (
+                <AlertTriangle className="w-4 h-4 shrink-0 text-red-400" />
+              )}
+              <span>{adminCredsNotice.message}</span>
+            </div>
+          )}
+
+          <form onSubmit={handleUpdateAdminCreds} className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1.5 uppercase tracking-wide">
+                Admin Login Email
+              </label>
+              <input
+                type="email"
+                value={newAdminEmail}
+                onChange={(e) => setNewAdminEmail(e.target.value)}
+                placeholder="admin@bundlemartgh.com"
+                required
+                className="w-full px-4 py-2.5 bg-slate-800/80 border border-slate-700 rounded-xl text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 placeholder:text-slate-500"
+              />
+              <span className="text-[11px] text-slate-500 mt-1 block">Used to sign in to the Admin Dashboard.</span>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1.5 uppercase tracking-wide">
+                New Master Password
+              </label>
+              <div className="relative">
+                <input
+                  type={showNewAdminPassword ? "text" : "password"}
+                  value={newAdminPassword}
+                  onChange={(e) => setNewAdminPassword(e.target.value)}
+                  placeholder="Enter new master password"
+                  required
+                  className="w-full pl-4 pr-11 py-2.5 bg-slate-800/80 border border-slate-700 rounded-xl text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 placeholder:text-slate-500"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowNewAdminPassword(!showNewAdminPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200 transition-colors p-1"
+                >
+                  {showNewAdminPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+              <span className="text-[11px] text-slate-500 mt-1 block">Will be salted and hashed with PBKDF2 in Supabase.</span>
+            </div>
+
+            <div className="sm:col-span-2 flex justify-end pt-2 border-t border-slate-800/50">
+              <button
+                type="submit"
+                disabled={savingAdminCreds}
+                className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-indigo-600/30 transition-colors disabled:opacity-50 flex items-center gap-2"
+              >
+                {savingAdminCreds ? <Loader2 className="w-4 h-4 animate-spin" /> : <Key className="w-4 h-4" />}
+                Update Admin Login in Supabase
               </button>
             </div>
           </form>

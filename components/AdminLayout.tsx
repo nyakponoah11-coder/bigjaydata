@@ -37,25 +37,51 @@ interface Props {
 export default function AdminLayout({ children }: Props) {
   const pathname = usePathname();
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [isConfigured, setIsConfigured] = useState<boolean | null>(null);
+  const [activeAdminEmail, setActiveAdminEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
 
   useEffect(() => {
-    const token = localStorage.getItem("bundlemart_admin_auth") || localStorage.getItem("bigj_admin_auth");
-    if (token) {
-      setIsAuthenticated(true);
-      // Ensure backend session cookie is synced seamlessly
-      fetch("/api/admin/auth", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tokenSync: token }),
-      }).catch(() => {});
-    } else {
-      setIsAuthenticated(false);
-    }
+    // Check initial auth state & whether an admin account exists in Supabase
+    fetch("/api/admin/auth")
+      .then((res) => res.json())
+      .then((data) => {
+        setIsConfigured(data.isConfigured !== false);
+        if (data.authenticated) {
+          setIsAuthenticated(true);
+          if (data.email) setActiveAdminEmail(data.email);
+        } else {
+          const token = localStorage.getItem("bundlemart_admin_auth");
+          if (token) {
+            fetch("/api/admin/auth", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ tokenSync: token }),
+            })
+              .then((r) => r.json())
+              .then((syncData) => {
+                if (syncData.success) {
+                  setIsAuthenticated(true);
+                  if (syncData.email) setActiveAdminEmail(syncData.email);
+                } else {
+                  localStorage.removeItem("bundlemart_admin_auth");
+                  setIsAuthenticated(false);
+                }
+              })
+              .catch(() => setIsAuthenticated(false));
+          } else {
+            setIsAuthenticated(false);
+          }
+        }
+      })
+      .catch(() => {
+        setIsAuthenticated(false);
+      });
   }, []);
 
   // Close drawer on path change
@@ -72,18 +98,19 @@ export default function AdminLayout({ children }: Props) {
       const res = await fetch("/api/admin/auth", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password }),
+        body: JSON.stringify({ email: email.trim(), password }),
       });
 
       const data = await res.json();
       if (!res.ok || !data.success) {
-        throw new Error(data.message || "Invalid password");
+        throw new Error(data.message || "Invalid email or password");
       }
 
       localStorage.setItem("bundlemart_admin_auth", data.token || "authenticated");
+      if (data.email) setActiveAdminEmail(data.email);
       setIsAuthenticated(true);
     } catch (err: any) {
-      setError(err?.message || "Invalid admin password. Please try again.");
+      setError(err?.message || "Invalid admin email or password. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -106,7 +133,7 @@ export default function AdminLayout({ children }: Props) {
     );
   }
 
-  // Password Lock Screen
+  // Database-Driven Email & Password Lock Screen
   if (!isAuthenticated) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-emerald-950 flex items-center justify-center p-4">
@@ -119,7 +146,9 @@ export default function AdminLayout({ children }: Props) {
               BundleMartGh Admin Portal
             </h1>
             <p className="text-xs text-slate-400 mt-1">
-              Enter merchant master password to manage bundles and orders
+              {isConfigured === false
+                ? "First-time setup: Create your Master Administrator credentials stored in Supabase"
+                : "Sign in with your database-authenticated administrator credentials"}
             </p>
           </div>
 
@@ -133,13 +162,29 @@ export default function AdminLayout({ children }: Props) {
           <form onSubmit={handleLogin} className="space-y-4">
             <div>
               <label className="block text-xs font-semibold text-slate-300 mb-1.5 uppercase tracking-wide">
+                Admin Email
+              </label>
+              <div className="relative">
+                <input
+                  type="email"
+                  required
+                  autoFocus
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="admin@bundlemartgh.com"
+                  className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 placeholder:text-slate-500"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1.5 uppercase tracking-wide">
                 Admin Password
               </label>
               <div className="relative">
                 <input
                   type={showPassword ? "text" : "password"}
                   required
-                  autoFocus
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Enter admin password"
@@ -161,7 +206,13 @@ export default function AdminLayout({ children }: Props) {
               disabled={loading}
               className="w-full py-3 px-4 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-sm shadow-lg shadow-emerald-600/30 flex items-center justify-center gap-2 transition-all disabled:opacity-50"
             >
-              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Unlock Dashboard"}
+              {loading ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : isConfigured === false ? (
+                "Create Master Account"
+              ) : (
+                "Unlock Dashboard"
+              )}
             </button>
           </form>
 
