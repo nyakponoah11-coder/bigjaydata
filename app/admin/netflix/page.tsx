@@ -473,7 +473,7 @@ export default function AdminNetflixPage() {
                       Data1 Partner Wallet
                       <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
                     </h2>
-                    <p className="text-xs text-slate-400">Live balance from Data1 gateway (GH₵ 15 wholesale per order)</p>
+                    <p className="text-xs text-slate-400">Live balance from Data1 gateway (GH₵ {wholesaleCost.toFixed(2)} wholesale per order)</p>
                   </div>
                 </div>
 
@@ -610,7 +610,7 @@ export default function AdminNetflixPage() {
                     <input
                       type="number"
                       step="0.5"
-                      min="15"
+                      min={wholesaleCost > 0 ? wholesaleCost : 1}
                       required
                       value={retailPrice}
                       onChange={(e) => setRetailPrice(Number(e.target.value))}
@@ -618,9 +618,9 @@ export default function AdminNetflixPage() {
                     />
                   </div>
                   <div className="text-[11px] text-slate-400 flex items-center justify-between pt-1 border-t border-slate-800/80">
-                    <span>Wholesale: GH₵ 15</span>
+                    <span>Wholesale: GH₵ {wholesaleCost.toFixed(2)}</span>
                     <span className="text-emerald-400 font-bold">
-                      Profit: +GH₵ {storefrontProfit} ({((storefrontProfit / wholesaleCost) * 100).toFixed(0)}%)
+                      Profit: +GH₵ {storefrontProfit} ({wholesaleCost > 0 ? ((storefrontProfit / wholesaleCost) * 100).toFixed(0) : 0}%)
                     </span>
                   </div>
                 </div>
@@ -642,7 +642,7 @@ export default function AdminNetflixPage() {
                     <input
                       type="number"
                       step="0.5"
-                      min="15"
+                      min={wholesaleCost > 0 ? wholesaleCost : 1}
                       required
                       value={agentBasePrice}
                       onChange={(e) => setAgentBasePrice(Number(e.target.value))}
@@ -650,7 +650,7 @@ export default function AdminNetflixPage() {
                     />
                   </div>
                   <div className="text-[11px] text-slate-400 flex items-center justify-between pt-1 border-t border-slate-800/80">
-                    <span>Cost: GH₵ 15</span>
+                    <span>Cost: GH₵ {wholesaleCost.toFixed(2)}</span>
                     <span className="text-amber-400 font-bold">
                       Your Margin: +GH₵ {agentPlatformProfit} / order
                     </span>
