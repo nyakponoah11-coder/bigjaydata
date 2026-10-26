@@ -21,6 +21,7 @@ import {
   Wallet,
   Zap,
   Users,
+  UserCheck,
   Tv,
   PlusCircle,
   X,
@@ -116,12 +117,21 @@ export default function AdminDashboardPage() {
             </button>
 
             <Link
-              href="/admin/customers"
-              className="py-2 px-3.5 bg-slate-800 hover:bg-slate-700 text-emerald-400 hover:text-emerald-300 font-bold border border-slate-700 rounded-xl text-xs flex items-center gap-1.5 transition-all"
-              title="Customer Phone Directory & Copy All Numbers"
+              href="/admin/registered-accounts"
+              className="py-2 px-3.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 hover:text-amber-300 font-bold border border-amber-500/30 rounded-xl text-xs flex items-center gap-1.5 transition-all shadow-sm"
+              title="Registered Customer Accounts & Wallets"
             >
-              <Users className="w-3.5 h-3.5" />
-              <span>Customers</span>
+              <UserCheck className="w-3.5 h-3.5" />
+              <span>Registered Accounts</span>
+            </Link>
+
+            <Link
+              href="/admin/customers"
+              className="py-2 px-3.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white font-bold border border-slate-700 rounded-xl text-xs flex items-center gap-1.5 transition-all"
+              title="Customer Phone Directory & 1,000+ Guest Leads"
+            >
+              <Users className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Guest Leads (1,000+)</span>
             </Link>
 
             <button

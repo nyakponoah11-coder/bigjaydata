@@ -50,11 +50,15 @@ export async function POST(req: Request) {
       }
     }
 
-    if (!targetRef) {
-      targetRef = reference;
+    const effectiveRef = (targetRef || reference || order?.reference || "").trim();
+    if (!effectiveRef) {
+      return NextResponse.json(
+        { success: false, message: "Order reference is required." },
+        { status: 400 }
+      );
     }
 
-    let result = await fetchNetflixSignInCode(targetRef);
+    let result = await fetchNetflixSignInCode(effectiveRef);
 
     // If Data1 reported order not found, attempt auto-provisioning and retry
     if (!result.success && result.error?.toLowerCase().includes("not found")) {

@@ -15,8 +15,17 @@ export async function GET(req: Request) {
       db.getCustomerTransactions().catch(() => []),
     ]);
 
+    // Filter strictly to genuine registered customer accounts (must have Google OAuth, password PIN, or registered email)
+    const registeredOnly = customers.filter((c) => {
+      if (!c || !c.phone) return false;
+      const isGoogle = c.provider === "google" || Boolean(c.google_id);
+      const hasPass = typeof c.password_hash === "string" && c.password_hash.trim().length >= 4 && c.password_hash !== "guest";
+      const hasEmail = Boolean(c.email && c.email.includes("@"));
+      return isGoogle || hasPass || hasEmail;
+    });
+
     // Map order counts and metrics per customer
-    const enrichedCustomers = customers.map((c) => {
+    const enrichedCustomers = registeredOnly.map((c) => {
       const cleanPhone = c.phone.replace(/[^0-9]/g, "");
       const customerOrders = orders.filter((o) => {
         if (o.customer_id && o.customer_id === c.id) return true;

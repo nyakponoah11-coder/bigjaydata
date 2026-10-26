@@ -60,9 +60,9 @@ export async function sendAgentEmail({ to, subject, html, text }: EmailPayload):
     try {
       let fromEmail = process.env.EMAIL_FROM?.trim() || settings?.email_from?.trim();
       if (!fromEmail) {
-        fromEmail = `${settings?.store_name || "Data Ease"} <onboarding@resend.dev>`;
+        fromEmail = `${settings?.store_name || "Big Jay Data"} <onboarding@resend.dev>`;
       } else if (!fromEmail.includes("<") && fromEmail.includes("@")) {
-        fromEmail = `${settings?.store_name || "Data Ease"} <${fromEmail}>`;
+        fromEmail = `${settings?.store_name || "Big Jay Data"} <${fromEmail}>`;
       }
 
       const res = await fetch("https://api.resend.com/emails", {
@@ -128,9 +128,9 @@ export async function sendAgentEmail({ to, subject, html, text }: EmailPayload):
 
       let senderFrom = process.env.EMAIL_FROM?.trim() || settings?.email_from?.trim();
       if (!senderFrom || !senderFrom.includes("@")) {
-        senderFrom = `"${settings?.store_name || "Data Ease"}" <${smtpUser}>`;
+        senderFrom = `"${settings?.store_name || "Big Jay Data"}" <${smtpUser}>`;
       } else if (!senderFrom.includes("<")) {
-        senderFrom = `"${settings?.store_name || "Data Ease"}" <${senderFrom}>`;
+        senderFrom = `"${settings?.store_name || "Big Jay Data"}" <${senderFrom}>`;
       }
 
       const info = await transporter.sendMail({
@@ -181,12 +181,12 @@ export async function sendWithdrawalOtpEmail(
   code: string,
   amount: number
 ): Promise<EmailResult> {
-  const subject = `[FastData] Security Verification Code for GHS ${amount.toFixed(2)} Withdrawal`;
+  const subject = `[Big Jay Data] Security Verification Code for GHS ${amount.toFixed(2)} Withdrawal`;
   const html = `
     <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 540px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 16px; background-color: #ffffff;">
       <div style="text-align: center; margin-bottom: 20px;">
         <h2 style="color: #0f172a; margin: 0; font-size: 22px;">Security Verification Code</h2>
-        <p style="color: #64748b; font-size: 13px; margin-top: 4px;">FastData Partner Portal Withdrawal Request</p>
+        <p style="color: #64748b; font-size: 13px; margin-top: 4px;">Big Jay Data Partner Portal Withdrawal Request</p>
       </div>
 
       <p style="color: #334155; font-size: 14px; line-height: 1.5;">Hello <strong>${agentName}</strong>,</p>
@@ -200,11 +200,11 @@ export async function sendWithdrawalOtpEmail(
       </div>
 
       <p style="color: #ef4444; font-size: 12px; line-height: 1.4;">
-        <strong>Security Warning:</strong> Never share this code with anyone. FastData staff will never ask you for this code.
+        <strong>Security Warning:</strong> Never share this code with anyone. Big Jay Data staff will never ask you for this code.
       </p>
 
       <div style="border-top: 1px solid #e2e8f0; margin-top: 24px; padding-top: 16px; font-size: 11px; color: #94a3b8; text-align: center;">
-        FastData Automated Partner Network • Powered by FastData Desk
+        Big Jay Data Automated Partner Network • Powered by Big Jay Data Desk
       </div>
     </div>
   `;
@@ -222,8 +222,8 @@ export async function sendPasswordResetEmail(
   isAdminReset: boolean = false
 ): Promise<EmailResult> {
   const subject = isAdminReset
-    ? `[FastData] Your Partner Portal Password Has Been Reset`
-    : `[FastData] Password Reset Verification Code`;
+    ? `[Big Jay Data] Your Partner Portal Password Has Been Reset`
+    : `[Big Jay Data] Password Reset Verification Code`;
 
   const html = `
     <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 540px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 16px; background-color: #ffffff;">
@@ -231,7 +231,7 @@ export async function sendPasswordResetEmail(
         <h2 style="color: #0f172a; margin: 0; font-size: 22px;">
           ${isAdminReset ? "Account Password Reset" : "Password Reset Code"}
         </h2>
-        <p style="color: #64748b; font-size: 13px; margin-top: 4px;">FastData Partner Portal</p>
+        <p style="color: #64748b; font-size: 13px; margin-top: 4px;">Big Jay Data Partner Portal</p>
       </div>
 
       <p style="color: #334155; font-size: 14px; line-height: 1.5;">Hello <strong>${agentName}</strong>,</p>
@@ -257,7 +257,7 @@ export async function sendPasswordResetEmail(
       </p>
 
       <div style="border-top: 1px solid #e2e8f0; margin-top: 24px; padding-top: 16px; font-size: 11px; color: #94a3b8; text-align: center;">
-        FastData Automated Partner Network • Powered by FastData Desk
+        Big Jay Data Automated Partner Network • Powered by Big Jay Data Desk
       </div>
     </div>
   `;
@@ -274,8 +274,8 @@ export async function sendSuspensionEmail(
   isSuspended: boolean
 ): Promise<EmailResult> {
   const subject = isSuspended
-    ? `[FastData Notice] Your Partner Account Has Been Suspended`
-    : `[FastData Notice] Your Partner Account Has Been Reactivated`;
+    ? `[Big Jay Data Notice] Your Partner Account Has Been Suspended`
+    : `[Big Jay Data Notice] Your Partner Account Has Been Reactivated`;
 
   const html = `
     <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 540px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 16px; background-color: #ffffff;">
@@ -283,15 +283,15 @@ export async function sendSuspensionEmail(
         <h2 style="color: ${isSuspended ? "#dc2626" : "#059669"}; margin: 0; font-size: 22px;">
           ${isSuspended ? "Account Suspended" : "Account Reactivated"}
         </h2>
-        <p style="color: #64748b; font-size: 13px; margin-top: 4px;">FastData Partner Portal</p>
+        <p style="color: #64748b; font-size: 13px; margin-top: 4px;">Big Jay Data Partner Portal</p>
       </div>
 
       <p style="color: #334155; font-size: 14px; line-height: 1.5;">Hello <strong>${agentName}</strong>,</p>
       <p style="color: #334155; font-size: 14px; line-height: 1.5;">
         ${
           isSuspended
-            ? "Your FastData partner account and public storefront have been placed on suspension by the administration. While suspended, your storefront is closed and you will not be able to log into your partner dashboard."
-            : "Great news! Your FastData partner account and storefront have been reactivated. You can now log into your dashboard and accept customer orders."
+            ? "Your Big Jay Data partner account and public storefront have been placed on suspension by the administration. While suspended, your storefront is closed and you will not be able to log into your partner dashboard."
+            : "Great news! Your Big Jay Data partner account and storefront have been reactivated. You can now log into your dashboard and accept customer orders."
         }
       </p>
 
@@ -300,7 +300,7 @@ export async function sendSuspensionEmail(
       </p>
 
       <div style="border-top: 1px solid #e2e8f0; margin-top: 24px; padding-top: 16px; font-size: 11px; color: #94a3b8; text-align: center;">
-        FastData Automated Partner Network • Powered by FastData Desk
+        Big Jay Data Automated Partner Network • Powered by Big Jay Data Desk
       </div>
     </div>
   `;
@@ -316,13 +316,13 @@ export async function sendLoginOtpEmail(
   agentName: string,
   code: string
 ): Promise<EmailResult> {
-  const subject = `[FastData] Your Login Verification Code: ${code}`;
+  const subject = `[Big Jay Data] Your Login Verification Code: ${code}`;
 
   const html = `
     <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 540px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 16px; background-color: #ffffff;">
       <div style="text-align: center; margin-bottom: 20px;">
         <h2 style="color: #0f172a; margin: 0; font-size: 22px;">Partner Login Verification</h2>
-        <p style="color: #64748b; font-size: 13px; margin-top: 4px;">FastData Partner Portal</p>
+        <p style="color: #64748b; font-size: 13px; margin-top: 4px;">Big Jay Data Partner Portal</p>
       </div>
 
       <p style="color: #334155; font-size: 14px; line-height: 1.5;">Hello <strong>${agentName}</strong>,</p>
@@ -342,7 +342,7 @@ export async function sendLoginOtpEmail(
       </p>
 
       <div style="border-top: 1px solid #e2e8f0; margin-top: 24px; padding-top: 16px; font-size: 11px; color: #94a3b8; text-align: center;">
-        FastData Automated Partner Network • Powered by FastData Desk
+        Big Jay Data Automated Partner Network • Powered by Big Jay Data Desk
       </div>
     </div>
   `;
@@ -358,13 +358,13 @@ export async function sendDeveloperVerificationOtpEmail(
   developerName: string,
   code: string
 ): Promise<EmailResult> {
-  const subject = `[FastData Developer API] Your 6-Digit Key Verification Code: ${code}`;
+  const subject = `[Big Jay Data Developer API] Your 6-Digit Key Verification Code: ${code}`;
 
   const html = `
     <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; padding: 28px; border: 1px solid #1e293b; border-radius: 20px; background-color: #0b1120; color: #f8fafc;">
       <div style="text-align: center; margin-bottom: 24px;">
         <div style="display: inline-block; padding: 8px 16px; background: rgba(99, 102, 241, 0.15); border: 1px solid rgba(99, 102, 241, 0.4); border-radius: 999px; margin-bottom: 12px;">
-          <span style="font-size: 11px; font-weight: 700; color: #818cf8; text-transform: uppercase; letter-spacing: 1px;">FastData API Gateway</span>
+          <span style="font-size: 11px; font-weight: 700; color: #818cf8; text-transform: uppercase; letter-spacing: 1px;">Big Jay Data API Gateway</span>
         </div>
         <h2 style="color: #ffffff; margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -0.5px;">API Key Verification</h2>
         <p style="color: #94a3b8; font-size: 13px; margin-top: 6px;">Secure programmatic access credentials</p>
@@ -372,7 +372,7 @@ export async function sendDeveloperVerificationOtpEmail(
 
       <p style="color: #cbd5e1; font-size: 14px; line-height: 1.6;">Hello <strong>${developerName}</strong>,</p>
       <p style="color: #cbd5e1; font-size: 14px; line-height: 1.6;">
-        You requested to generate a production API Key for FastData automated mobile data fulfillment. Use the 6-digit verification code below to authorize and generate your secret key:
+        You requested to generate a production API Key for Big Jay Data automated mobile data fulfillment. Use the 6-digit verification code below to authorize and generate your secret key:
       </p>
 
       <div style="background-color: #0f172a; border: 2px dashed #6366f1; border-radius: 14px; padding: 20px; text-align: center; margin: 26px 0;">
@@ -384,12 +384,12 @@ export async function sendDeveloperVerificationOtpEmail(
 
       <div style="background-color: rgba(239, 68, 68, 0.1); border-left: 3px solid #ef4444; border-radius: 8px; padding: 12px; margin-bottom: 20px;">
         <p style="color: #fca5a5; font-size: 12px; margin: 0; line-height: 1.5;">
-          <strong>Security Warning:</strong> Never share your verification code or API keys. FastData engineers will never ask for your API secret.
+          <strong>Security Warning:</strong> Never share your verification code or API keys. Big Jay Data engineers will never ask for your API secret.
         </p>
       </div>
 
       <div style="border-top: 1px solid #1e293b; margin-top: 26px; padding-top: 18px; font-size: 11px; color: #64748b; text-align: center;">
-        FastData Developer Platform • High-Speed Telco APIs for Ghana
+        Big Jay Data Developer Platform • High-Speed Telco APIs for Ghana
       </div>
     </div>
   `;

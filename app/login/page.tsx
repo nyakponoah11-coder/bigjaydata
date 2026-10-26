@@ -70,6 +70,18 @@ export default function CustomerLoginPage() {
   const [googleNameInput, setGoogleNameInput] = useState("");
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const needVerify = params.get("verify") || params.get("requires_verification");
+    const idParam = params.get("id");
+    if (needVerify) {
+      setMode("verify");
+      if (idParam) setCustomerId(idParam);
+      setInfoNotice("Please enter the 6-digit verification code sent to your email and phone to activate your account.");
+    }
+  }, []);
+
+  useEffect(() => {
     if (resendCooldown <= 0) return;
     const timer = setInterval(() => {
       setResendCooldown((prev) => (prev > 0 ? prev - 1 : 0));

@@ -22,6 +22,9 @@ import {
   ExternalLink,
   ChevronDown,
   Sparkles,
+  Wallet,
+  ShieldCheck,
+  UserX,
 } from "lucide-react";
 
 interface CustomerRecord {
@@ -35,10 +38,16 @@ interface CustomerRecord {
   first_seen: string;
   last_seen: string;
   recent_references: string[];
+  is_registered?: boolean;
+  customer_id?: string;
+  wallet_balance?: number;
+  email?: string;
 }
 
 interface SummaryData {
   total_contacts: number;
+  total_registered_accounts: number;
+  total_guest_buyers: number;
   total_storefront_customers: number;
   total_agent_customers: number;
   total_chat_customers: number;
@@ -58,6 +67,7 @@ export default function AdminCustomersPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [networkFilter, setNetworkFilter] = useState<string>("all");
   const [sourceFilter, setSourceFilter] = useState<string>("all");
+  const [accountTypeFilter, setAccountTypeFilter] = useState<"all" | "registered" | "guests">("all");
   const [copyFormat, setCopyFormat] = useState<"comma" | "newline" | "intl_comma">("comma");
   const [copiedAll, setCopiedAll] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -90,11 +100,6 @@ export default function AdminCustomersPage() {
     }, 3000);
   };
 
-  const copyToClipboard = (text: string, label: string) => {
-    navigator.clipboard.writeText(text);
-    triggerToast(label);
-  };
-
   // Filtered customer list
   const filteredCustomers = customers.filter((c) => {
     const q = searchQuery.toLowerCase().trim();
@@ -102,7 +107,8 @@ export default function AdminCustomersPage() {
       !q ||
       c.phone.includes(q) ||
       c.international_phone.includes(q) ||
-      c.name.toLowerCase().includes(q) ||
+      (c.name && c.name.toLowerCase().includes(q)) ||
+      (c.email && c.email.toLowerCase().includes(q)) ||
       c.sources.some((s) => s.toLowerCase().includes(q));
 
     const matchesNetwork = networkFilter === "all" || c.network === networkFilter;
@@ -114,7 +120,12 @@ export default function AdminCustomersPage() {
       (sourceFilter === "chat" && c.sources.some((s) => s.includes("Live Chat"))) ||
       (sourceFilter === "voucher" && c.sources.some((s) => s.includes("Voucher")));
 
-    return matchesSearch && matchesNetwork && matchesSource;
+    const matchesAccountType =
+      accountTypeFilter === "all" ||
+      (accountTypeFilter === "registered" && c.is_registered) ||
+      (accountTypeFilter === "guests" && !c.is_registered);
+
+    return matchesSearch && matchesNetwork && matchesSource && matchesAccountType;
   });
 
   // Numbers generated for the currently filtered set
@@ -149,11 +160,14 @@ export default function AdminCustomersPage() {
 
   const handleExportCSV = () => {
     if (!filteredCustomers.length) return;
-    const headers = ["Phone", "International", "Name", "Network", "Total Orders", "Total Spent (GHS)", "Sources", "Last Seen"];
+    const headers = ["Phone", "International", "Name", "Email", "Account Type", "Wallet Balance", "Network", "Total Orders", "Total Spent (GHS)", "Sources", "Last Seen"];
     const rows = filteredCustomers.map((c) => [
       `"${c.phone}"`,
       `"${c.international_phone}"`,
       `"${c.name || ""}"`,
+      `"${c.email || ""}"`,
+      `"${c.is_registered ? "Registered Account" : "Guest Buyer"}"`,
+      c.wallet_balance ? c.wallet_balance.toFixed(2) : "0.00",
       `"${c.network.toUpperCase()}"`,
       c.total_orders,
       c.total_spent.toFixed(2),
@@ -165,7 +179,7 @@ export default function AdminCustomersPage() {
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `bundlemart_customers_${new Date().toISOString().slice(0, 10)}.csv`);
+    link.setAttribute("download", `customer_directory_${new Date().toISOString().slice(0, 10)}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -200,13 +214,13 @@ export default function AdminCustomersPage() {
           <div>
             <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-400 text-xs font-bold uppercase tracking-wider mb-2">
               <Users className="w-3.5 h-3.5" />
-              Customer Contact Directory & Audience Hub
+              Customer Audience & Lead Directory
             </div>
             <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
-              Customer Directory
+              Customer Directory & Leads
             </h1>
             <p className="text-xs sm:text-sm text-slate-400 mt-1 max-w-2xl">
-              All customer, agent, and visitor phone numbers automatically collected across the entire platform — from the main storefront and agent shops to live chat and giveaways.
+              All 1,000+ guest buyers and registered user phone numbers across the platform. Guest buyers buy without creating an account; registered customers have accounts and wallets.
             </p>
           </div>
 
@@ -214,11 +228,11 @@ export default function AdminCustomersPage() {
           <div className="flex flex-wrap items-center gap-2.5">
             <Link
               href="/admin/registered-accounts"
-              className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 text-xs font-black shadow-lg shadow-amber-500/20 transition-all hover:scale-105 cursor-pointer"
+              className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 text-xs font-black shadow-lg shadow-amber-500/20 transition-all hover:scale-105 cursor-pointer"
               title="View Registered User Accounts & Wallets"
             >
-              <UserCheck className="w-3.5 h-3.5 text-slate-950" />
-              <span>Registered Accounts</span>
+              <UserCheck className="w-4 h-4 text-slate-950" />
+              <span>Registered Accounts ({summary?.total_registered_accounts || 0})</span>
             </Link>
 
             <button
@@ -265,53 +279,113 @@ export default function AdminCustomersPage() {
 
         {/* Audience Metrics Summary Cards */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          {/* Total Unique Contacts */}
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 shadow-lg relative overflow-hidden">
-            <div className="flex items-center justify-between text-slate-400 text-xs font-bold uppercase tracking-wider mb-2">
-              <span>Total Contacts</span>
-              <Users className="w-4 h-4 text-emerald-400" />
-            </div>
-            <div className="text-2xl sm:text-3xl font-black text-white font-mono">
-              {summary?.total_contacts || 0}
-            </div>
-            <div className="text-[11px] text-slate-500 mt-1">Unique numbers on system</div>
-          </div>
-
-          {/* MTN Numbers */}
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 shadow-lg">
+          {/* Registered Accounts */}
+          <div
+            onClick={() => setAccountTypeFilter("registered")}
+            className={`rounded-3xl p-5 shadow-lg relative overflow-hidden cursor-pointer transition-all border ${
+              accountTypeFilter === "registered"
+                ? "bg-amber-950/40 border-amber-500 ring-2 ring-amber-500/50"
+                : "bg-slate-900 border-slate-800 hover:border-slate-700"
+            }`}
+          >
             <div className="flex items-center justify-between text-amber-400 text-xs font-bold uppercase tracking-wider mb-2">
-              <span>MTN Audience</span>
-              <span className="w-2.5 h-2.5 rounded-full bg-amber-400"></span>
+              <span>Registered Accounts</span>
+              <UserCheck className="w-4 h-4 text-amber-400" />
             </div>
             <div className="text-2xl sm:text-3xl font-black text-amber-300 font-mono">
-              {summary?.mtn_count || 0}
+              {summary?.total_registered_accounts || 0}
             </div>
-            <div className="text-[11px] text-slate-500 mt-1">MTN SIM holders</div>
+            <div className="text-[11px] text-slate-400 mt-1">Have accounts & wallets</div>
           </div>
 
-          {/* Telecel Numbers */}
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 shadow-lg">
-            <div className="flex items-center justify-between text-rose-400 text-xs font-bold uppercase tracking-wider mb-2">
-              <span>Telecel Audience</span>
-              <span className="w-2.5 h-2.5 rounded-full bg-rose-500"></span>
+          {/* Guest Buyers */}
+          <div
+            onClick={() => setAccountTypeFilter("guests")}
+            className={`rounded-3xl p-5 shadow-lg relative overflow-hidden cursor-pointer transition-all border ${
+              accountTypeFilter === "guests"
+                ? "bg-slate-800 border-emerald-500 ring-2 ring-emerald-500/50"
+                : "bg-slate-900 border-slate-800 hover:border-slate-700"
+            }`}
+          >
+            <div className="flex items-center justify-between text-slate-400 text-xs font-bold uppercase tracking-wider mb-2">
+              <span>Guest Order Buyers</span>
+              <ShoppingCart className="w-4 h-4 text-emerald-400" />
             </div>
-            <div className="text-2xl sm:text-3xl font-black text-rose-300 font-mono">
-              {summary?.telecel_count || 0}
+            <div className="text-2xl sm:text-3xl font-black text-white font-mono">
+              {summary?.total_guest_buyers || 0}
             </div>
-            <div className="text-[11px] text-slate-500 mt-1">Telecel SIM holders</div>
+            <div className="text-[11px] text-slate-500 mt-1">Direct storefront buyers</div>
           </div>
 
-          {/* AT Numbers */}
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 shadow-lg">
+          {/* Total Unique Contacts */}
+          <div
+            onClick={() => setAccountTypeFilter("all")}
+            className={`rounded-3xl p-5 shadow-lg relative overflow-hidden cursor-pointer transition-all border ${
+              accountTypeFilter === "all"
+                ? "bg-slate-800 border-blue-500 ring-2 ring-blue-500/50"
+                : "bg-slate-900 border-slate-800 hover:border-slate-700"
+            }`}
+          >
             <div className="flex items-center justify-between text-blue-400 text-xs font-bold uppercase tracking-wider mb-2">
-              <span>AT Audience</span>
-              <span className="w-2.5 h-2.5 rounded-full bg-blue-500"></span>
+              <span>All Contacts</span>
+              <Users className="w-4 h-4 text-blue-400" />
             </div>
             <div className="text-2xl sm:text-3xl font-black text-blue-300 font-mono">
-              {summary?.at_count || 0}
+              {summary?.total_contacts || 0}
             </div>
-            <div className="text-[11px] text-slate-500 mt-1">AT SIM holders</div>
+            <div className="text-[11px] text-slate-400 mt-1">Total combined directory</div>
           </div>
+
+          {/* Network Breakdown */}
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 shadow-lg flex flex-col justify-between">
+            <div className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-1">
+              Telco Breakdown
+            </div>
+            <div className="flex items-center gap-2 text-xs font-mono font-bold">
+              <span className="text-amber-400">MTN: {summary?.mtn_count || 0}</span>
+              <span className="text-slate-600">|</span>
+              <span className="text-rose-400">TEL: {summary?.telecel_count || 0}</span>
+              <span className="text-slate-600">|</span>
+              <span className="text-blue-400">AT: {summary?.at_count || 0}</span>
+            </div>
+            <div className="text-[11px] text-slate-500 mt-1">SIM network detection</div>
+          </div>
+        </div>
+
+        {/* Audience Segment Tabs */}
+        <div className="flex items-center gap-2 border-b border-slate-800 pb-3">
+          <button
+            onClick={() => setAccountTypeFilter("all")}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+              accountTypeFilter === "all"
+                ? "bg-emerald-500 text-slate-950 shadow-md"
+                : "bg-slate-900 text-slate-400 hover:text-white border border-slate-800"
+            }`}
+          >
+            All Contacts ({summary?.total_contacts || 0})
+          </button>
+          <button
+            onClick={() => setAccountTypeFilter("registered")}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+              accountTypeFilter === "registered"
+                ? "bg-amber-400 text-slate-950 shadow-md font-black"
+                : "bg-slate-900 text-amber-400 hover:text-amber-300 border border-slate-800"
+            }`}
+          >
+            <UserCheck className="w-3.5 h-3.5" />
+            <span>Registered Accounts ({summary?.total_registered_accounts || 0})</span>
+          </button>
+          <button
+            onClick={() => setAccountTypeFilter("guests")}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+              accountTypeFilter === "guests"
+                ? "bg-slate-200 text-slate-950 shadow-md font-black"
+                : "bg-slate-900 text-slate-400 hover:text-white border border-slate-800"
+            }`}
+          >
+            <ShoppingCart className="w-3.5 h-3.5" />
+            <span>Guest Order Buyers ({summary?.total_guest_buyers || 0})</span>
+          </button>
         </div>
 
         {/* Copy All Format Selector & Quick Action Bar */}
@@ -369,7 +443,7 @@ export default function AdminCustomersPage() {
               <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
-                placeholder="Search by phone number, name, or source..."
+                placeholder="Search by phone number, name, email, or source..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full pl-10 pr-4 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white text-xs font-medium focus:outline-none focus:ring-2 focus:ring-emerald-500"
@@ -432,24 +506,25 @@ export default function AdminCustomersPage() {
                 <tr className="border-b border-slate-800 text-slate-400 uppercase text-[10px] font-bold">
                   <th className="py-3 px-3">Phone Number</th>
                   <th className="py-3 px-3">Customer Identity</th>
+                  <th className="py-3 px-3">Account Type & Wallet</th>
                   <th className="py-3 px-3">Network</th>
                   <th className="py-3 px-3">Acquisition Sources</th>
                   <th className="py-3 px-3">Purchases / Spend</th>
                   <th className="py-3 px-3">Last Active</th>
-                  <th className="py-3 px-3 text-right">Quick Contact</th>
+                  <th className="py-3 px-3 text-right">Quick Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60 font-medium">
                 {loading ? (
                   <tr>
-                    <td colSpan={7} className="py-12 text-center text-slate-400">
+                    <td colSpan={8} className="py-12 text-center text-slate-400">
                       <RefreshCw className="w-6 h-6 animate-spin mx-auto text-emerald-500 mb-2" />
                       <span>Aggregating customer contacts from all systems...</span>
                     </td>
                   </tr>
                 ) : filteredCustomers.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="py-12 text-center text-slate-500">
+                    <td colSpan={8} className="py-12 text-center text-slate-500">
                       No customer contacts found matching your criteria.
                     </td>
                   </tr>
@@ -480,10 +555,34 @@ export default function AdminCustomersPage() {
                         <div className="font-bold text-slate-200">
                           {c.name || <span className="text-slate-500 italic">Anonymous Buyer</span>}
                         </div>
-                        {c.recent_references.length > 0 && (
+                        {c.email ? (
+                          <div className="text-[11px] text-slate-400 font-mono truncate max-w-[180px]">
+                            {c.email}
+                          </div>
+                        ) : c.recent_references.length > 0 ? (
                           <div className="text-[10px] text-slate-500 font-mono">
                             Ref: {c.recent_references[0]}
                           </div>
+                        ) : null}
+                      </td>
+
+                      {/* Account Type & Wallet */}
+                      <td className="py-3 px-3">
+                        {c.is_registered ? (
+                          <div className="space-y-1">
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-500/15 border border-amber-500/30 text-amber-400">
+                              <UserCheck className="w-3 h-3" />
+                              Registered Account
+                            </span>
+                            <div className="text-xs font-mono font-bold text-emerald-400">
+                              Wallet: GHS {(c.wallet_balance || 0).toFixed(2)}
+                            </div>
+                          </div>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold text-slate-400 bg-slate-800 border border-slate-700">
+                            <ShoppingCart className="w-3 h-3 text-slate-500" />
+                            Guest Buyer
+                          </span>
                         )}
                       </td>
 
@@ -511,7 +610,9 @@ export default function AdminCustomersPage() {
                             <span
                               key={idx}
                               className={`px-2 py-0.5 rounded-lg text-[10px] font-semibold ${
-                                s.includes("Main Storefront")
+                                s.includes("Registered")
+                                  ? "bg-amber-500/15 text-amber-300 border border-amber-500/30 font-bold"
+                                  : s.includes("Main Storefront")
                                   ? "bg-emerald-500/10 text-emerald-300 border border-emerald-500/20"
                                   : s.includes("Agent")
                                   ? "bg-cyan-500/10 text-cyan-300 border border-cyan-500/20"
@@ -559,29 +660,25 @@ export default function AdminCustomersPage() {
                         </div>
                       </td>
 
-                      {/* Quick Contact Links */}
+                      {/* Quick Action */}
                       <td className="py-3 px-3 text-right">
-                        <div className="flex items-center justify-end gap-1.5">
-                          {/* Direct WhatsApp */}
-                          <a
-                            href={`https://wa.me/${c.international_phone.replace("+", "")}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="p-1.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 transition-colors"
-                            title="Chat on WhatsApp"
+                        {c.is_registered ? (
+                          <Link
+                            href="/admin/registered-accounts"
+                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-amber-400/20 hover:bg-amber-400/30 text-amber-300 text-xs font-bold border border-amber-400/30 transition-colors"
                           >
-                            <MessageCircle className="w-3.5 h-3.5" />
-                          </a>
-
-                          {/* Direct Call Link */}
-                          <a
-                            href={`tel:${c.phone}`}
-                            className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-colors"
-                            title="Call customer"
+                            <Wallet className="w-3.5 h-3.5" />
+                            <span>Manage Wallet</span>
+                          </Link>
+                        ) : (
+                          <button
+                            onClick={() => handleCopySingle(c.phone)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium border border-slate-700 transition-colors"
                           >
-                            <Phone className="w-3.5 h-3.5" />
-                          </a>
-                        </div>
+                            <Copy className="w-3.5 h-3.5" />
+                            <span>Copy</span>
+                          </button>
+                        )}
                       </td>
                     </tr>
                   ))
@@ -589,37 +686,6 @@ export default function AdminCustomersPage() {
               </tbody>
             </table>
           </div>
-        </div>
-
-        {/* Quick Bulk SMS Portal Helper Card */}
-        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-3">
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                <FileText className="w-4 h-4 text-emerald-400" />
-                <span>Bulk SMS / WhatsApp Broadcast Portal Box</span>
-              </h3>
-              <p className="text-xs text-slate-400 mt-0.5">
-                Paste these numbers directly into Hubtel, mNotify, Arkesel, or your WhatsApp broadcast list.
-              </p>
-            </div>
-            <button
-              onClick={handleCopyAll}
-              className="px-3.5 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs flex items-center gap-1.5 cursor-pointer shadow"
-            >
-              <Copy className="w-3.5 h-3.5" />
-              <span>Copy Box Content</span>
-            </button>
-          </div>
-
-          <textarea
-            readOnly
-            rows={4}
-            value={getFilteredCopyText()}
-            className="w-full p-3 bg-slate-950 border border-slate-800 rounded-2xl text-emerald-400 text-xs font-mono focus:outline-none select-all"
-            placeholder="No numbers available"
-            onClick={(e) => (e.target as HTMLTextAreaElement).select()}
-          />
         </div>
       </div>
     </AdminLayout>

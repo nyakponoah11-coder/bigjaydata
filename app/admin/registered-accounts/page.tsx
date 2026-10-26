@@ -280,9 +280,10 @@ export default function AdminRegisteredAccountsPage() {
             <Link
               href="/admin/customers"
               className="px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-white text-xs font-bold flex items-center gap-1.5 transition-colors"
+              title="View 1,000+ storefront guest buyer phone contacts"
             >
               <Phone className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Marketing Leads</span>
+              <span>Guest Leads (1,000+)</span>
             </Link>
 
             <button
@@ -303,6 +304,23 @@ export default function AdminRegisteredAccountsPage() {
               <span className="hidden sm:inline">Refresh</span>
             </button>
           </div>
+        </div>
+
+        {/* Clear Info Banner distinguishing Registered Accounts from Guest Buyers */}
+        <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+          <div className="flex items-center gap-2.5 text-amber-300 font-medium">
+            <ShieldCheck className="w-4 h-4 shrink-0 text-amber-400" />
+            <span>
+              This page displays only <strong>verified registered customer accounts</strong> with login credentials & wallet floats. Storefront guest buyers (1,000+) who purchase bundles without registration are kept in Guest Buyer Leads.
+            </span>
+          </div>
+          <Link
+            href="/admin/customers"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-white text-[11px] font-bold shrink-0 transition-colors"
+          >
+            <Users className="w-3.5 h-3.5 text-emerald-400" />
+            <span>View Guest Buyer Leads (1,000+) →</span>
+          </Link>
         </div>
 
         {/* Top Summary Metric Cards */}

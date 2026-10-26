@@ -107,12 +107,26 @@ export default function CustomerAccountDashboard() {
 
     try {
       const parsed = JSON.parse(raw);
+      const isVerified = parsed.is_verified === true || String(parsed.is_verified) === "true" || Number(parsed.is_verified) === 1;
+      if (!isVerified) {
+        router.push(`/login?verify=1&id=${encodeURIComponent(parsed.id || "")}`);
+        return;
+      }
       setCustomer(parsed);
       loadFreshData(parsed.id);
     } catch {
       router.push("/login");
     }
   }, [router]);
+
+  // Listen for deposit / wallet updates across components
+  useEffect(() => {
+    const handleWalletUpdated = () => {
+      loadFreshData();
+    };
+    window.addEventListener("wallet_updated", handleWalletUpdated);
+    return () => window.removeEventListener("wallet_updated", handleWalletUpdated);
+  }, [customer?.id]);
 
   const loadFreshData = async (customerId?: string) => {
     const targetId = customerId || customer?.id;
@@ -122,6 +136,11 @@ export default function CustomerAccountDashboard() {
     try {
       const res = await fetch(`/api/customer/me?id=${encodeURIComponent(targetId)}&include_orders=true`);
       const data = await res.json();
+      if (data.requires_verification) {
+        localStorage.removeItem("bmgh_customer_session");
+        router.push(`/login?verify=1&id=${encodeURIComponent(data.customer_id || targetId)}`);
+        return;
+      }
       if (data.success && data.customer) {
         setCustomer(data.customer);
         localStorage.setItem("bmgh_customer_session", JSON.stringify(data.customer));

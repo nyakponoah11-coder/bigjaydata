@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { requireAdminAuth } from "@/lib/admin-auth";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -15,6 +16,10 @@ export interface CustomerRecord {
   first_seen: string;
   last_seen: string;
   recent_references: string[];
+  is_registered?: boolean;
+  customer_id?: string;
+  wallet_balance?: number;
+  email?: string;
 }
 
 function cleanPhone(raw: any): { local: string; international: string; network: "mtn" | "telecel" | "at" | "other" } | null {
@@ -50,20 +55,27 @@ function cleanPhone(raw: any): { local: string; international: string; network: 
   return { local, international, network };
 }
 
-import { requireAdminAuth } from "@/lib/admin-auth";
-
 export async function GET(req: Request) {
   try {
     const authError = await requireAdminAuth(req);
     if (authError) return authError;
 
-    const [orders, agentOrders, agents, messages, voucherClaims] = await Promise.all([
+    const [orders, agentOrders, agents, messages, voucherClaims, registeredCustomers] = await Promise.all([
       db.getOrders().catch(() => []),
       db.getAgentOrders().catch(() => []),
       db.getAgents().catch(() => []),
       db.getMessages().catch(() => []),
       db.getVoucherClaims().catch(() => []),
+      db.getCustomers().catch(() => []),
     ]);
+
+    // Build lookup for verified registered customer accounts
+    const registeredPhoneMap = new Map<string, any>();
+    registeredCustomers.forEach((rc: any) => {
+      const clean = String(rc.phone || "").replace(/[^0-9]/g, "");
+      if (clean) registeredPhoneMap.set(clean, rc);
+      if (clean.length >= 9) registeredPhoneMap.set(clean.slice(-9), rc);
+    });
 
     const customerMap = new Map<string, CustomerRecord>();
 
@@ -74,17 +86,22 @@ export async function GET(req: Request) {
     ) => {
       let existing = customerMap.get(phoneInfo.local);
       if (!existing) {
+        const reg = registeredPhoneMap.get(phoneInfo.local) || registeredPhoneMap.get(phoneInfo.local.slice(-9));
         existing = {
           phone: phoneInfo.local,
           international_phone: phoneInfo.international,
-          name: fallbackName,
+          name: reg?.name || fallbackName,
           network: phoneInfo.network,
           total_orders: 0,
           total_spent: 0,
-          sources: [],
+          sources: reg ? ["Registered Account"] : [],
           first_seen: date,
           last_seen: date,
           recent_references: [],
+          is_registered: Boolean(reg),
+          customer_id: reg?.id,
+          wallet_balance: reg ? Number(reg.wallet_balance || 0) : 0,
+          email: reg?.email,
         };
         customerMap.set(phoneInfo.local, existing);
       }
@@ -100,7 +117,7 @@ export async function GET(req: Request) {
       return existing;
     };
 
-    // 1. Process Main & Agent Storefront Orders from orders table
+    // 1. Process Main & Agent Storefront Orders from orders table (Guest Buyers & Registered Orders)
     orders.forEach((o: any) => {
       const p = cleanPhone(o.phone);
       if (!p) return;
@@ -171,16 +188,57 @@ export async function GET(req: Request) {
       if (!c.sources.includes(src)) c.sources.push(src);
     });
 
-    // Sort by most recently active
-    const list = Array.from(customerMap.values()).sort(
-      (a, b) => new Date(b.last_seen).getTime() - new Date(a.last_seen).getTime()
-    );
+    // 6. Ensure ALL verified registered accounts are present and prioritized
+    registeredCustomers.forEach((rc: any) => {
+      const p = cleanPhone(rc.phone);
+      if (!p) return;
+      let existing = customerMap.get(p.local);
+      if (!existing) {
+        existing = {
+          phone: p.local,
+          international_phone: p.international,
+          name: rc.name || "Registered User",
+          network: p.network,
+          total_orders: 0,
+          total_spent: 0,
+          sources: ["Registered Account"],
+          first_seen: rc.created_at || new Date().toISOString(),
+          last_seen: rc.created_at || new Date().toISOString(),
+          recent_references: [],
+          is_registered: true,
+          customer_id: rc.id,
+          wallet_balance: Number(rc.wallet_balance || 0),
+          email: rc.email,
+        };
+        customerMap.set(p.local, existing);
+      } else {
+        existing.is_registered = true;
+        existing.customer_id = rc.id;
+        existing.wallet_balance = Number(rc.wallet_balance || 0);
+        existing.email = rc.email || existing.email;
+        if (rc.name && (!existing.name || existing.name.toLowerCase() === "customer")) {
+          existing.name = rc.name;
+        }
+        if (!existing.sources.includes("Registered Account")) {
+          existing.sources.unshift("Registered Account");
+        }
+      }
+    });
+
+    // Sort: registered accounts first, then by most recently active
+    const list = Array.from(customerMap.values()).sort((a, b) => {
+      if (a.is_registered && !b.is_registered) return -1;
+      if (!a.is_registered && b.is_registered) return 1;
+      return new Date(b.last_seen).getTime() - new Date(a.last_seen).getTime();
+    });
 
     const allNumbersLocal = list.map((c) => c.phone);
     const allNumbersInternational = list.map((c) => c.international_phone);
 
     const summary = {
       total_contacts: list.length,
+      total_registered_accounts: list.filter((c) => c.is_registered).length,
+      total_guest_buyers: list.filter((c) => !c.is_registered).length,
       total_storefront_customers: list.filter((c) => c.sources.some((s) => s.includes("Main Storefront"))).length,
       total_agent_customers: list.filter((c) => c.sources.some((s) => s.includes("Agent"))).length,
       total_chat_customers: list.filter((c) => c.sources.some((s) => s.includes("Live Chat"))).length,

@@ -61,13 +61,21 @@ export async function POST(req: Request) {
 
     const { password_hash, ...safeCustomer } = result.customer;
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       success: true,
       message: `Successfully deposited GHS ${depositedAmount.toFixed(2)} to your account wallet!`,
       new_balance: result.new_balance,
       customer: safeCustomer,
       reference: ref,
     });
+
+    response.cookies.set("bmgh_customer_session", JSON.stringify(safeCustomer), {
+      path: "/",
+      maxAge: 60 * 60 * 24 * 30, // 30 days
+      sameSite: "lax",
+    });
+
+    return response;
   } catch (error: any) {
     console.error("Customer deposit error:", error);
     return NextResponse.json(

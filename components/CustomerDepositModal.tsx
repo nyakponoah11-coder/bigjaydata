@@ -147,7 +147,13 @@ export default function CustomerDepositModal({
         currency: "GHS",
         ref: ref,
         metadata: {
+          customer_id: customer.id,
+          type: "wallet_deposit",
+          transaction_type: "Wallet Deposit",
+          customer_name: customer.name,
+          customer_phone: customer.phone,
           custom_fields: [
+            { display_name: "Customer ID", variable_name: "customer_id", value: customer.id },
             { display_name: "Customer Name", variable_name: "customer_name", value: customer.name },
             { display_name: "Customer Phone", variable_name: "customer_phone", value: customer.phone },
             { display_name: "Transaction Type", variable_name: "transaction_type", value: "Wallet Deposit" },
@@ -171,6 +177,21 @@ export default function CustomerDepositModal({
               const data = await verifyRes.json();
               if (!verifyRes.ok || !data.success) {
                 throw new Error(data.message || "Failed to credit wallet balance.");
+              }
+
+              // Update localStorage customer session balance immediately
+              try {
+                const raw = localStorage.getItem("bmgh_customer_session");
+                if (raw) {
+                  const parsed = JSON.parse(raw);
+                  parsed.wallet_balance = data.new_balance;
+                  localStorage.setItem("bmgh_customer_session", JSON.stringify(parsed));
+                }
+              } catch {}
+
+              // Broadcast global event so all UI components refresh
+              if (typeof window !== "undefined") {
+                window.dispatchEvent(new Event("wallet_updated"));
               }
 
               // Confetti celebration

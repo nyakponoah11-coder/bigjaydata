@@ -34,9 +34,8 @@ export async function POST(req: Request) {
       verification_code_expires_at: expiresAt,
     });
 
+    // 1. Dispatch to customer email
     let emailSent = false;
-    let emailFallback = true;
-
     if (customer.email) {
       try {
         const emailRes = await sendCustomerVerificationEmail(
@@ -46,9 +45,21 @@ export async function POST(req: Request) {
           purpose === "login" ? "login" : "signup"
         );
         emailSent = Boolean(emailRes.success && !emailRes.isFallback);
-        emailFallback = !emailSent;
       } catch (err) {
         console.warn("Failed to dispatch verification email:", err);
+      }
+    }
+
+    // 2. Dispatch to customer phone via SMS
+    if (customer.phone) {
+      try {
+        const { sendCustomerSMS } = await import("@/lib/sms");
+        await sendCustomerSMS({
+          phone: customer.phone,
+          message: `Your Big Jay Data verification code is: ${code}. Valid for 10 minutes.`,
+        });
+      } catch (smsErr) {
+        console.warn("Failed to dispatch verification SMS:", smsErr);
       }
     }
 
@@ -58,9 +69,9 @@ export async function POST(req: Request) {
 
     return NextResponse.json({
       success: true,
-      message: customer.email
-        ? `A 6-digit verification code was sent to your registered email (${customer.email}). Please check your inbox and spam folder.`
-        : `A 6-digit verification code was sent to your registered email.`,
+      message: customer.email && customer.phone
+        ? `A 6-digit verification code was sent to your registered email (${customer.email}) and phone (${customer.phone}).`
+        : `A 6-digit verification code was sent to your registered contact.`,
     });
   } catch (error: any) {
     console.error("Send verification code error:", error);

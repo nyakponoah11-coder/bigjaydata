@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+﻿import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { requireAdminAuth } from "@/lib/admin-auth";
 import {
@@ -17,7 +17,7 @@ export async function GET(req: Request) {
     const authError = await requireAdminAuth(req);
     if (authError) return authError;
 
-    const [config, partnerInfo, allOrders] = await Promise.all([
+    const [config, partnerInfo, allOrders, partners] = await Promise.all([
       getNetflixConfig(),
       fetchNetflixPartnerInfo().catch(() => ({
         success: false,
@@ -29,6 +29,7 @@ export async function GET(req: Request) {
         accountEmail: "",
       })),
       db.getOrders(),
+      db.getNetflixPartners(),
     ]);
 
     const netflixOrders = allOrders
@@ -42,6 +43,10 @@ export async function GET(req: Request) {
       partnerInfo.balance !== undefined && !isNaN(Number(partnerInfo.balance))
         ? Number(partnerInfo.balance)
         : Number(config.fallbackBalance || 1);
+
+    const totalPartnerBalance = partners.reduce((sum, p) => sum + (Number(p.balance) || 0), 0);
+    const totalPartnerOrders = partners.reduce((sum, p) => sum + (Number(p.total_orders) || 0), 0);
+    const totalPartnerSpent = partners.reduce((sum, p) => sum + (Number(p.total_spent) || 0), 0);
 
     return NextResponse.json({
       success: true,
@@ -57,6 +62,11 @@ export async function GET(req: Request) {
       account_email: partnerInfo.accountEmail,
       orders: netflixOrders,
       orders_count: netflixOrders.length,
+      partners,
+      partners_count: partners.length,
+      total_partner_balance: Number(totalPartnerBalance.toFixed(2)),
+      total_partner_orders: totalPartnerOrders,
+      total_partner_spent: Number(totalPartnerSpent.toFixed(2)),
     });
   } catch (error: any) {
     console.error("[Admin Netflix GET Error]:", error);
@@ -188,6 +198,146 @@ export async function POST(req: Request) {
         message: "Netflix 30-Day access created successfully via Data1 partner gateway.",
         order,
         api_result: apiResult,
+      });
+    }
+
+    // 5. Create Netflix Partner Account
+    if (action === "create_partner") {
+      const { name, email, phone, base_price, initial_balance, notes } = body;
+      if (!name || !email || !phone) {
+        return NextResponse.json(
+          { success: false, message: "Partner name, email, and phone number are required." },
+          { status: 400 }
+        );
+      }
+
+      const newPartner = await db.createNetflixPartner({
+        name: String(name).trim(),
+        email: String(email).trim(),
+        phone: String(phone).trim(),
+        base_price: base_price !== undefined ? Number(base_price) : undefined,
+        initial_balance: initial_balance !== undefined ? Number(initial_balance) : 0,
+        notes: notes ? String(notes).trim() : "",
+      });
+
+      return NextResponse.json({
+        success: true,
+        message: `Netflix partner account created for ${newPartner.name}.`,
+        partner: newPartner,
+      });
+    }
+
+    // 6. Credit Partner Account
+    if (action === "credit_partner") {
+      const { partner_id, amount, note } = body;
+      if (!partner_id || amount === undefined) {
+        return NextResponse.json(
+          { success: false, message: "Missing partner ID or credit amount." },
+          { status: 400 }
+        );
+      }
+
+      const res = await db.creditNetflixPartner(partner_id, Number(amount), note);
+      return NextResponse.json(res);
+    }
+
+    // 7. Deduct Partner Account
+    if (action === "deduct_partner") {
+      const { partner_id, amount, note } = body;
+      if (!partner_id || amount === undefined) {
+        return NextResponse.json(
+          { success: false, message: "Missing partner ID or deduction amount." },
+          { status: 400 }
+        );
+      }
+
+      const res = await db.deductNetflixPartner(partner_id, Number(amount), note);
+      return NextResponse.json(res);
+    }
+
+    // 8. Delete Partner Account
+    if (action === "delete_partner") {
+      const { partner_id } = body;
+      if (!partner_id) {
+        return NextResponse.json(
+          { success: false, message: "Missing partner ID." },
+          { status: 400 }
+        );
+      }
+
+      await db.deleteNetflixPartner(partner_id);
+      return NextResponse.json({
+        success: true,
+        message: "Partner account successfully deleted.",
+      });
+    }
+
+    // 9. Toggle Partner Status (Active / Suspended)
+    if (action === "toggle_partner") {
+      const { partner_id } = body;
+      if (!partner_id) {
+        return NextResponse.json({ success: false, message: "Missing partner ID." }, { status: 400 });
+      }
+
+      const partner = await db.getNetflixPartnerById(partner_id);
+      if (!partner) {
+        return NextResponse.json({ success: false, message: "Partner not found." }, { status: 404 });
+      }
+
+      const updated = await db.updateNetflixPartner(partner_id, { is_active: !partner.is_active });
+      return NextResponse.json({
+        success: true,
+        message: `Partner account has been ${updated?.is_active ? "activated" : "suspended"}.`,
+        partner: updated,
+      });
+    }
+
+    // 10. Update Partner Base Price
+    if (action === "update_partner_price") {
+      const { partner_id, base_price, notes } = body;
+      if (!partner_id || base_price === undefined) {
+        return NextResponse.json(
+          { success: false, message: "Missing partner ID or base price." },
+          { status: 400 }
+        );
+      }
+
+      const numPrice = Number(base_price);
+      if (isNaN(numPrice) || numPrice < 0) {
+        return NextResponse.json(
+          { success: false, message: "Please provide a valid base price." },
+          { status: 400 }
+        );
+      }
+
+      const updated = await db.updateNetflixPartner(partner_id, {
+        base_price: numPrice,
+        notes: notes !== undefined ? String(notes) : undefined,
+      });
+
+      return NextResponse.json({
+        success: true,
+        message: `Partner wholesale base price updated to GH₵ ${numPrice.toFixed(2)}.`,
+        partner: updated,
+      });
+    }
+
+    // 11. Regenerate Partner API Key
+    if (action === "regenerate_partner_key") {
+      const { partner_id } = body;
+      if (!partner_id) {
+        return NextResponse.json({ success: false, message: "Missing partner ID." }, { status: 400 });
+      }
+
+      const rawRandom = crypto.randomUUID().replace(/-/g, "") + crypto.randomUUID().replace(/-/g, "").slice(0, 8);
+      const newKey = `d1_nf_live_${rawRandom}`;
+      const updated = await db.updateNetflixPartner(partner_id, { api_key: newKey });
+
+      return NextResponse.json({
+        success: true,
+        message: "New partner API key generated successfully.",
+        partner: updated,
+        new_key: newKey,
       });
     }
 

@@ -43,8 +43,10 @@ export async function POST(req: Request) {
       );
     }
 
-    // If account was created but not verified yet, send verification code
-    if (customer.is_verified === false) {
+    // Strict verification check: Customer MUST verify before they can get into their account for the first time
+    const isVerified = customer.is_verified === true || String(customer.is_verified) === "true" || Number(customer.is_verified) === 1;
+
+    if (!isVerified) {
       const code = Math.floor(100000 + Math.random() * 900000).toString();
       const expiresAt = Date.now() + 10 * 60 * 1000;
       await db.updateCustomer(customer.id, {
@@ -52,14 +54,22 @@ export async function POST(req: Request) {
         verification_code_expires_at: expiresAt,
       });
 
-      let emailSent = false;
-      let emailFallback = true;
+      // 1. Dispatch via Email
       if (customer.email) {
         try {
           const { sendCustomerVerificationEmail } = await import("@/lib/email");
-          const emailRes = await sendCustomerVerificationEmail(customer.email, customer.name, code, "login");
-          emailSent = Boolean(emailRes.success && !emailRes.isFallback);
-          emailFallback = !emailSent;
+          await sendCustomerVerificationEmail(customer.email, customer.name, code, "login");
+        } catch {}
+      }
+
+      // 2. Dispatch via SMS
+      if (customer.phone) {
+        try {
+          const { sendCustomerSMS } = await import("@/lib/sms");
+          await sendCustomerSMS({
+            phone: customer.phone,
+            message: `Your Big Jay Data verification code is: ${code}. Valid for 10 minutes.`,
+          });
         } catch {}
       }
 
@@ -69,7 +79,7 @@ export async function POST(req: Request) {
         customer_id: customer.id,
         phone: customer.phone,
         email: customer.email,
-        message: `Please enter the 6-digit verification code sent to your registered email (${customer.email}).`,
+        message: `Your account is not verified yet. Please enter the 6-digit verification code sent to your email (${customer.email}) and phone (${customer.phone}) to activate and sign in.`,
       });
     }
 

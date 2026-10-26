@@ -108,6 +108,75 @@ export async function POST(request: Request) {
         }
       }
 
+      // -------------------------------------------------------------
+      // CUSTOMER WALLET DEPOSIT INTERCEPTION
+      // -------------------------------------------------------------
+      const isDeposit =
+        (reference && String(reference).startsWith("BMGH-DEP-")) ||
+        metadata?.type === "wallet_deposit" ||
+        metadata?.transaction_type === "Wallet Deposit";
+
+      if (isDeposit) {
+        console.log(`[Paystack Webhook] Detected Wallet Deposit: ${reference} | Amount: GHS ${amount}`);
+
+        let targetCustomerId = metadata?.customer_id;
+        if (!targetCustomerId && Array.isArray(metadata?.custom_fields)) {
+          const cf = metadata.custom_fields.find((f: any) =>
+            (f.variable_name || f.name || "").toLowerCase().includes("customer_id")
+          );
+          if (cf?.value) targetCustomerId = cf.value;
+        }
+
+        let targetCustomer = null;
+        if (targetCustomerId) {
+          targetCustomer = await db.getCustomerById(targetCustomerId);
+        }
+
+        const depositPhone =
+          metadata?.customer_phone ||
+          metadata?.phone ||
+          phone ||
+          data.customer?.phone ||
+          (data.customer?.email && data.customer.email.includes("@customer.")
+            ? data.customer.email.split("@")[0].replace(/[^0-9]/g, "")
+            : "");
+
+        if (!targetCustomer && depositPhone) {
+          targetCustomer = await db.getCustomerByPhone(depositPhone);
+        }
+
+        if (!targetCustomer && data.customer?.email) {
+          targetCustomer = await db.getCustomerByEmail(data.customer.email);
+        }
+
+        if (targetCustomer) {
+          const credResult = await db.creditCustomerWallet(
+            targetCustomer.id,
+            amount,
+            reference,
+            paystackRef,
+            `Wallet Deposit (Paystack Webhook ${data.channel ? `via ${data.channel.toUpperCase()}` : ""})`
+          );
+
+          console.log(
+            `[Paystack Webhook] Successfully credited GHS ${amount.toFixed(2)} to customer ${targetCustomer.name} (${targetCustomer.id}). New Balance: GHS ${credResult.new_balance}`
+          );
+
+          return NextResponse.json({
+            success: true,
+            message: "Customer wallet credited successfully via Paystack webhook",
+            new_balance: credResult.new_balance,
+            reference,
+          });
+        } else {
+          console.error(`[Paystack Webhook] Customer account could not be found for deposit ref ${reference}`);
+          return NextResponse.json(
+            { success: false, message: "Customer account not found for deposit credit" },
+            { status: 404 }
+          );
+        }
+      }
+
       // Fallback network detection from Ghana mobile phone prefix if missing
       if (!network && phone && phone.length >= 3) {
         const p3 = phone.slice(0, 3);

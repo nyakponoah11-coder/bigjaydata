@@ -33,6 +33,21 @@ export async function GET(req: Request) {
       );
     }
 
+    const isVerified = customer.is_verified === true || String(customer.is_verified) === "true" || Number(customer.is_verified) === 1;
+    if (!isVerified) {
+      return NextResponse.json(
+        {
+          success: false,
+          requires_verification: true,
+          customer_id: customer.id,
+          phone: customer.phone,
+          email: customer.email,
+          message: "Account verification required. Please verify your account before accessing your dashboard.",
+        },
+        { status: 403 }
+      );
+    }
+
     const includeOrders = searchParams.get("include_orders") === "true";
     const includeTransactions = searchParams.get("include_transactions") === "true" || includeOrders;
     let transactions: any[] = [];

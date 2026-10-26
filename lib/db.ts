@@ -50,6 +50,8 @@ export interface Order {
   payment_method?: "paystack" | "momo" | "wallet" | string;
   api_key_id?: string;
   developer_name?: string;
+  partner_id?: string;
+  partner_name?: string;
   datamart_response?: any;
   created_at: string;
 }
@@ -336,6 +338,22 @@ export interface DeveloperAccount {
   last_used_at?: string;
 }
 
+export interface NetflixPartner {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  api_key: string;
+  balance: number;
+  base_price: number;
+  is_active: boolean;
+  total_spent: number;
+  total_orders: number;
+  created_at: string;
+  last_used_at?: string;
+  notes?: string;
+}
+
 export interface Customer {
   id: string;
   name: string;
@@ -511,6 +529,7 @@ const globalStore = globalThis as unknown as {
   __bmgh_developer_api_config?: DeveloperApiConfig;
   __bmgh_developer_api_products?: DeveloperApiProduct[];
   __bmgh_developer_accounts?: DeveloperAccount[];
+  __bmgh_netflix_partners?: NetflixPartner[];
   __bmgh_customers?: Customer[];
   __bmgh_customer_transactions?: CustomerTransaction[];
   __bmgh_cache_timestamps?: Record<string, number>;
@@ -573,6 +592,7 @@ function doSaveToDisk() {
         developer_api_config: globalStore.__bmgh_developer_api_config || existingDisk.developer_api_config,
         developer_api_products: globalStore.__bmgh_developer_api_products || existingDisk.developer_api_products,
         developer_accounts: globalStore.__bmgh_developer_accounts || existingDisk.developer_accounts,
+        netflix_partners: globalStore.__bmgh_netflix_partners || existingDisk.netflix_partners || [],
         customers: globalStore.__bmgh_customers || existingDisk.customers,
         customer_transactions: globalStore.__bmgh_customer_transactions || existingDisk.customer_transactions,
         deleted_agents: globalStore.__bmgh_deleted_agents || existingDisk.deleted_agents || [],
@@ -642,6 +662,9 @@ if (!globalStore.__bmgh_developer_api_config) {
 }
 if (!globalStore.__bmgh_developer_api_products) {
   globalStore.__bmgh_developer_api_products = diskData?.developer_api_products || initialDeveloperApiProducts;
+}
+if (!globalStore.__bmgh_netflix_partners) {
+  globalStore.__bmgh_netflix_partners = diskData?.netflix_partners || [];
 }
 if (!globalStore.__bmgh_developer_accounts) {
   globalStore.__bmgh_developer_accounts = diskData?.developer_accounts || [];
@@ -5240,8 +5263,22 @@ export const db = {
 
   // ================= CUSTOMERS & WALLET SYSTEM =================
   async getCustomers(): Promise<Customer[]> {
-    if (isCacheFresh("customers", CACHE_TTLS.customers) && globalStore.__bmgh_customers) {
+    if (isCacheFresh("customers", CACHE_TTLS.customers) && Array.isArray(globalStore.__bmgh_customers) && globalStore.__bmgh_customers.length > 0) {
       return globalStore.__bmgh_customers;
+    }
+
+    // Always load persistent local disk accounts as reliable baseline so registered accounts are NEVER lost
+    const diskAccounts: Customer[] = (diskData?.customers || []).map((c: any) => ({
+      ...c,
+      wallet_balance: Number(c.wallet_balance || 0),
+    }));
+
+    const accountMap = new Map<string, Customer>();
+    for (const d of diskAccounts) {
+      if (d && d.phone) {
+        const cleanP = d.phone.replace(/[^0-9]/g, "");
+        if (cleanP) accountMap.set(cleanP, d);
+      }
     }
 
     if (isSupabaseConfigured && supabaseAdmin) {
@@ -5251,21 +5288,38 @@ export const db = {
           .select("*")
           .order("created_at", { ascending: false });
         if (!error && Array.isArray(data)) {
-          globalStore.__bmgh_customers = data.map((c: any) => ({
-            ...c,
-            wallet_balance: Number(c.wallet_balance || 0),
-          }));
-          markCacheFresh("customers");
-          return globalStore.__bmgh_customers;
+          for (const raw of data) {
+            // Filter to genuine registered customer accounts (Google OAuth, password hash >= 4, or registered email)
+            const isRegistered =
+              raw.provider === "google" ||
+              Boolean(raw.google_id) ||
+              (typeof raw.password_hash === "string" && raw.password_hash.trim().length >= 4 && raw.password_hash !== "guest") ||
+              (Boolean(raw.email) && String(raw.email).includes("@") && String(raw.id || "").startsWith("cust-"));
+
+            if (!isRegistered) continue; // Skip non-registered guest buyer rows
+
+            const p = String(raw.phone || "").replace(/[^0-9]/g, "");
+            if (!p) continue;
+
+            const existing = accountMap.get(p);
+            const cust: Customer = {
+              ...(existing || {}),
+              ...raw,
+              wallet_balance: Math.max(Number(existing?.wallet_balance || 0), Number(raw.wallet_balance || 0)),
+            };
+            accountMap.set(p, cust);
+          }
         }
       } catch (err) {
         console.warn("Supabase customers fetch error:", err);
       }
     }
 
-    if (!globalStore.__bmgh_customers) globalStore.__bmgh_customers = [];
+    const merged = Array.from(accountMap.values());
+    globalStore.__bmgh_customers = merged;
     markCacheFresh("customers");
-    return globalStore.__bmgh_customers;
+    saveToDisk();
+    return merged;
   },
 
   async getCustomerById(id: string): Promise<Customer | null> {
@@ -5395,12 +5449,22 @@ export const db = {
 
   async updateCustomer(id: string, updates: Partial<Customer>): Promise<Customer | null> {
     invalidateServerCache("customers");
-    const all = await this.getCustomers();
-    const idx = all.findIndex((c) => c.id === id);
-    if (idx === -1) return null;
+    if (!globalStore.__bmgh_customers) globalStore.__bmgh_customers = [];
 
-    all[idx] = { ...all[idx], ...updates, updated_at: new Date().toISOString() };
-    saveToDisk();
+    let target = globalStore.__bmgh_customers.find((c) => c.id === id);
+    if (!target) {
+      const all = await this.getCustomers();
+      const found = all.find((c) => c.id === id);
+      if (found) {
+        target = { ...found };
+        globalStore.__bmgh_customers.unshift(target);
+      }
+    }
+
+    if (target) {
+      Object.assign(target, updates, { updated_at: new Date().toISOString() });
+    }
+    saveToDisk(true);
 
     if (isSupabaseConfigured && supabaseAdmin) {
       try {
@@ -5412,7 +5476,7 @@ export const db = {
         console.warn("Supabase customer update error:", err);
       }
     }
-    return all[idx];
+    return target || null;
   },
 
   async deleteCustomer(id: string): Promise<boolean> {
@@ -5586,5 +5650,170 @@ export const db = {
 
     return newTx;
   },
+
+  // ================= NETFLIX PARTNERS MANAGEMENT =================
+  async getNetflixPartners(): Promise<NetflixPartner[]> {
+    if (
+      isSupabaseConfigured &&
+      supabaseAdmin &&
+      (!globalStore.__bmgh_netflix_partners || globalStore.__bmgh_netflix_partners.length === 0)
+    ) {
+      try {
+        const { data } = await supabaseAdmin
+          .from("settings")
+          .select("announcement_text")
+          .eq("id", "netflix_partners_config")
+          .maybeSingle();
+        if (data?.announcement_text) {
+          try {
+            const list = JSON.parse(data.announcement_text);
+            if (Array.isArray(list)) {
+              globalStore.__bmgh_netflix_partners = list;
+              return list;
+            }
+          } catch {}
+        }
+      } catch (err) {}
+    }
+    return globalStore.__bmgh_netflix_partners || [];
+  },
+
+  async saveNetflixPartners(partners: NetflixPartner[]): Promise<NetflixPartner[]> {
+    globalStore.__bmgh_netflix_partners = partners;
+    saveToDisk();
+    if (isSupabaseConfigured && supabaseAdmin) {
+      try {
+        await supabaseAdmin.from("settings").upsert({
+          id: "netflix_partners_config",
+          announcement_text: JSON.stringify(partners),
+        });
+      } catch (err) {}
+    }
+    return partners;
+  },
+
+  async getNetflixPartnerByApiKey(apiKey: string): Promise<NetflixPartner | null> {
+    if (!apiKey) return null;
+    const cleanKey = apiKey.trim();
+    const all = await this.getNetflixPartners();
+    return all.find((p) => p.api_key === cleanKey) || null;
+  },
+
+  async getNetflixPartnerById(id: string): Promise<NetflixPartner | null> {
+    const all = await this.getNetflixPartners();
+    return all.find((p) => p.id === id) || null;
+  },
+
+  async createNetflixPartner(data: {
+    name: string;
+    email: string;
+    phone: string;
+    base_price?: number;
+    initial_balance?: number;
+    notes?: string;
+  }): Promise<NetflixPartner> {
+    const all = await this.getNetflixPartners();
+    const cleanEmail = data.email.trim().toLowerCase();
+    const existing = all.find((p) => p.email.toLowerCase() === cleanEmail);
+    if (existing) {
+      return existing;
+    }
+    const rawRandom = crypto.randomUUID().replace(/-/g, "") + crypto.randomUUID().replace(/-/g, "").slice(0, 8);
+    const settings = await this.getSettings();
+    const defaultBasePrice = Number(settings.netflix_agent_base_price || 18);
+
+    const newPartner: NetflixPartner = {
+      id: "nfp-" + crypto.randomUUID().slice(0, 8),
+      name: data.name.trim(),
+      email: cleanEmail,
+      phone: data.phone.trim(),
+      api_key: "d1_nf_live_" + rawRandom,
+      balance: Math.max(0, Number(data.initial_balance || 0)),
+      base_price: Number(data.base_price && data.base_price > 0 ? data.base_price : defaultBasePrice),
+      total_spent: 0,
+      total_orders: 0,
+      is_active: true,
+      notes: data.notes?.trim() || "",
+      created_at: new Date().toISOString(),
+    };
+    all.push(newPartner);
+    await this.saveNetflixPartners(all);
+    return newPartner;
+  },
+
+  async updateNetflixPartner(id: string, updates: Partial<NetflixPartner>): Promise<NetflixPartner | null> {
+    const all = await this.getNetflixPartners();
+    const partner = all.find((p) => p.id === id);
+    if (!partner) return null;
+    Object.assign(partner, updates);
+    await this.saveNetflixPartners(all);
+    return partner;
+  },
+
+  async deleteNetflixPartner(id: string): Promise<boolean> {
+    const all = await this.getNetflixPartners();
+    const filtered = all.filter((p) => p.id !== id);
+    await this.saveNetflixPartners(filtered);
+    return true;
+  },
+
+  async creditNetflixPartner(id: string, amount: number, note?: string): Promise<{ success: boolean; new_balance: number; message: string }> {
+    const all = await this.getNetflixPartners();
+    const partner = all.find((p) => p.id === id);
+    if (!partner) return { success: false, new_balance: 0, message: "Partner account not found." };
+    const num = Math.abs(Number(amount));
+    if (isNaN(num) || num <= 0) return { success: false, new_balance: partner.balance, message: "Invalid amount." };
+    partner.balance = Number((partner.balance + num).toFixed(2));
+    await this.saveNetflixPartners(all);
+    return {
+      success: true,
+      new_balance: partner.balance,
+      message: "Partner account credited successfully with GH₵ " + num.toFixed(2) + ". New balance: GH₵ " + partner.balance.toFixed(2) + ".",
+    };
+  },
+
+  async deductNetflixPartner(id: string, amount: number, note?: string): Promise<{ success: boolean; new_balance: number; message: string }> {
+    const all = await this.getNetflixPartners();
+    const partner = all.find((p) => p.id === id);
+    if (!partner) return { success: false, new_balance: 0, message: "Partner account not found." };
+    const num = Math.abs(Number(amount));
+    if (isNaN(num) || num <= 0) return { success: false, new_balance: partner.balance, message: "Invalid amount." };
+    if (partner.balance < num) {
+      return {
+        success: false,
+        new_balance: partner.balance,
+        message: "Insufficient partner balance. Available: GH₵ " + partner.balance.toFixed(2) + ", Deduction amount: GH₵ " + num.toFixed(2) + ".",
+      };
+    }
+    partner.balance = Number((partner.balance - num).toFixed(2));
+    await this.saveNetflixPartners(all);
+    return {
+      success: true,
+      new_balance: partner.balance,
+      message: "Partner account debited by GH₵ " + num.toFixed(2) + ". New balance: GH₵ " + partner.balance.toFixed(2) + ".",
+    };
+  },
+
+  async creditAgentWallet(id: string, amount: number, note?: string): Promise<{ success: boolean; new_balance: number; message: string }> {
+    const agents = await this.getAgents();
+    const agent = agents.find((a) => a.id === id);
+    if (!agent) return { success: false, new_balance: 0, message: "Agent not found." };
+    const num = Math.abs(Number(amount));
+    const newBal = Number(((agent.wallet_balance || 0) + num).toFixed(2));
+    await this.updateAgent(agent.id, { wallet_balance: newBal });
+    return { success: true, new_balance: newBal, message: "Agent wallet credited by GH₵ " + num.toFixed(2) + "." };
+  },
+
+  async deductAgentWallet(id: string, amount: number, note?: string): Promise<{ success: boolean; new_balance: number; message: string }> {
+    const agents = await this.getAgents();
+    const agent = agents.find((a) => a.id === id);
+    if (!agent) return { success: false, new_balance: 0, message: "Agent not found." };
+    const num = Math.abs(Number(amount));
+    const newBal = Number(Math.max(0, (agent.wallet_balance || 0) - num).toFixed(2));
+    await this.updateAgent(agent.id, { wallet_balance: newBal });
+    return { success: true, new_balance: newBal, message: "Agent wallet debited by GH₵ " + num.toFixed(2) + "." };
+  },
+
 };
+
 

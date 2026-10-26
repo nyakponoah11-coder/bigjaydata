@@ -79,18 +79,27 @@ export async function POST(req: Request) {
       provider: "local",
     });
 
-    // Send verification email if customer provided email
+    // 1. Send verification email to respective email account
     let emailSent = false;
-    let emailFallback = true;
     if (cleanEmail) {
       try {
         const { sendCustomerVerificationEmail } = await import("@/lib/email");
         const emailRes = await sendCustomerVerificationEmail(cleanEmail, cleanName, verificationCode, "signup");
         emailSent = Boolean(emailRes.success && !emailRes.isFallback);
-        emailFallback = !emailSent;
       } catch (err) {
         console.warn("Failed to dispatch sign-up verification email:", err);
       }
+    }
+
+    // 2. Dispatch SMS verification code to customer phone
+    try {
+      const { sendCustomerSMS } = await import("@/lib/sms");
+      await sendCustomerSMS({
+        phone: cleanPhone,
+        message: `Your Big Jay Data verification code is: ${verificationCode}. Valid for 10 minutes.`,
+      });
+    } catch (smsErr) {
+      console.warn("Failed to dispatch sign-up SMS:", smsErr);
     }
 
     console.log(`[Customer Register] New account created for ${cleanName} (${cleanPhone}). Verification Code: ${verificationCode}`);
@@ -102,7 +111,7 @@ export async function POST(req: Request) {
       phone: newCustomer.phone,
       email: newCustomer.email,
       name: newCustomer.name,
-      message: `Account created! We've sent a 6-digit verification code to your email (${cleanEmail}). Please check your inbox or spam folder.`,
+      message: `Account created! We've sent a 6-digit verification code to your email (${cleanEmail}) and phone (${cleanPhone}). Please check your inbox or SMS to verify.`,
     });
   } catch (error: any) {
     console.error("Customer register error:", error);
