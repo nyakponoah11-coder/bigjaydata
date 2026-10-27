@@ -3701,17 +3701,36 @@ export const db = {
   async updateAgent(id: string, updates: Partial<Agent>): Promise<Agent | null> {
     invalidateServerCache("agents");
     const agents = await this.getAgents();
-    const idx = agents.findIndex((a) => a.id === id);
+    const idx = agents.findIndex((a) => a.id === id || a.store_slug.toLowerCase() === id.toLowerCase());
     if (idx === -1) return null;
     agents[idx] = { ...agents[idx], ...updates };
     globalStore.__bmgh_agents = agents;
+
+    // Keep initialAgents in sync if this is a seeded agent
+    const seeded = initialAgents.find(
+      (a) => a.id === agents[idx].id || a.store_slug.toLowerCase() === agents[idx].store_slug.toLowerCase()
+    );
+    if (seeded) {
+      Object.assign(seeded, updates);
+    }
+
     saveToDisk();
 
     if (isSupabaseConfigured && supabaseAdmin) {
       try {
-        await supabaseAdmin.from("agents").update(updates).eq("id", id);
+        await supabaseAdmin.from("agents").update(updates).eq("id", agents[idx].id);
       } catch (err) {
         console.warn("Direct agents table update warning:", err);
+      }
+
+      // Also sync wallet_balance to customers table if updated
+      if (updates.wallet_balance !== undefined) {
+        try {
+          await supabaseAdmin
+            .from("customers")
+            .update({ wallet_balance: updates.wallet_balance })
+            .or(`id.eq.${agents[idx].id},email.eq.${agents[idx].email},phone.eq.${agents[idx].phone}`);
+        } catch {}
       }
 
       try {
@@ -6100,6 +6119,20 @@ export const db = {
     cust.wallet_balance = newBalance;
     await this.updateCustomer(customerId, { wallet_balance: newBalance });
 
+    // Sync with corresponding agent account if customer is an agent
+    try {
+      const agents = await this.getAgents();
+      const matchedAgent = agents.find(
+        (a) =>
+          a.id === customerId ||
+          (cust.email && a.email && a.email.toLowerCase() === cust.email.toLowerCase()) ||
+          (cust.phone && a.phone && a.phone.replace(/[^0-9]/g, "").endsWith(cust.phone.replace(/[^0-9]/g, "").slice(-9)))
+      );
+      if (matchedAgent) {
+        await this.updateAgent(matchedAgent.id, { wallet_balance: newBalance });
+      }
+    } catch {}
+
     await this.createCustomerTransaction({
       customer_id: customerId,
       amount: creditAmount,
@@ -6134,6 +6167,20 @@ export const db = {
     const newBalance = Number(((cust.wallet_balance || 0) - debitAmount).toFixed(2));
     cust.wallet_balance = newBalance;
     await this.updateCustomer(customerId, { wallet_balance: newBalance });
+
+    // Sync with corresponding agent account if customer is an agent
+    try {
+      const agents = await this.getAgents();
+      const matchedAgent = agents.find(
+        (a) =>
+          a.id === customerId ||
+          (cust.email && a.email && a.email.toLowerCase() === cust.email.toLowerCase()) ||
+          (cust.phone && a.phone && a.phone.replace(/[^0-9]/g, "").endsWith(cust.phone.replace(/[^0-9]/g, "").slice(-9)))
+      );
+      if (matchedAgent) {
+        await this.updateAgent(matchedAgent.id, { wallet_balance: newBalance });
+      }
+    } catch {}
 
     await this.createCustomerTransaction({
       customer_id: customerId,

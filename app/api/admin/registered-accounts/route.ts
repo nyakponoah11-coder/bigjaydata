@@ -159,9 +159,15 @@ export async function PATCH(req: Request) {
     }
 
     let customer = await db.getCustomerById(customer_id);
-    let agent: any = null;
-    if (!customer) {
-      agent = await db.getAgentById(customer_id);
+    let agent: any = await db.getAgentById(customer_id);
+    if (!agent && customer) {
+      const allAgents = await db.getAgents();
+      agent = allAgents.find(
+        (a) =>
+          a.id === customer!.id ||
+          (customer!.email && a.email && a.email.toLowerCase() === customer!.email.toLowerCase()) ||
+          (customer!.phone && a.phone && a.phone.replace(/[^0-9]/g, "").endsWith(customer!.phone.replace(/[^0-9]/g, "").slice(-9)))
+      );
     }
 
     if (!customer && !agent) {
@@ -186,6 +192,9 @@ export async function PATCH(req: Request) {
         const curBal = Number(agent.wallet_balance || 0);
         const newBal = Math.max(0, Number((curBal + numAmount).toFixed(2)));
         await db.updateAgent(agent.id, { wallet_balance: newBal });
+        if (customer) {
+          await db.updateCustomer(customer.id, { wallet_balance: newBal });
+        }
         return NextResponse.json({
           success: true,
           message: `Successfully ${numAmount > 0 ? "credited" : "debited"} GHS ${Math.abs(numAmount).toFixed(2)} ${numAmount > 0 ? "to" : "from"} Agent ${agent.name}'s (${agent.store_name}) wallet.`,

@@ -274,14 +274,15 @@ export default function AgentDashboardPage() {
 
         const currentEarned = Number(totalProfitFromOrders.toFixed(2));
         const currentWithdrawn = Number(completedWithdrawn.toFixed(2));
-        const calculatedBalance = Number(Math.max(0, currentEarned - currentWithdrawn - pendingWithdrawn).toFixed(2));
-        const currentBalance = calculatedBalance;
+        const calculatedOrderProfitBalance = Number(Math.max(0, currentEarned - currentWithdrawn - pendingWithdrawn).toFixed(2));
+        const storedWallet = Number(profData.agent.wallet_balance || 0);
+        const currentBalance = Math.max(storedWallet, calculatedOrderProfitBalance);
 
         const mergedAgent = {
           ...profData.agent,
           wallet_balance: currentBalance,
-          total_earned: currentEarned,
-          total_withdrawn: currentWithdrawn,
+          total_earned: Math.max(Number(profData.agent.total_earned || 0), currentEarned),
+          total_withdrawn: Math.max(Number(profData.agent.total_withdrawn || 0), currentWithdrawn),
         };
 
         setAgent(mergedAgent);
@@ -806,10 +807,15 @@ export default function AgentDashboardPage() {
       .toFixed(2)
   );
 
-  // Available wallet balance: Total store profit minus completed and valid pending withdrawals
-  const effectiveWalletBalance = Math.max(
+  // Available wallet balance: Includes credited wallet float as well as accumulated store order profits
+  const rawAgentWallet = Number(agent?.wallet_balance || 0);
+  const calculatedOrderProfitBalance = Math.max(
     0,
     Number((allTimeProfit - totalWithdrawnAmount - pendingWithdrawnAmount).toFixed(2))
+  );
+  const effectiveWalletBalance = Math.max(
+    rawAgentWallet,
+    calculatedOrderProfitBalance
   );
 
   // Filtered orders for Orders tab
