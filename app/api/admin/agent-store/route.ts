@@ -280,6 +280,19 @@ export async function POST(req: Request) {
       });
     }
 
+    if (action === "recover_agents") {
+      const result = await db.recoverAllAgents();
+      return NextResponse.json({
+        success: true,
+        message: result.recovered_count > 0
+          ? `Successfully retrieved and restored ${result.recovered_count} agent account(s) from database history!`
+          : "Database deep scan completed. All registered agents in system tables are already loaded and up to date.",
+        recovered_count: result.recovered_count,
+        recovered_agents: result.recovered,
+        sources: result.sources,
+      });
+    }
+
     return NextResponse.json({ success: false, message: "Invalid action" }, { status: 400 });
   } catch (error: any) {
     console.error("[Admin Agent Store API] POST error:", error);

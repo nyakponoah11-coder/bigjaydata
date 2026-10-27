@@ -131,6 +131,35 @@ export default function AdminAgentStorePage() {
   const [adjustType, setAdjustType] = useState<"credit" | "debit">("credit");
   const [adjustLoading, setAdjustLoading] = useState(false);
 
+  // Scan & Recover Old Agents State
+  const [recoveringAgents, setRecoveringAgents] = useState(false);
+
+  const handleRecoverAgents = async () => {
+    if (!confirm("Run deep database scan to discover and restore all past registered agents from database records, orders, and withdrawals?")) {
+      return;
+    }
+    try {
+      setRecoveringAgents(true);
+      setError("");
+      const res = await fetch("/api/admin/agent-store", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "recover_agents" }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.message || "Recovery failed");
+      }
+      setNotice(data.message || `Successfully recovered ${data.recovered_count || 0} agents.`);
+      setTimeout(() => setNotice(""), 6000);
+      await fetchData();
+    } catch (err: any) {
+      alert(err.message || "Agent recovery encountered an issue");
+    } finally {
+      setRecoveringAgents(false);
+    }
+  };
+
   const handleCreateAgent = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newAgentForm.name || !newAgentForm.store_name || !newAgentForm.phone) {
@@ -905,7 +934,16 @@ export default function AdminAgentStorePage() {
                 <h3 className="text-base font-bold text-white">Registered Agents ({agents.length})</h3>
                 <p className="text-xs text-slate-400">Manage agent accounts, credentials, wallet floats, suspension, and permissions.</p>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  onClick={handleRecoverAgents}
+                  disabled={recoveringAgents}
+                  className="px-3.5 py-2 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 text-xs font-bold shadow-sm transition-all flex items-center gap-1.5"
+                  title="Deep scan database tables, orders, and withdrawal history to restore past registered agents"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${recoveringAgents ? "animate-spin" : ""}`} />
+                  <span>{recoveringAgents ? "Scanning Database..." : "Scan & Restore Old Agents"}</span>
+                </button>
                 <Link
                   href="/admin/registered-accounts"
                   className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold border border-slate-700 transition-all flex items-center gap-1.5"
