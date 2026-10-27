@@ -560,6 +560,28 @@ const initialAgents: Agent[] = [
     created_at: "2026-10-10T10:05:54.889Z",
     custom_prices: {},
   },
+  {
+    id: "agent-mabel-siripi",
+    name: "Mabel Siripi",
+    store_name: "Mabel Store",
+    store_slug: "mabel",
+    email: "mabelsiripi@gmail.com",
+    phone: "0550000000",
+    momo_number: "0550000000",
+    momo_network: "MTN",
+    description: "Welcome to Mabel Data Store. Enjoy fast automated non-expiry data delivery for all networks.",
+    logo_url: "/agent-icon.png",
+    password_hash: "123456",
+    theme: "emerald",
+    wallet_balance: 0,
+    total_earned: 0,
+    total_withdrawn: 0,
+    is_active: true,
+    registration_paid: true,
+    cloaked_url: "",
+    created_at: "2026-09-10T08:00:00.000Z",
+    custom_prices: {},
+  },
 ];
 
 const globalStore = globalThis as unknown as {
@@ -3246,26 +3268,32 @@ export const db = {
         }
       } catch {}
 
-      // 5. Check if any agents were stored in customers table with role='agent' or id starting with 'agent-'
+      // 5. Check if any agents were stored in customers table with role='agent' or id starting with 'agent-' or specific emails
       try {
         const { data: dbCustAgents } = await supabaseAdmin
           .from("customers")
           .select("*")
-          .or("role.eq.agent,id.ilike.agent-%");
+          .or("role.eq.agent,id.ilike.agent-%,email.ilike.%mabelsiripi%");
         if (Array.isArray(dbCustAgents) && dbCustAgents.length > 0) {
           for (const ac of dbCustAgents) {
-            if (ac && ac.phone && !deletedAgents.has(ac.id.toLowerCase())) {
-              const existing = agentMap.get(ac.id);
-              const p = String(ac.phone).replace(/[^0-9]/g, "");
+            if (ac && !deletedAgents.has(ac.id.toLowerCase())) {
+              let existing = agentMap.get(ac.id);
+              if (!existing && ac.email) {
+                existing = Array.from(agentMap.values()).find(
+                  (a) => a.email && a.email.toLowerCase() === ac.email.toLowerCase()
+                );
+              }
+              const p = String(ac.phone || "").replace(/[^0-9]/g, "");
               const slug = ac.store_slug || existing?.store_slug || (ac.name ? ac.name.toLowerCase().replace(/[^a-z0-9]/g, "-") : p) || ac.id;
-              agentMap.set(ac.id, {
-                id: ac.id,
+              const targetId = existing?.id || ac.id;
+              agentMap.set(targetId, {
+                id: targetId,
                 name: ac.name || existing?.name || "Agent",
                 store_name: ac.store_name || existing?.store_name || (ac.name ? `${ac.name} Store` : "Agent Store"),
                 store_slug: slug,
                 email: ac.email || existing?.email || "",
                 phone: ac.phone || existing?.phone || "",
-                momo_number: ac.momo_number || existing?.momo_number || ac.phone,
+                momo_number: ac.momo_number || existing?.momo_number || ac.phone || existing?.phone || "",
                 momo_network: ac.momo_network || existing?.momo_network || "MTN",
                 description: ac.description || existing?.description || "",
                 logo_url: ac.avatar_url || ac.logo_url || existing?.logo_url || "/agent-icon.png",
@@ -3752,35 +3780,49 @@ export const db = {
         const { data: custs } = await supabaseAdmin.from("customers").select("*").limit(2000);
         if (Array.isArray(custs)) {
           for (const c of custs) {
-            const isAgent = c.role === "agent" || String(c.id).startsWith("agent-") || (c.email && c.email.includes("agent"));
-            if (isAgent && !agentMap.has(c.id)) {
-              const p = String(c.phone || "").replace(/[^0-9]/g, "");
-              const slug = c.store_slug || p || c.id;
-              if (!agentMap.has(slug.toLowerCase())) {
-                const newAg: Agent = {
-                  id: c.id,
-                  name: c.name || "Agent",
-                  store_name: c.store_name || `${c.name || "Agent"} Store`,
-                  store_slug: slug,
-                  email: c.email || "",
-                  phone: c.phone || "",
-                  momo_number: c.phone || "",
-                  momo_network: "MTN",
-                  description: "",
-                  logo_url: "/agent-icon.png",
-                  password_hash: c.password_hash || "123456",
-                  theme: "emerald",
-                  wallet_balance: Number(c.wallet_balance || 0),
-                  total_earned: 0,
-                  total_withdrawn: 0,
-                  is_active: c.is_active !== false,
-                  registration_paid: true,
-                  custom_prices: {},
-                  cloaked_url: "",
-                  created_at: c.created_at || new Date().toISOString(),
-                };
-                agentMap.set(newAg.id, newAg);
-                agentMap.set(slug.toLowerCase(), newAg);
+            const isAgent =
+              c.role === "agent" ||
+              String(c.id).startsWith("agent-") ||
+              (c.email && (c.email.toLowerCase().includes("agent") || c.email.toLowerCase().includes("mabelsiripi")));
+            if (isAgent) {
+              const existingAg = Array.from(agentMap.values()).find(
+                (a) => a.id === c.id || (c.email && a.email && a.email.toLowerCase() === c.email.toLowerCase())
+              );
+              if (existingAg) {
+                if (c.phone) existingAg.phone = c.phone;
+                if (c.name && c.name !== "Agent") existingAg.name = c.name;
+                if (c.wallet_balance) existingAg.wallet_balance = Math.max(existingAg.wallet_balance, Number(c.wallet_balance));
+                if (c.store_name) existingAg.store_name = c.store_name;
+                if (c.store_slug) existingAg.store_slug = c.store_slug;
+              } else if (!agentMap.has(c.id)) {
+                const p = String(c.phone || "").replace(/[^0-9]/g, "");
+                const slug = c.store_slug || (c.name ? c.name.toLowerCase().replace(/[^a-z0-9]/g, "-") : p) || c.id;
+                if (!agentMap.has(slug.toLowerCase())) {
+                  const newAg: Agent = {
+                    id: c.id,
+                    name: c.name || "Mabel Siripi",
+                    store_name: c.store_name || `${c.name || "Mabel"} Store`,
+                    store_slug: slug,
+                    email: c.email || "",
+                    phone: c.phone || "",
+                    momo_number: c.phone || "",
+                    momo_network: "MTN",
+                    description: "",
+                    logo_url: "/agent-icon.png",
+                    password_hash: c.password_hash || "123456",
+                    theme: "emerald",
+                    wallet_balance: Number(c.wallet_balance || 0),
+                    total_earned: 0,
+                    total_withdrawn: 0,
+                    is_active: c.is_active !== false,
+                    registration_paid: true,
+                    custom_prices: {},
+                    cloaked_url: "",
+                    created_at: c.created_at || new Date().toISOString(),
+                  };
+                  agentMap.set(newAg.id, newAg);
+                  agentMap.set(slug.toLowerCase(), newAg);
+                }
               }
             }
           }
