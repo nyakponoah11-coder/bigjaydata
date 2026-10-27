@@ -385,7 +385,10 @@ export function isGenuineCustomer(c: any): boolean {
   const email = String(c.email || "").trim().toLowerCase();
   if (email.endsWith("@customer.bundlemartgh.com")) return false;
 
-  // 2. Google OAuth accounts
+  // 2. All accounts with customer ID (cust-...) or registered contact
+  if (String(c.id || "").startsWith("cust-")) return true;
+
+  // 3. Google OAuth accounts
   const isGoogle =
     c.provider === "google" ||
     Boolean(c.google_id) ||
@@ -393,17 +396,17 @@ export function isGenuineCustomer(c: any): boolean {
     c.password_hash === "GOOGLE_OAUTH_ACCOUNT";
   if (isGoogle) return true;
 
-  // 3. Registered with password or PIN (at least 4 chars)
+  // 4. Registered with password or PIN (at least 4 chars)
   const pass = String(c.password_hash || "").trim();
   if (pass && pass !== "GUEST_BUYER" && pass.length >= 4) return true;
 
-  // 4. Has real external email address (not auto-generated guest contact)
+  // 5. Has real external email address (not auto-generated guest contact)
   if (email && email.includes("@") && email.includes(".") && !email.includes("guest")) return true;
 
-  // 5. Has real wallet float
+  // 6. Has real wallet float
   if (Number(c.wallet_balance || 0) > 0) return true;
 
-  // 6. In-flight registration with active verification code
+  // 7. In-flight registration with active verification code
   const isPendingVerification = Boolean(
     c.verification_code &&
     c.verification_code_expires_at &&
@@ -411,11 +414,11 @@ export function isGenuineCustomer(c: any): boolean {
   );
   if (isPendingVerification) return true;
 
-  // 7. Known registered accounts from disk (Noah Mensah, Kofi Mensah)
+  // 8. Known registered accounts from disk (Noah Mensah, Kofi Mensah)
   const cleanPhone = String(c.phone).replace(/[^0-9]/g, "");
   if (cleanPhone === "0551122334" || cleanPhone === "0241998877") return true;
 
-  return false;
+  return true;
 }
 
 export interface CustomerTransaction {
@@ -5308,39 +5311,25 @@ export const db = {
 
     if (isSupabaseConfigured && supabaseAdmin) {
       try {
-        // Query genuine registered accounts directly on Supabase server to bypass unverified guest rows
-        const { data: genuineData, error: genuineErr } = await supabaseAdmin
+        const { data: dbData } = await supabaseAdmin
           .from("customers")
           .select("*")
-          .or("provider.eq.google,google_id.not.is.null,password_hash.not.is.null,email.not.is.null,wallet_balance.gt.0,verification_code.not.is.null")
-          .order("created_at", { ascending: false });
+          .order("created_at", { ascending: false })
+          .limit(5000);
 
-        let rows: any[] = [];
-        if (!genuineErr && Array.isArray(genuineData)) {
-          rows = genuineData;
-        } else if (genuineErr) {
-          // Fallback query if or clause syntax differs on PostgREST version
-          const { data: fallbackData } = await supabaseAdmin
-            .from("customers")
-            .select("*")
-            .order("created_at", { ascending: false })
-            .limit(2500);
-          if (Array.isArray(fallbackData)) rows = fallbackData;
-        }
+        if (Array.isArray(dbData)) {
+          for (const raw of dbData) {
+            const p = String(raw.phone || "").replace(/[^0-9]/g, "");
+            if (!p) continue;
 
-        for (const raw of rows) {
-          if (!isGenuineCustomer(raw)) continue; // Skip non-registered guest buyer rows
-
-          const p = String(raw.phone || "").replace(/[^0-9]/g, "");
-          if (!p) continue;
-
-          const existing = accountMap.get(p);
-          const cust: Customer = {
-            ...(existing || {}),
-            ...raw,
-            wallet_balance: Math.max(Number(existing?.wallet_balance || 0), Number(raw.wallet_balance || 0)),
-          };
-          accountMap.set(p, cust);
+            const existing = accountMap.get(p);
+            const cust: Customer = {
+              ...(existing || {}),
+              ...raw,
+              wallet_balance: Math.max(Number(existing?.wallet_balance || 0), Number(raw.wallet_balance || 0)),
+            };
+            accountMap.set(p, cust);
+          }
         }
       } catch (err) {
         console.warn("Supabase customers fetch error:", err);

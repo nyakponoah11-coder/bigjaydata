@@ -15,8 +15,28 @@ export async function GET(req: Request) {
       db.getCustomerTransactions().catch(() => []),
     ]);
 
-    // Filter strictly to genuine registered customer accounts (must be verified or Google auth or have wallet float)
-    const registeredOnly = customers.filter((c) => isGenuineCustomer(c));
+    // Include all customer accounts and cross-sync all registered agents
+    const allCustomers: Customer[] = [...customers];
+    const existingPhones = new Set(allCustomers.map((c) => String(c.phone || "").replace(/[^0-9]/g, "")));
+    const agents = await db.getAgents().catch(() => []);
+    for (const ag of agents) {
+      const cleanP = String(ag.phone || "").replace(/[^0-9]/g, "");
+      if (cleanP && !existingPhones.has(cleanP)) {
+        allCustomers.push({
+          id: ag.id,
+          name: ag.name,
+          phone: ag.phone,
+          email: ag.email,
+          wallet_balance: Number(ag.wallet_balance || 0),
+          is_active: ag.is_active !== false,
+          is_verified: true,
+          created_at: ag.created_at || new Date().toISOString(),
+        } as Customer);
+        existingPhones.add(cleanP);
+      }
+    }
+
+    const registeredOnly = allCustomers.filter((c) => isGenuineCustomer(c));
 
     // Map order counts and metrics per customer
     const enrichedCustomers = registeredOnly.map((c) => {
