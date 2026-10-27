@@ -210,11 +210,73 @@ export async function POST(req: Request) {
       });
     }
 
-    if (action === "reset_all_finances") {
-      await db.resetAllAgentFinances();
+    if (action === "create_agent") {
+      const { name, store_name, store_slug, email, phone, momo_number, momo_network, password, initial_balance } = body;
+      if (!name || !store_name || !phone) {
+        return NextResponse.json({ success: false, message: "Agent name, store name, and phone are required." }, { status: 400 });
+      }
+
+      const cleanPhone = String(phone).replace(/[^0-9]/g, "");
+      const cleanEmail = email ? String(email).trim().toLowerCase() : `${cleanPhone}@bundlemartgh.com`;
+
+      let baseSlug = (store_slug || store_name)
+        .toLowerCase()
+        .trim()
+        .replace(/[^a-z0-9]/g, "-")
+        .replace(/-+/g, "-")
+        .replace(/^-|-$/g, "");
+      if (!baseSlug) baseSlug = "store-" + Math.floor(1000 + Math.random() * 9000);
+
+      const existingSlug = await db.getAgentBySlug(baseSlug);
+      if (existingSlug) {
+        baseSlug = `${baseSlug}-${Math.floor(100 + Math.random() * 900)}`;
+      }
+
+      const newAgent = await db.createAgent({
+        name: name.trim(),
+        store_name: store_name.trim(),
+        store_slug: baseSlug,
+        email: cleanEmail,
+        phone: cleanPhone,
+        momo_number: momo_number ? String(momo_number).replace(/[^0-9]/g, "") : cleanPhone,
+        momo_network: momo_network || "MTN",
+        password_hash: password ? String(password).trim() : "123456",
+        wallet_balance: Math.max(0, Number(initial_balance || 0)),
+        is_active: true,
+        registration_paid: true,
+      });
+
       return NextResponse.json({
         success: true,
-        message: "All agent store accounts, test orders, and withdrawals have been successfully reset to GHS 0.00.",
+        agent: newAgent,
+        message: `Agent "${newAgent.name}" (${newAgent.store_name}) registered successfully! Store link: /${newAgent.store_slug}`,
+      });
+    }
+
+    if (action === "adjust_wallet") {
+      const { agent_id, amount, reason } = body;
+      if (!agent_id) {
+        return NextResponse.json({ success: false, message: "Agent ID is required." }, { status: 400 });
+      }
+
+      const numAmount = Number(amount);
+      if (isNaN(numAmount) || numAmount === 0) {
+        return NextResponse.json({ success: false, message: "Please provide a valid non-zero adjustment amount." }, { status: 400 });
+      }
+
+      const agent = await db.getAgentById(agent_id);
+      if (!agent) {
+        return NextResponse.json({ success: false, message: "Agent not found." }, { status: 404 });
+      }
+
+      const curBal = Number(agent.wallet_balance || 0);
+      const newBal = Math.max(0, Number((curBal + numAmount).toFixed(2)));
+      await db.updateAgent(agent.id, { wallet_balance: newBal });
+
+      return NextResponse.json({
+        success: true,
+        message: `Successfully ${numAmount > 0 ? "credited" : "debited"} GHS ${Math.abs(numAmount).toFixed(2)} ${numAmount > 0 ? "to" : "from"} ${agent.name}'s (${agent.store_name}) wallet. New balance: GHS ${newBal.toFixed(2)}`,
+        new_balance: newBal,
       });
     }
 

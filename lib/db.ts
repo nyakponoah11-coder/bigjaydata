@@ -380,6 +380,9 @@ export interface Customer {
 export function isGenuineCustomer(c: any): boolean {
   if (!c || !c.phone) return false;
 
+  // 0. Registered agents are always genuine accounts
+  if (c.role === "agent" || String(c.id || "").startsWith("agent-") || c.store_slug) return true;
+
   // 1. Explicit guest flag or guest role
   if (c.is_guest === true || c.role === "guest") return false;
   const email = String(c.email || "").trim().toLowerCase();
@@ -3242,6 +3245,45 @@ export const db = {
           }
         }
       } catch {}
+
+      // 5. Check if any agents were stored in customers table with role='agent' or id starting with 'agent-'
+      try {
+        const { data: dbCustAgents } = await supabaseAdmin
+          .from("customers")
+          .select("*")
+          .or("role.eq.agent,id.ilike.agent-%");
+        if (Array.isArray(dbCustAgents) && dbCustAgents.length > 0) {
+          for (const ac of dbCustAgents) {
+            if (ac && ac.phone && !deletedAgents.has(ac.id.toLowerCase())) {
+              const existing = agentMap.get(ac.id);
+              const p = String(ac.phone).replace(/[^0-9]/g, "");
+              const slug = ac.store_slug || existing?.store_slug || (ac.name ? ac.name.toLowerCase().replace(/[^a-z0-9]/g, "-") : p) || ac.id;
+              agentMap.set(ac.id, {
+                id: ac.id,
+                name: ac.name || existing?.name || "Agent",
+                store_name: ac.store_name || existing?.store_name || (ac.name ? `${ac.name} Store` : "Agent Store"),
+                store_slug: slug,
+                email: ac.email || existing?.email || "",
+                phone: ac.phone || existing?.phone || "",
+                momo_number: ac.momo_number || existing?.momo_number || ac.phone,
+                momo_network: ac.momo_network || existing?.momo_network || "MTN",
+                description: ac.description || existing?.description || "",
+                logo_url: ac.avatar_url || ac.logo_url || existing?.logo_url || "/agent-icon.png",
+                password_hash: ac.password_hash || existing?.password_hash || "123456",
+                theme: ac.theme || existing?.theme || "emerald",
+                wallet_balance: Math.max(Number(existing?.wallet_balance || 0), Number(ac.wallet_balance || 0)),
+                total_earned: Math.max(Number(existing?.total_earned || 0), Number(ac.total_earned || 0)),
+                total_withdrawn: Math.max(Number(existing?.total_withdrawn || 0), Number(ac.total_withdrawn || 0)),
+                is_active: ac.is_active !== false,
+                registration_paid: true,
+                custom_prices: existing?.custom_prices || {},
+                cloaked_url: existing?.cloaked_url || "",
+                created_at: ac.created_at || existing?.created_at || new Date().toISOString(),
+              });
+            }
+          }
+        }
+      } catch {}
     }
 
     const merged = Array.from(agentMap.values());
@@ -3311,7 +3353,7 @@ export const db = {
           .filter((w) => w.status === "pending" && Number(w.amount) <= totalEarned)
           .reduce((sum, w) => sum + (Number(w.amount) || 0), 0);
         const calculatedBalance = Number(Math.max(0, totalEarned - totalWithdrawn - pendingWithdrawn).toFixed(2));
-        const currentBalance = calculatedBalance;
+        const currentBalance = Math.max(Number(found.wallet_balance || 0), calculatedBalance);
 
         found.total_earned = totalEarned;
         found.total_withdrawn = totalWithdrawn;
@@ -3361,15 +3403,31 @@ export const db = {
     return all.find((a) => a.phone.replace(/[^0-9]/g, "").endsWith(clean.slice(-9))) || null;
   },
 
-  async createAgent(agentData: Omit<Agent, "id" | "wallet_balance" | "total_earned" | "total_withdrawn" | "created_at">): Promise<Agent> {
+  async createAgent(
+    agentData: Partial<Agent> & {
+      name: string;
+      store_name: string;
+      store_slug: string;
+      email: string;
+      phone: string;
+      password_hash: string;
+    }
+  ): Promise<Agent> {
     const newAgent: Agent = {
+      description: "Best value data bundles direct to your phone.",
+      logo_url: "/agent-icon.png",
+      theme: "emerald",
+      momo_number: agentData.phone,
+      momo_network: "MTN",
+      custom_prices: {},
       ...agentData,
       id: "agent-" + crypto.randomUUID().slice(0, 8),
       store_slug: agentData.store_slug.toLowerCase().trim().replace(/[^a-z0-9-_]/g, "-"),
-      wallet_balance: 0,
+      wallet_balance: Number(agentData.wallet_balance || 0),
       total_earned: 0,
       total_withdrawn: 0,
-      is_active: true,
+      is_active: agentData.is_active !== false,
+      registration_paid: agentData.registration_paid !== false,
       created_at: new Date().toISOString(),
     };
 
@@ -3449,6 +3507,18 @@ export const db = {
             registration_paid: newAgent.registration_paid !== false,
             custom_prices: newAgent.custom_prices || {},
             cloaked_url: newAgent.cloaked_url || "",
+            created_at: newAgent.created_at,
+          }),
+          supabaseAdmin.from("customers").upsert({
+            id: newAgent.id,
+            name: newAgent.name,
+            phone: newAgent.phone,
+            email: newAgent.email,
+            password_hash: newAgent.password_hash,
+            role: "agent",
+            wallet_balance: newAgent.wallet_balance || 0,
+            is_verified: true,
+            is_active: newAgent.is_active !== false,
             created_at: newAgent.created_at,
           }),
         ]);

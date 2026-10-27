@@ -44,6 +44,9 @@ interface EnrichedCustomer {
   name: string;
   phone: string;
   email?: string;
+  role?: string;
+  store_name?: string;
+  store_slug?: string;
   wallet_balance: number;
   is_active: boolean;
   created_at: string;
@@ -56,6 +59,8 @@ interface EnrichedCustomer {
 
 interface SummaryData {
   total_customers: number;
+  total_regular_customers?: number;
+  total_agents?: number;
   active_customers: number;
   suspended_customers: number;
   total_wallet_float: number;
@@ -66,6 +71,7 @@ export default function AdminRegisteredAccountsPage() {
   const [customers, setCustomers] = useState<EnrichedCustomer[]>([]);
   const [summary, setSummary] = useState<SummaryData | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [roleFilter, setRoleFilter] = useState<"all" | "customer" | "agent">("all");
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "suspended">("all");
   const [balanceFilter, setBalanceFilter] = useState<"all" | "has_balance" | "zero">("all");
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -256,13 +262,19 @@ export default function AdminRegisteredAccountsPage() {
 
   // Filter customers
   const filteredCustomers = customers.filter((c) => {
+    // Role filter
+    if (roleFilter === "customer" && c.role === "agent") return false;
+    if (roleFilter === "agent" && c.role !== "agent") return false;
+
     const q = searchQuery.toLowerCase().trim();
     const matchesSearch =
       !q ||
       c.name.toLowerCase().includes(q) ||
       c.phone.includes(q) ||
       (c.email && c.email.toLowerCase().includes(q)) ||
-      c.id.toLowerCase().includes(q);
+      c.id.toLowerCase().includes(q) ||
+      (c.store_name && c.store_name.toLowerCase().includes(q)) ||
+      (c.store_slug && c.store_slug.toLowerCase().includes(q));
 
     const matchesStatus =
       statusFilter === "all" ||
@@ -300,13 +312,21 @@ export default function AdminRegisteredAccountsPage() {
                   Registered Customer Accounts
                 </h1>
                 <p className="text-xs text-slate-400">
-                  Manage registered user accounts, deposit balances & wallet ledgers
+                  Manage registered user accounts, agent store owners & wallet ledgers
                 </p>
               </div>
             </div>
           </div>
 
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <Link
+              href="/admin/agent-store"
+              className="px-3.5 py-2 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/30 text-emerald-400 hover:text-emerald-300 text-xs font-bold flex items-center gap-1.5 transition-colors"
+              title="Open Agent Store Management & Payouts"
+            >
+              <span>🏪 Agent Store Hub ({summary?.total_agents || 0})</span>
+            </Link>
+
             <Link
               href="/admin/customers"
               className="px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-white text-xs font-bold flex items-center gap-1.5 transition-colors"
@@ -443,7 +463,17 @@ export default function AdminRegisteredAccountsPage() {
             />
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <select
+              value={roleFilter}
+              onChange={(e: any) => setRoleFilter(e.target.value)}
+              className="bg-slate-950 border border-slate-800 text-xs text-slate-300 rounded-xl px-3 py-2 focus:outline-none focus:ring-1 focus:ring-emerald-500 cursor-pointer font-bold"
+            >
+              <option value="all">All Accounts ({customers.length})</option>
+              <option value="customer">Customers Only ({summary?.total_regular_customers ?? customers.filter(c => c.role !== "agent").length})</option>
+              <option value="agent">Registered Agents ({summary?.total_agents ?? customers.filter(c => c.role === "agent").length})</option>
+            </select>
+
             <select
               value={statusFilter}
               onChange={(e: any) => setStatusFilter(e.target.value)}
@@ -486,7 +516,7 @@ export default function AdminRegisteredAccountsPage() {
               <table className="w-full text-left border-collapse text-xs">
                 <thead>
                   <tr className="border-b border-slate-800 bg-slate-950/60 text-slate-400 font-bold uppercase tracking-wider text-[10px]">
-                    <th className="py-3.5 px-4">Customer</th>
+                    <th className="py-3.5 px-4">Account Holder</th>
                     <th className="py-3.5 px-4">Contact Info</th>
                     <th className="py-3.5 px-4">Wallet Balance</th>
                     <th className="py-3.5 px-4 text-center">Orders</th>
@@ -504,16 +534,46 @@ export default function AdminRegisteredAccountsPage() {
                       {/* Customer Name */}
                       <td className="py-3.5 px-4">
                         <div className="flex items-center gap-3">
-                          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-amber-400 to-yellow-500 text-slate-950 font-black text-xs flex items-center justify-center shrink-0 shadow-sm">
-                            {cust.name ? cust.name.charAt(0).toUpperCase() : "U"}
+                          <div
+                            className={`w-9 h-9 rounded-xl font-black text-xs flex items-center justify-center shrink-0 shadow-sm ${
+                              cust.role === "agent"
+                                ? "bg-gradient-to-br from-emerald-400 to-teal-500 text-slate-950 text-base"
+                                : "bg-gradient-to-br from-amber-400 to-yellow-500 text-slate-950"
+                            }`}
+                          >
+                            {cust.role === "agent" ? "🏪" : (cust.name ? cust.name.charAt(0).toUpperCase() : "U")}
                           </div>
                           <div>
-                            <span className="font-bold text-white block leading-tight text-sm">
-                              {cust.name}
-                            </span>
-                            <span className="text-[10px] text-slate-500 font-mono">
-                              {cust.id}
-                            </span>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-bold text-white block leading-tight text-sm">
+                                {cust.name}
+                              </span>
+                              {cust.role === "agent" && (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[10px] font-bold">
+                                  <span>Agent</span>
+                                  {cust.store_slug && (
+                                    <a
+                                      href={`/${cust.store_slug}`}
+                                      target="_blank"
+                                      className="font-mono underline hover:text-emerald-300"
+                                      onClick={(e) => e.stopPropagation()}
+                                    >
+                                      /{cust.store_slug}
+                                    </a>
+                                  )}
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2 mt-0.5">
+                              <span className="text-[10px] text-slate-500 font-mono">
+                                {cust.id}
+                              </span>
+                              {cust.store_name && (
+                                <span className="text-[10px] text-emerald-400 font-medium">
+                                  Store: {cust.store_name}
+                                </span>
+                              )}
+                            </div>
                           </div>
                         </div>
                       </td>
