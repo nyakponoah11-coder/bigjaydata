@@ -393,20 +393,27 @@ export function isGenuineCustomer(c: any): boolean {
     c.password_hash === "GOOGLE_OAUTH_ACCOUNT";
   if (isGoogle) return true;
 
-  // 3. Known registered accounts from disk (Noah Mensah, Kofi Mensah)
-  const cleanPhone = String(c.phone).replace(/[^0-9]/g, "");
-  if (cleanPhone === "0551122334" || cleanPhone === "0241998877") return true;
+  // 3. Registered with password or PIN (at least 4 chars)
+  const pass = String(c.password_hash || "").trim();
+  if (pass && pass !== "GUEST_BUYER" && pass.length >= 4) return true;
 
-  // 4. Has real wallet float
+  // 4. Has real external email address (not auto-generated guest contact)
+  if (email && email.includes("@") && email.includes(".") && !email.includes("guest")) return true;
+
+  // 5. Has real wallet float
   if (Number(c.wallet_balance || 0) > 0) return true;
 
-  // 5. In-flight registration with active verification code
+  // 6. In-flight registration with active verification code
   const isPendingVerification = Boolean(
     c.verification_code &&
     c.verification_code_expires_at &&
     Number(c.verification_code_expires_at) > 0
   );
   if (isPendingVerification) return true;
+
+  // 7. Known registered accounts from disk (Noah Mensah, Kofi Mensah)
+  const cleanPhone = String(c.phone).replace(/[^0-9]/g, "");
+  if (cleanPhone === "0551122334" || cleanPhone === "0241998877") return true;
 
   return false;
 }
@@ -3148,137 +3155,97 @@ export const db = {
       (globalStore.__bmgh_deleted_agents || []).map((a) => a.toLowerCase().trim())
     );
 
-    if (isSupabaseConfigured && supabaseAdmin && !globalStore.__bmgh_agents_zeroed_migrated) {
-      globalStore.__bmgh_agents_zeroed_migrated = true;
-      (async () => {
-        try {
-          const { data: flag } = await supabaseAdmin
-            .from("settings")
-            .select("store_name")
-            .eq("id", "agents_zeroed_migration_v1")
-            .maybeSingle();
-          if (!flag?.store_name) {
-            console.log("[DB] Executing one-time global zero reset of all agent finances...");
-            await db.resetAllAgentFinances();
-            await supabaseAdmin.from("settings").upsert({
-              id: "agents_zeroed_migration_v1",
-              store_name: "completed",
-            });
-          }
-        } catch (mErr) {
-          console.warn("One-time zero reset migration check failed:", mErr);
-        }
-      })();
+    const agentMap = new Map<string, Agent>();
+
+    // 1. Initial / seed agents
+    for (const a of initialAgents) {
+      if (a && a.id && !deletedAgents.has(a.id.toLowerCase()) && !deletedAgents.has((a.store_slug || "").toLowerCase())) {
+        agentMap.set(a.id, { ...a });
+      }
     }
 
-    if (isCacheFresh("agents", CACHE_TTLS.agents) && Array.isArray(globalStore.__bmgh_agents)) {
-      return globalStore.__bmgh_agents.filter(
-        (a) => !deletedAgents.has(a.id.toLowerCase()) && !deletedAgents.has(a.store_slug.toLowerCase())
-      );
+    // 2. Global in-memory cache
+    if (Array.isArray(globalStore.__bmgh_agents)) {
+      for (const a of globalStore.__bmgh_agents) {
+        if (a && a.id && !deletedAgents.has(a.id.toLowerCase()) && !deletedAgents.has((a.store_slug || "").toLowerCase())) {
+          const existing = agentMap.get(a.id);
+          agentMap.set(a.id, {
+            ...(existing || {}),
+            ...a,
+            wallet_balance: Math.max(Number(existing?.wallet_balance || 0), Number(a.wallet_balance || 0)),
+          });
+        }
+      }
     }
 
     if (isSupabaseConfigured && supabaseAdmin) {
-      // 1. Try dedicated agents table first
+      // 3. Settings table registry (where createAgent saves registered agents)
       try {
-        const { data: dbAgents } = await supabaseAdmin.from("agents").select("*");
-        if (Array.isArray(dbAgents) && dbAgents.length > 0) {
-          const list: Agent[] = dbAgents
-            .filter((a: any) => !deletedAgents.has(a.id?.toLowerCase()) && !deletedAgents.has(a.store_slug?.toLowerCase()))
-            .map((a: any) => ({
-              id: a.id,
-              name: a.name,
-              store_name: a.store_name,
-              store_slug: a.store_slug,
-              email: a.email,
-              phone: a.phone,
-              momo_number: a.momo_number,
-              momo_network: a.momo_network,
-              description: a.description,
-              logo_url: a.logo_url || "/agent-icon.png",
-              password_hash: a.password_hash,
-              theme: a.theme || "emerald",
-              wallet_balance: Number(a.wallet_balance || 0),
-              total_earned: Number(a.total_earned || 0),
-              total_withdrawn: Number(a.total_withdrawn || 0),
-              is_active: a.is_active !== false,
-              registration_paid: a.registration_paid !== false,
-              custom_prices: a.custom_prices || {},
-              cloaked_url: a.cloaked_url,
-              created_at: a.created_at,
-            }));
-
-          // Merge custom_prices from agents_registry_config or memory so agent prices are never wiped out
-          try {
-            const { data: regRow } = await supabaseAdmin
-              .from("settings")
-              .select("announcement_text")
-              .eq("id", "agents_registry_config")
-              .maybeSingle();
-            if (regRow?.announcement_text) {
-              const regAgents = JSON.parse(regRow.announcement_text);
-              if (Array.isArray(regAgents)) {
-                list.forEach((ag) => {
-                  const matchedReg = regAgents.find((ra: any) => ra.id === ag.id || ra.store_slug === ag.store_slug);
-                  if (matchedReg?.custom_prices && typeof matchedReg.custom_prices === "object" && Object.keys(matchedReg.custom_prices).length > 0) {
-                    ag.custom_prices = {
-                      ...matchedReg.custom_prices,
-                      ...(ag.custom_prices && Object.keys(ag.custom_prices).length > 0 ? ag.custom_prices : {}),
-                    };
-                  }
-                });
-              }
-            }
-          } catch {}
-
-          if (globalStore.__bmgh_agents && Array.isArray(globalStore.__bmgh_agents)) {
-            list.forEach((ag) => {
-              const memAg = globalStore.__bmgh_agents!.find((ma) => ma.id === ag.id || ma.store_slug === ag.store_slug);
-              if (memAg?.custom_prices && typeof memAg.custom_prices === "object" && Object.keys(memAg.custom_prices).length > 0) {
-                ag.custom_prices = {
-                  ...memAg.custom_prices,
-                  ...(ag.custom_prices && Object.keys(ag.custom_prices).length > 0 ? ag.custom_prices : {}),
-                };
-              }
-            });
-          }
-
-          globalStore.__bmgh_agents = list;
-          markCacheFresh("agents");
-          return list;
-        }
-      } catch {}
-
-      // 2. Fallback to settings table registry
-      try {
-        const { data } = await supabaseAdmin
+        const { data: regRow } = await supabaseAdmin
           .from("settings")
           .select("announcement_text")
           .eq("id", "agents_registry_config")
           .maybeSingle();
-        if (data?.announcement_text) {
+        if (regRow?.announcement_text) {
           try {
-            const list = JSON.parse(data.announcement_text);
-            if (Array.isArray(list)) {
-              const cleaned = list.filter(
-                (a: any) => !deletedAgents.has(a.id?.toLowerCase()) && !deletedAgents.has(a.store_slug?.toLowerCase())
-              );
-              globalStore.__bmgh_agents = cleaned;
-              markCacheFresh("agents");
-              return cleaned;
+            const regList = JSON.parse(regRow.announcement_text);
+            if (Array.isArray(regList)) {
+              for (const a of regList) {
+                if (a && a.id && !deletedAgents.has(a.id.toLowerCase()) && !deletedAgents.has((a.store_slug || "").toLowerCase())) {
+                  const existing = agentMap.get(a.id);
+                  agentMap.set(a.id, {
+                    ...(existing || {}),
+                    ...a,
+                    wallet_balance: Math.max(Number(existing?.wallet_balance || 0), Number(a.wallet_balance || 0)),
+                  });
+                }
+              }
             }
           } catch {}
         }
-      } catch (err) {
-        // fallback
-      }
+      } catch {}
+
+      // 4. Dedicated agents table (if exists in Supabase)
+      try {
+        const { data: dbAgents } = await supabaseAdmin.from("agents").select("*");
+        if (Array.isArray(dbAgents) && dbAgents.length > 0) {
+          for (const a of dbAgents) {
+            if (a && a.id && !deletedAgents.has(a.id.toLowerCase()) && !deletedAgents.has((a.store_slug || "").toLowerCase())) {
+              const existing = agentMap.get(a.id);
+              agentMap.set(a.id, {
+                ...(existing || {}),
+                id: a.id,
+                name: a.name || existing?.name || "Agent",
+                store_name: a.store_name || existing?.store_name || "Agent Store",
+                store_slug: a.store_slug || existing?.store_slug || a.id,
+                email: a.email || existing?.email || "",
+                phone: a.phone || existing?.phone || "",
+                momo_number: a.momo_number || existing?.momo_number || a.phone,
+                momo_network: a.momo_network || existing?.momo_network || "MTN",
+                description: a.description || existing?.description || "",
+                logo_url: a.logo_url || existing?.logo_url || "/agent-icon.png",
+                password_hash: a.password_hash || existing?.password_hash || "123456",
+                theme: a.theme || existing?.theme || "emerald",
+                wallet_balance: Math.max(Number(existing?.wallet_balance || 0), Number(a.wallet_balance || 0)),
+                total_earned: Math.max(Number(existing?.total_earned || 0), Number(a.total_earned || 0)),
+                total_withdrawn: Math.max(Number(existing?.total_withdrawn || 0), Number(a.total_withdrawn || 0)),
+                is_active: a.is_active !== false,
+                registration_paid: a.registration_paid !== false,
+                custom_prices: { ...(existing?.custom_prices || {}), ...(a.custom_prices || {}) },
+                cloaked_url: a.cloaked_url || existing?.cloaked_url || "",
+                created_at: a.created_at || existing?.created_at || new Date().toISOString(),
+              });
+            }
+          }
+        }
+      } catch {}
     }
+
+    const merged = Array.from(agentMap.values());
+    globalStore.__bmgh_agents = merged;
     markCacheFresh("agents");
-    const current = (globalStore.__bmgh_agents || []).filter(
-      (a) => !deletedAgents.has(a.id.toLowerCase()) && !deletedAgents.has(a.store_slug.toLowerCase())
-    );
-    globalStore.__bmgh_agents = current;
     markServerCache("agents");
-    return current;
+    return merged;
   },
 
   async getAgentById(id: string, includeFinances = true): Promise<Agent | null> {
@@ -3458,6 +3425,28 @@ export const db = {
           supabaseAdmin.from("settings").upsert({
             id: "agent_products_registry_config",
             announcement_text: JSON.stringify(globalStore.__bmgh_agent_products),
+          }),
+          supabaseAdmin.from("agents").upsert({
+            id: newAgent.id,
+            name: newAgent.name,
+            store_name: newAgent.store_name,
+            store_slug: newAgent.store_slug,
+            email: newAgent.email,
+            phone: newAgent.phone,
+            momo_number: newAgent.momo_number,
+            momo_network: newAgent.momo_network,
+            description: newAgent.description,
+            logo_url: newAgent.logo_url,
+            password_hash: newAgent.password_hash,
+            theme: newAgent.theme,
+            wallet_balance: newAgent.wallet_balance || 0,
+            total_earned: newAgent.total_earned || 0,
+            total_withdrawn: newAgent.total_withdrawn || 0,
+            is_active: newAgent.is_active !== false,
+            registration_paid: newAgent.registration_paid !== false,
+            custom_prices: newAgent.custom_prices || {},
+            cloaked_url: newAgent.cloaked_url || "",
+            created_at: newAgent.created_at,
           }),
         ]);
       } catch (err) {
@@ -5319,17 +5308,24 @@ export const db = {
 
     if (isSupabaseConfigured && supabaseAdmin) {
       try {
-        // Query genuine registered accounts directly on Supabase server to bypass 10,000 unverified guest rows
-        // Note: Do not query is_verified=true because the 10,000 order buyers were given is_verified=true
+        // Query genuine registered accounts directly on Supabase server to bypass unverified guest rows
         const { data: genuineData, error: genuineErr } = await supabaseAdmin
           .from("customers")
           .select("*")
-          .or("provider.eq.google,google_id.not.is.null,wallet_balance.gt.0,verification_code.not.is.null")
+          .or("provider.eq.google,google_id.not.is.null,password_hash.not.is.null,email.not.is.null,wallet_balance.gt.0,verification_code.not.is.null")
           .order("created_at", { ascending: false });
 
         let rows: any[] = [];
         if (!genuineErr && Array.isArray(genuineData)) {
           rows = genuineData;
+        } else if (genuineErr) {
+          // Fallback query if or clause syntax differs on PostgREST version
+          const { data: fallbackData } = await supabaseAdmin
+            .from("customers")
+            .select("*")
+            .order("created_at", { ascending: false })
+            .limit(2500);
+          if (Array.isArray(fallbackData)) rows = fallbackData;
         }
 
         for (const raw of rows) {
@@ -5563,7 +5559,7 @@ export const db = {
     let purgedCount = 0;
     if (isSupabaseConfigured && supabaseAdmin) {
       try {
-        // Protected phones that must NEVER be deleted (Noah Mensah, Kofi Mensah, etc.)
+        // Protected phones that must NEVER be deleted (Noah Mensah, Kofi Mensah, and all registered agents)
         const protectedPhones = ["0551122334", "0241998877"];
         for (const d of diskData?.customers || []) {
           if (d && d.phone) {
@@ -5571,13 +5567,23 @@ export const db = {
             if (p && !protectedPhones.includes(p)) protectedPhones.push(p);
           }
         }
+        try {
+          const agents = await this.getAgents();
+          for (const ag of agents) {
+            if (ag && ag.phone) {
+              const ap = String(ag.phone).replace(/[^0-9]/g, "");
+              if (ap && !protectedPhones.includes(ap)) protectedPhones.push(ap);
+            }
+          }
+        } catch {}
 
-        // Delete order buyer records from Supabase:
-        // Must have 0 or null wallet balance, NOT be a Google account, and not be a protected owner account
+        // Delete guest records from Supabase:
+        // Must have NO password (never registered), NO Google ID, 0 balance, and not be a protected phone
         const { data, error } = await supabaseAdmin
           .from("customers")
           .delete()
           .is("google_id", null)
+          .is("password_hash", null)
           .neq("provider", "google")
           .lte("wallet_balance", 0)
           .not("phone", "in", `(${protectedPhones.join(",")})`)

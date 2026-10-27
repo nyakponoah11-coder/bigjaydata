@@ -62,13 +62,14 @@ export async function GET(req: Request) {
         (w) => (w.agent_id === agent.id || w.agent_id === agent.store_slug) && w.status === "pending" && Number(w.amount) <= earned
       );
       const pendingWithdrawn = Number(pendingWithdrawals.reduce((sum, w) => sum + (Number(w.amount) || 0), 0).toFixed(2));
+      const storedBalance = Number(agent.wallet_balance || 0);
       const calculatedBalance = Number(Math.max(0, earned - withdrawn - pendingWithdrawn).toFixed(2));
-      const balance = calculatedBalance;
+      const balance = Math.max(storedBalance, calculatedBalance);
 
       return {
         ...agent,
-        total_earned: earned,
-        total_withdrawn: withdrawn,
+        total_earned: Math.max(Number(agent.total_earned || 0), earned),
+        total_withdrawn: Math.max(Number(agent.total_withdrawn || 0), withdrawn),
         wallet_balance: balance,
       };
     });
