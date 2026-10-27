@@ -3207,29 +3207,53 @@ export const db = {
     }
 
     if (isSupabaseConfigured && supabaseAdmin) {
-      // 3. Settings table registry (where createAgent saves registered agents)
+      // 3. Scan all settings rows for any historical agent registries
       try {
-        const { data: regRow } = await supabaseAdmin
-          .from("settings")
-          .select("announcement_text")
-          .eq("id", "agents_registry_config")
-          .maybeSingle();
-        if (regRow?.announcement_text) {
-          try {
-            const regList = JSON.parse(regRow.announcement_text);
-            if (Array.isArray(regList)) {
-              for (const a of regList) {
-                if (a && a.id && !deletedAgents.has(a.id.toLowerCase()) && !deletedAgents.has((a.store_slug || "").toLowerCase())) {
-                  const existing = agentMap.get(a.id);
-                  agentMap.set(a.id, {
-                    ...(existing || {}),
-                    ...a,
-                    wallet_balance: Math.max(Number(existing?.wallet_balance || 0), Number(a.wallet_balance || 0)),
-                  });
+        const { data: allSettings } = await supabaseAdmin.from("settings").select("*");
+        if (Array.isArray(allSettings)) {
+          for (const s of allSettings) {
+            if (s.announcement_text && typeof s.announcement_text === "string" && s.announcement_text.includes("{")) {
+              try {
+                const parsed = JSON.parse(s.announcement_text);
+                const list = Array.isArray(parsed) ? parsed : [parsed];
+                for (const a of list) {
+                  if (a && (a.store_slug || a.store_name || String(a.id || "").startsWith("agent-"))) {
+                    const key = a.id || a.store_slug;
+                    if (!deletedAgents.has(String(key).toLowerCase())) {
+                      const existing = agentMap.get(key) || Array.from(agentMap.values()).find(
+                        (ex) => (a.email && ex.email && ex.email.toLowerCase() === a.email.toLowerCase()) ||
+                                (a.store_slug && ex.store_slug && ex.store_slug.toLowerCase() === a.store_slug.toLowerCase())
+                      );
+                      const targetId = existing?.id || a.id || ("agent-" + crypto.randomUUID().slice(0, 8));
+                      agentMap.set(targetId, {
+                        ...(existing || {}),
+                        id: targetId,
+                        name: a.name || existing?.name || "Agent",
+                        store_name: a.store_name || existing?.store_name || "Agent Store",
+                        store_slug: a.store_slug || existing?.store_slug || targetId,
+                        email: a.email || existing?.email || "",
+                        phone: a.phone || existing?.phone || "",
+                        momo_number: a.momo_number || existing?.momo_number || a.phone || existing?.phone || "",
+                        momo_network: a.momo_network || existing?.momo_network || "MTN",
+                        description: a.description || existing?.description || "",
+                        logo_url: a.logo_url || existing?.logo_url || "/agent-icon.png",
+                        password_hash: a.password_hash || existing?.password_hash || "123456",
+                        theme: a.theme || existing?.theme || "emerald",
+                        wallet_balance: Math.max(Number(existing?.wallet_balance || 0), Number(a.wallet_balance || 0)),
+                        total_earned: Math.max(Number(existing?.total_earned || 0), Number(a.total_earned || 0)),
+                        total_withdrawn: Math.max(Number(existing?.total_withdrawn || 0), Number(a.total_withdrawn || 0)),
+                        is_active: a.is_active !== false,
+                        registration_paid: true,
+                        custom_prices: { ...(existing?.custom_prices || {}), ...(a.custom_prices || {}) },
+                        cloaked_url: a.cloaked_url || existing?.cloaked_url || "",
+                        created_at: a.created_at || existing?.created_at || new Date().toISOString(),
+                      });
+                    }
+                  }
                 }
-              }
+              } catch {}
             }
-          } catch {}
+          }
         }
       } catch {}
 
@@ -3268,12 +3292,12 @@ export const db = {
         }
       } catch {}
 
-      // 5. Check if any agents were stored in customers table with role='agent' or id starting with 'agent-' or specific emails
+      // 5. Check if any agents were stored in customers table
       try {
         const { data: dbCustAgents } = await supabaseAdmin
           .from("customers")
           .select("*")
-          .or("role.eq.agent,id.ilike.agent-%,email.ilike.%mabelsiripi%");
+          .or("role.eq.agent,id.ilike.agent-%,email.ilike.%mabelsiripi%,email.ilike.%agent%");
         if (Array.isArray(dbCustAgents) && dbCustAgents.length > 0) {
           for (const ac of dbCustAgents) {
             if (ac && !deletedAgents.has(ac.id.toLowerCase())) {
@@ -3308,6 +3332,122 @@ export const db = {
                 cloaked_url: existing?.cloaked_url || "",
                 created_at: ac.created_at || existing?.created_at || new Date().toISOString(),
               });
+            }
+          }
+        }
+      } catch {}
+
+      // 6. Scan agent_withdrawals table for any historical agents
+      try {
+        const { data: dbWithdrawals } = await supabaseAdmin.from("agent_withdrawals").select("*").limit(1000);
+        if (Array.isArray(dbWithdrawals)) {
+          for (const aw of dbWithdrawals) {
+            if (aw.agent_id && !deletedAgents.has(aw.agent_id.toLowerCase())) {
+              const existing = agentMap.get(aw.agent_id);
+              if (!existing) {
+                const slug = String(aw.agent_id).replace(/^agent-/, "");
+                agentMap.set(aw.agent_id, {
+                  id: aw.agent_id,
+                  name: aw.agent_name || slug || "Agent",
+                  store_name: `${slug} Store`,
+                  store_slug: slug,
+                  email: "",
+                  phone: aw.momo_number || "",
+                  momo_number: aw.momo_number || "",
+                  momo_network: aw.momo_network || "MTN",
+                  description: "",
+                  logo_url: "/agent-icon.png",
+                  password_hash: "123456",
+                  theme: "emerald",
+                  wallet_balance: 0,
+                  total_earned: 0,
+                  total_withdrawn: Number(aw.amount || 0),
+                  is_active: true,
+                  registration_paid: true,
+                  custom_prices: {},
+                  cloaked_url: "",
+                  created_at: aw.created_at || new Date().toISOString(),
+                });
+              }
+            }
+          }
+        }
+      } catch {}
+
+      // 7. Scan agent_orders table for any historical agents
+      try {
+        const { data: dbOrders } = await supabaseAdmin.from("agent_orders").select("*").limit(1000);
+        if (Array.isArray(dbOrders)) {
+          for (const ao of dbOrders) {
+            if (ao.agent_id && !deletedAgents.has(ao.agent_id.toLowerCase())) {
+              const existing = agentMap.get(ao.agent_id);
+              if (!existing) {
+                const slug = String(ao.agent_id).replace(/^agent-/, "");
+                agentMap.set(ao.agent_id, {
+                  id: ao.agent_id,
+                  name: slug || "Agent",
+                  store_name: `${slug} Store`,
+                  store_slug: slug,
+                  email: "",
+                  phone: ao.phone || "",
+                  momo_number: ao.phone || "",
+                  momo_network: "MTN",
+                  description: "",
+                  logo_url: "/agent-icon.png",
+                  password_hash: "123456",
+                  theme: "emerald",
+                  wallet_balance: 0,
+                  total_earned: 0,
+                  total_withdrawn: 0,
+                  is_active: true,
+                  registration_paid: true,
+                  custom_prices: {},
+                  cloaked_url: "",
+                  created_at: ao.created_at || new Date().toISOString(),
+                });
+              }
+            }
+          }
+        }
+      } catch {}
+
+      // 8. Scan master orders table for any agent orders or references
+      try {
+        const { data: dbMasterOrders } = await supabaseAdmin
+          .from("orders")
+          .select("source, phone, datamart_response, created_at")
+          .limit(2000);
+        if (Array.isArray(dbMasterOrders)) {
+          for (const ord of dbMasterOrders) {
+            const resp = ord.datamart_response;
+            const agentKey = resp?.agent_id || resp?.store_slug || (ord.source && ord.source.startsWith("agent-") ? ord.source : null);
+            if (agentKey && !deletedAgents.has(String(agentKey).toLowerCase())) {
+              const existing = agentMap.get(agentKey);
+              if (!existing) {
+                const slug = String(agentKey).replace(/^agent-/, "");
+                agentMap.set(agentKey, {
+                  id: String(agentKey),
+                  name: slug || "Agent",
+                  store_name: `${slug} Store`,
+                  store_slug: slug,
+                  email: "",
+                  phone: ord.phone || "",
+                  momo_number: ord.phone || "",
+                  momo_network: "MTN",
+                  description: "",
+                  logo_url: "/agent-icon.png",
+                  password_hash: "123456",
+                  theme: "emerald",
+                  wallet_balance: 0,
+                  total_earned: 0,
+                  total_withdrawn: 0,
+                  is_active: true,
+                  registration_paid: true,
+                  custom_prices: {},
+                  cloaked_url: "",
+                  created_at: ord.created_at || new Date().toISOString(),
+                });
+              }
             }
           }
         }
