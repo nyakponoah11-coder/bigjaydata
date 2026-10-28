@@ -903,6 +903,24 @@ export const db = {
             } catch {}
           }
 
+          // Cleanse revoked / compromised keys
+          if (
+            merged.datamart_api_key &&
+            (merged.datamart_api_key.toLowerCase().includes("jollof") ||
+             merged.datamart_api_key === "production@jollof#data" ||
+             merged.datamart_api_key === "dm_test_sample_key")
+          ) {
+            merged.datamart_api_key = (process.env.DATAMART_API_KEY || "").trim();
+          }
+
+          // Prioritize active environment variables from Vercel
+          if (process.env.DATAMART_API_KEY && !process.env.DATAMART_API_KEY.includes("jollof")) {
+            merged.datamart_api_key = process.env.DATAMART_API_KEY.trim();
+          }
+          if (process.env.DATAMART_API_SECRET) {
+            merged.datamart_api_secret = process.env.DATAMART_API_SECRET.trim();
+          }
+
           // Netflix Configuration
           if (netflixRow?.store_name && String(netflixRow.store_name).startsWith("{")) {
             try {
@@ -1351,7 +1369,7 @@ export const db = {
           if (!globalStore.__bmgh_settings.paystack_public_key && prevPaystackPub && safeUpdates.paystack_public_key === undefined) {
             globalStore.__bmgh_settings.paystack_public_key = prevPaystackPub;
           }
-          if (!globalStore.__bmgh_settings.datamart_api_key && prevDataMartKey && safeUpdates.datamart_api_key === undefined) {
+          if (!globalStore.__bmgh_settings.datamart_api_key && prevDataMartKey && safeUpdates.datamart_api_key === undefined && !prevDataMartKey.includes("jollof")) {
             globalStore.__bmgh_settings.datamart_api_key = prevDataMartKey;
           }
           if (!globalStore.__bmgh_settings.whatsapp_channel_url && prevChan && safeUpdates.whatsapp_channel_url === undefined) {

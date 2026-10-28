@@ -18,27 +18,56 @@ export interface DataMartResult {
 }
 
 // Hardcoded datamart key permanently removed for security
+const REVOKED_DATAMART_KEYS = new Set([
+  "production@jollof#data",
+  "dm_test_sample_key",
+]);
 
-export async function resolveDatamartKeys(): Promise<string[]> {
-  const keys: string[] = [];
-  if (
-    process.env.DATAMART_API_KEY &&
-    process.env.DATAMART_API_KEY !== "dm_test_sample_key"
-  ) {
-    keys.push(process.env.DATAMART_API_KEY.trim());
+export function isRevokedDatamartKey(key?: string | null): boolean {
+  if (!key) return true;
+  const clean = key.trim();
+  if (REVOKED_DATAMART_KEYS.has(clean) || clean.toLowerCase().includes("jollof")) {
+    return true;
   }
+  return false;
+}
+
+export async function getDatamartCredentials(): Promise<{ apiKey: string; apiSecret: string; apiUrl: string }> {
+  const envKey = (process.env.DATAMART_API_KEY || "").trim();
+  const envSecret = (process.env.DATAMART_API_SECRET || "").trim();
+  const envUrl = (process.env.DATAMART_API_URL || "").trim();
+
+  let dbKey = "";
+  let dbSecret = "";
+  let dbUrl = "";
+
   try {
     const settings = await db.getSettings();
-    if (
-      settings?.datamart_api_key &&
-      settings.datamart_api_key !== "dm_test_sample_key" &&
-      !keys.includes(settings.datamart_api_key.trim())
-    ) {
-      keys.push(settings.datamart_api_key.trim());
-    }
+    dbKey = (settings?.datamart_api_key || "").trim();
+    dbSecret = ((settings as any)?.datamart_api_secret || "").trim();
+    dbUrl = (settings?.datamart_api_url || "").trim();
   } catch {}
 
-  return keys;
+  // Active key selection: Prioritize non-revoked environment variable if present, else database setting
+  let apiKey = "";
+  if (envKey && !isRevokedDatamartKey(envKey)) {
+    apiKey = envKey;
+  } else if (dbKey && !isRevokedDatamartKey(dbKey)) {
+    apiKey = dbKey;
+  }
+
+  // Active secret selection: Prioritize environment variable if present, else database setting
+  const apiSecret = envSecret || dbSecret || "";
+
+  // Base URL
+  const apiUrl = resolveDeveloperBaseUrl(envUrl || dbUrl || "https://api.datamartgh.shop/api/developer");
+
+  return { apiKey, apiSecret, apiUrl };
+}
+
+export async function resolveDatamartKeys(): Promise<string[]> {
+  const { apiKey } = await getDatamartCredentials();
+  return apiKey ? [apiKey] : [];
 }
 
 export function getDatamartAuthHeaders(apiKey: string, apiSecret?: string): Record<string, string> {
@@ -50,8 +79,12 @@ export function getDatamartAuthHeaders(apiKey: string, apiSecret?: string): Reco
     "User-Agent": "BundleMartGh/1.0",
     "Accept": "application/json",
   };
-  if (apiSecret) {
-    headers["X-API-Secret"] = apiSecret;
+  const secret = (apiSecret || process.env.DATAMART_API_SECRET || "").trim();
+  if (secret) {
+    headers["X-API-Secret"] = secret;
+    headers["x-api-secret"] = secret;
+    headers["Secret"] = secret;
+    headers["x-secret"] = secret;
   }
   return headers;
 }
@@ -411,23 +444,15 @@ export interface DataMartBalanceResult {
  */
 export async function fetchDataMartBalance(): Promise<DataMartBalanceResult> {
   try {
-    const settings = await db.getSettings();
-    const keys = await resolveDatamartKeys();
-    const apiKey = keys[0] || "";
-    const devBaseUrl = resolveDeveloperBaseUrl(settings.datamart_api_url || process.env.DATAMART_API_URL);
+    const { apiKey, apiSecret, apiUrl } = await getDatamartCredentials();
 
     if (!apiKey) {
       return { success: false, balance: null, currency: "GHS", message: "API key not configured" };
     }
 
-    const res = await fetch(`${devBaseUrl}/balance`, {
+    const res = await fetch(`${apiUrl}/balance`, {
       method: "GET",
-      headers: {
-        "Content-Type": "application/json",
-        "X-API-Key": apiKey,
-        "User-Agent": "BundleMartGh/1.0",
-        "Accept": "application/json",
-      },
+      headers: getDatamartAuthHeaders(apiKey, apiSecret),
       cache: "no-store",
     });
 
@@ -475,10 +500,7 @@ export async function verifyDataMartNumber(phoneNumber: string): Promise<NumberV
   const formattedPhone = formatGhanaPhone(phoneNumber);
 
   try {
-    const settings = await db.getSettings();
-    const keys = await resolveDatamartKeys();
-    const apiKey = keys[0] || "";
-    const devBaseUrl = resolveDeveloperBaseUrl(settings.datamart_api_url || process.env.DATAMART_API_URL);
+    const { apiKey, apiSecret, apiUrl } = await getDatamartCredentials();
 
     if (!apiKey) {
       return {
@@ -490,14 +512,12 @@ export async function verifyDataMartNumber(phoneNumber: string): Promise<NumberV
       };
     }
 
-    const res = await fetch(`${devBaseUrl}/verify-number`, {
+    const headers = getDatamartAuthHeaders(apiKey, apiSecret);
+    headers["Content-Type"] = "application/json";
+
+    const res = await fetch(`${apiUrl}/verify-number`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-API-Key": apiKey,
-        "User-Agent": "BundleMartGh/1.0",
-        "Accept": "application/json",
-      },
+      headers,
       body: JSON.stringify({ phoneNumber: formattedPhone }),
       cache: "no-store",
     });
@@ -876,7 +896,9 @@ export async function syncOrderWithDataMart(order: Order): Promise<Order> {
 
   // 2. Fallback: Query /developer/transactions directly (authoritative purchase records)
   try {
-    const keys = await resolveDatamartKeys();
+    const { apiKey, apiSecret, apiUrl } = await getDatamartCredentials();
+    if (!apiKey) return order;
+
     const rawPhone = String(order.phone || "").replace(/\D/g, "");
     const last9 = rawPhone.length >= 9 ? rawPhone.slice(-9) : rawPhone;
     const orderPhone = last9 ? "0" + last9 : "";
@@ -892,15 +914,15 @@ export async function syncOrderWithDataMart(order: Order): Promise<Order> {
     if (last9 && !searchQueries.includes(last9)) searchQueries.push(last9);
     searchQueries.push("");
 
-    for (const key of keys) {
-      for (const q of searchQueries) {
-        try {
-          const url = `https://api.datamartgh.shop/api/developer/transactions?limit=50${q ? `&search=${encodeURIComponent(q)}` : ""}`;
-          const res = await fetch(url, {
-            headers: getDatamartAuthHeaders(key),
-            signal: AbortSignal.timeout(6000),
-            cache: "no-store",
-          });
+    const headers = getDatamartAuthHeaders(apiKey, apiSecret);
+    for (const q of searchQueries) {
+      try {
+        const url = `${apiUrl}/transactions?limit=50${q ? `&search=${encodeURIComponent(q)}` : ""}`;
+        const res = await fetch(url, {
+          headers,
+          signal: AbortSignal.timeout(6000),
+          cache: "no-store",
+        });
           if (res.ok) {
             const json = await res.json().catch(() => null);
             const items =
@@ -987,7 +1009,6 @@ export async function syncOrderWithDataMart(order: Order): Promise<Order> {
           }
         } catch {}
       }
-    }
   } catch (txErr) {
     console.warn("[DataMart Sync] Transaction search error:", txErr);
   }
@@ -1141,15 +1162,18 @@ export async function fetchDeliveryTracker(): Promise<DeliveryTrackerData> {
     return trackerServerCache.data;
   }
 
-  const settings = await db.getSettings();
-  const keys = await resolveDatamartKeys();
-  const apiKey = keys[0] || "";
+  const { apiKey, apiSecret, apiUrl } = await getDatamartCredentials();
+
+  // If a provider has second secret rules enforced, only call the authenticated developer endpoint when the secret is present.
+  // Otherwise, fallback gracefully to the public delivery status endpoint to prevent DataMart security alerts.
+  const trackerUrl = `${apiUrl}/delivery-tracker`;
+  const canQueryDeveloperTracker = Boolean(apiKey && apiSecret);
 
   try {
     const [trackerRes, statusRes] = await Promise.all([
-      apiKey
-        ? fetch("https://api.datamartgh.shop/api/developer/delivery-tracker", {
-            headers: getDatamartAuthHeaders(apiKey),
+      canQueryDeveloperTracker
+        ? fetch(trackerUrl, {
+            headers: getDatamartAuthHeaders(apiKey, apiSecret),
             signal: AbortSignal.timeout(5000),
             cache: "no-store",
           }).catch(() => null)

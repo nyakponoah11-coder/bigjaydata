@@ -1,15 +1,32 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { requireAdminAuth } from "@/lib/admin-auth";
+import { verifyAdminRequest, requireAdminAuth } from "@/lib/admin-auth";
 
 export const revalidate = 60;
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const settings = await db.getSettings();
     const config = await db.getAgentStoreConfig();
+    const isAdmin = await verifyAdminRequest(request);
 
-    // STRICT WHITELIST: Only expose non-sensitive public frontend metadata.
+    if (isAdmin) {
+      // Authenticated admin: Expose settings for editing in Admin Settings Studio
+      return NextResponse.json({
+        success: true,
+        settings: {
+          ...settings,
+          datamart_api_key: settings.datamart_api_key || process.env.DATAMART_API_KEY || "",
+          datamart_api_secret: (settings as any).datamart_api_secret || process.env.DATAMART_API_SECRET || "",
+          datamart_api_url: settings.datamart_api_url || process.env.DATAMART_API_URL || "https://api.datamartgh.shop/api/developer",
+        },
+        agent_store_enabled: config.is_enabled,
+        registration_fee: config.registration_fee || 0,
+        cached: false,
+      });
+    }
+
+    // STRICT WHITELIST: Only expose non-sensitive public frontend metadata to guests.
     // NEVER expose datamart_api_key, datamart_api_url, paystack_secret_key, AI keys, or SMTP passwords.
     const publicSettings = {
       id: settings.id,
