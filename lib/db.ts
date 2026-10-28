@@ -2477,7 +2477,11 @@ export const db = {
   async getVoucherClaims(): Promise<VoucherClaim[]> {
     if (isSupabaseConfigured && supabaseAdmin) {
       try {
-        const { data, error } = await supabaseAdmin.from("voucher_claims").select("*").order("created_at", { ascending: false });
+        const { data, error } = await supabaseAdmin
+          .from("voucher_claims")
+          .select("id, voucher_id, batch_id, phone, network, amount, created_at")
+          .order("created_at", { ascending: false })
+          .limit(100);
         if (!error && data) return data as VoucherClaim[];
       } catch (err) {
         console.error("Supabase getVoucherClaims error:", err);
@@ -3225,62 +3229,23 @@ export const db = {
     }
 
     if (isSupabaseConfigured && supabaseAdmin) {
-      // 3. Scan all settings rows for any historical agent registries
+      // Dedicated agents table is the primary and official source of truth
       try {
-        const { data: allSettings } = await supabaseAdmin.from("settings").select("*");
-        if (Array.isArray(allSettings)) {
-          for (const s of allSettings) {
-            if (s.announcement_text && typeof s.announcement_text === "string" && s.announcement_text.includes("{")) {
-              try {
-                const parsed = JSON.parse(s.announcement_text);
-                const list = Array.isArray(parsed) ? parsed : [parsed];
-                for (const a of list) {
-                  if (a && (a.store_slug || a.store_name || String(a.id || "").startsWith("agent-"))) {
-                    const key = a.id || a.store_slug;
-                    if (!deletedAgents.has(String(key).toLowerCase())) {
-                      const existing = agentMap.get(key) || Array.from(agentMap.values()).find(
-                        (ex) => (a.email && ex.email && ex.email.toLowerCase() === a.email.toLowerCase()) ||
-                                (a.store_slug && ex.store_slug && ex.store_slug.toLowerCase() === a.store_slug.toLowerCase())
-                      );
-                      const targetId = existing?.id || a.id || ("agent-" + crypto.randomUUID().slice(0, 8));
-                      agentMap.set(targetId, {
-                        ...(existing || {}),
-                        id: targetId,
-                        name: a.name || existing?.name || "Agent",
-                        store_name: a.store_name || existing?.store_name || "Agent Store",
-                        store_slug: a.store_slug || existing?.store_slug || targetId,
-                        email: a.email || existing?.email || "",
-                        phone: a.phone || existing?.phone || "",
-                        momo_number: a.momo_number || existing?.momo_number || a.phone || existing?.phone || "",
-                        momo_network: a.momo_network || existing?.momo_network || "MTN",
-                        description: a.description || existing?.description || "",
-                        logo_url: a.logo_url || existing?.logo_url || "/agent-icon.png",
-                        password_hash: a.password_hash || existing?.password_hash || "123456",
-                        theme: a.theme || existing?.theme || "emerald",
-                        wallet_balance: Math.max(Number(existing?.wallet_balance || 0), Number(a.wallet_balance || 0)),
-                        total_earned: Math.max(Number(existing?.total_earned || 0), Number(a.total_earned || 0)),
-                        total_withdrawn: Math.max(Number(existing?.total_withdrawn || 0), Number(a.total_withdrawn || 0)),
-                        is_active: a.is_active !== false,
-                        registration_paid: true,
-                        custom_prices: { ...(existing?.custom_prices || {}), ...(a.custom_prices || {}) },
-                        cloaked_url: a.cloaked_url || existing?.cloaked_url || "",
-                        created_at: a.created_at || existing?.created_at || new Date().toISOString(),
-                      });
-                    }
-                  }
-                }
-              } catch {}
-            }
-          }
-        }
-      } catch {}
+        const { data: dbAgents } = await supabaseAdmin
+          .from("agents")
+          .select(
+            "id, name, store_name, store_slug, email, phone, momo_number, momo_network, description, logo_url, theme, wallet_balance, total_earned, total_withdrawn, is_active, registration_paid, custom_prices, cloaked_url, created_at"
+          )
+          .limit(300);
 
-      // 4. Dedicated agents table (if exists in Supabase)
-      try {
-        const { data: dbAgents } = await supabaseAdmin.from("agents").select("*");
         if (Array.isArray(dbAgents) && dbAgents.length > 0) {
           for (const a of dbAgents) {
-            if (a && a.id && !deletedAgents.has(a.id.toLowerCase()) && !deletedAgents.has((a.store_slug || "").toLowerCase())) {
+            if (
+              a &&
+              a.id &&
+              !deletedAgents.has(a.id.toLowerCase()) &&
+              !deletedAgents.has((a.store_slug || "").toLowerCase())
+            ) {
               const existing = agentMap.get(a.id);
               agentMap.set(a.id, {
                 ...(existing || {}),
@@ -3308,168 +3273,56 @@ export const db = {
             }
           }
         }
-      } catch {}
+      } catch (err) {
+        console.warn("Supabase agents fetch warning:", err);
+      }
 
-      // 5. Check if any agents were stored in customers table
-      try {
-        const { data: dbCustAgents } = await supabaseAdmin
-          .from("customers")
-          .select("*")
-          .or("role.eq.agent,id.ilike.agent-%,email.ilike.%mabelsiripi%,email.ilike.%agent%");
-        if (Array.isArray(dbCustAgents) && dbCustAgents.length > 0) {
-          for (const ac of dbCustAgents) {
-            if (ac && !deletedAgents.has(ac.id.toLowerCase())) {
-              let existing = agentMap.get(ac.id);
-              if (!existing && ac.email) {
-                existing = Array.from(agentMap.values()).find(
-                  (a) => a.email && a.email.toLowerCase() === ac.email.toLowerCase()
-                );
+      // Fallback only if agentMap is still empty (e.g. fresh installation)
+      if (agentMap.size === 0) {
+        try {
+          const { data: sRow } = await supabaseAdmin
+            .from("settings")
+            .select("announcement_text")
+            .eq("id", "agent_store_registry_config")
+            .maybeSingle();
+          if (sRow?.announcement_text && typeof sRow.announcement_text === "string" && sRow.announcement_text.includes("{")) {
+            try {
+              const parsed = JSON.parse(sRow.announcement_text);
+              const list = Array.isArray(parsed) ? parsed : [parsed];
+              for (const a of list) {
+                if (a && (a.store_slug || a.store_name || String(a.id || "").startsWith("agent-"))) {
+                  const key = a.id || a.store_slug;
+                  if (!deletedAgents.has(String(key).toLowerCase())) {
+                    const targetId = a.id || ("agent-" + crypto.randomUUID().slice(0, 8));
+                    agentMap.set(targetId, {
+                      id: targetId,
+                      name: a.name || "Agent",
+                      store_name: a.store_name || "Agent Store",
+                      store_slug: a.store_slug || targetId,
+                      email: a.email || "",
+                      phone: a.phone || "",
+                      momo_number: a.momo_number || a.phone || "",
+                      momo_network: a.momo_network || "MTN",
+                      description: a.description || "",
+                      logo_url: a.logo_url || "/agent-icon.png",
+                      password_hash: a.password_hash || "123456",
+                      theme: a.theme || "emerald",
+                      wallet_balance: Number(a.wallet_balance || 0),
+                      total_earned: Number(a.total_earned || 0),
+                      total_withdrawn: Number(a.total_withdrawn || 0),
+                      is_active: a.is_active !== false,
+                      registration_paid: true,
+                      custom_prices: a.custom_prices || {},
+                      cloaked_url: a.cloaked_url || "",
+                      created_at: a.created_at || new Date().toISOString(),
+                    });
+                  }
+                }
               }
-              const p = String(ac.phone || "").replace(/[^0-9]/g, "");
-              const slug = ac.store_slug || existing?.store_slug || (ac.name ? ac.name.toLowerCase().replace(/[^a-z0-9]/g, "-") : p) || ac.id;
-              const targetId = existing?.id || ac.id;
-              agentMap.set(targetId, {
-                id: targetId,
-                name: ac.name || existing?.name || "Agent",
-                store_name: ac.store_name || existing?.store_name || (ac.name ? `${ac.name} Store` : "Agent Store"),
-                store_slug: slug,
-                email: ac.email || existing?.email || "",
-                phone: ac.phone || existing?.phone || "",
-                momo_number: ac.momo_number || existing?.momo_number || ac.phone || existing?.phone || "",
-                momo_network: ac.momo_network || existing?.momo_network || "MTN",
-                description: ac.description || existing?.description || "",
-                logo_url: ac.avatar_url || ac.logo_url || existing?.logo_url || "/agent-icon.png",
-                password_hash: ac.password_hash || existing?.password_hash || "123456",
-                theme: ac.theme || existing?.theme || "emerald",
-                wallet_balance: Math.max(Number(existing?.wallet_balance || 0), Number(ac.wallet_balance || 0)),
-                total_earned: Math.max(Number(existing?.total_earned || 0), Number(ac.total_earned || 0)),
-                total_withdrawn: Math.max(Number(existing?.total_withdrawn || 0), Number(ac.total_withdrawn || 0)),
-                is_active: ac.is_active !== false,
-                registration_paid: true,
-                custom_prices: existing?.custom_prices || {},
-                cloaked_url: existing?.cloaked_url || "",
-                created_at: ac.created_at || existing?.created_at || new Date().toISOString(),
-              });
-            }
+            } catch {}
           }
-        }
-      } catch {}
-
-      // 6. Scan agent_withdrawals table for any historical agents
-      try {
-        const { data: dbWithdrawals } = await supabaseAdmin.from("agent_withdrawals").select("*").limit(1000);
-        if (Array.isArray(dbWithdrawals)) {
-          for (const aw of dbWithdrawals) {
-            if (aw.agent_id && !deletedAgents.has(aw.agent_id.toLowerCase())) {
-              const existing = agentMap.get(aw.agent_id);
-              if (!existing) {
-                const slug = String(aw.agent_id).replace(/^agent-/, "");
-                agentMap.set(aw.agent_id, {
-                  id: aw.agent_id,
-                  name: aw.agent_name || slug || "Agent",
-                  store_name: `${slug} Store`,
-                  store_slug: slug,
-                  email: "",
-                  phone: aw.momo_number || "",
-                  momo_number: aw.momo_number || "",
-                  momo_network: aw.momo_network || "MTN",
-                  description: "",
-                  logo_url: "/agent-icon.png",
-                  password_hash: "123456",
-                  theme: "emerald",
-                  wallet_balance: 0,
-                  total_earned: 0,
-                  total_withdrawn: Number(aw.amount || 0),
-                  is_active: true,
-                  registration_paid: true,
-                  custom_prices: {},
-                  cloaked_url: "",
-                  created_at: aw.created_at || new Date().toISOString(),
-                });
-              }
-            }
-          }
-        }
-      } catch {}
-
-      // 7. Scan agent_orders table for any historical agents
-      try {
-        const { data: dbOrders } = await supabaseAdmin.from("agent_orders").select("*").limit(1000);
-        if (Array.isArray(dbOrders)) {
-          for (const ao of dbOrders) {
-            if (ao.agent_id && !deletedAgents.has(ao.agent_id.toLowerCase())) {
-              const existing = agentMap.get(ao.agent_id);
-              if (!existing) {
-                const slug = String(ao.agent_id).replace(/^agent-/, "");
-                agentMap.set(ao.agent_id, {
-                  id: ao.agent_id,
-                  name: slug || "Agent",
-                  store_name: `${slug} Store`,
-                  store_slug: slug,
-                  email: "",
-                  phone: ao.phone || "",
-                  momo_number: ao.phone || "",
-                  momo_network: "MTN",
-                  description: "",
-                  logo_url: "/agent-icon.png",
-                  password_hash: "123456",
-                  theme: "emerald",
-                  wallet_balance: 0,
-                  total_earned: 0,
-                  total_withdrawn: 0,
-                  is_active: true,
-                  registration_paid: true,
-                  custom_prices: {},
-                  cloaked_url: "",
-                  created_at: ao.created_at || new Date().toISOString(),
-                });
-              }
-            }
-          }
-        }
-      } catch {}
-
-      // 8. Scan master orders table for any agent orders or references
-      try {
-        const { data: dbMasterOrders } = await supabaseAdmin
-          .from("orders")
-          .select("source, phone, datamart_response, created_at")
-          .limit(2000);
-        if (Array.isArray(dbMasterOrders)) {
-          for (const ord of dbMasterOrders) {
-            const resp = ord.datamart_response;
-            const agentKey = resp?.agent_id || resp?.store_slug || (ord.source && ord.source.startsWith("agent-") ? ord.source : null);
-            if (agentKey && !deletedAgents.has(String(agentKey).toLowerCase())) {
-              const existing = agentMap.get(agentKey);
-              if (!existing) {
-                const slug = String(agentKey).replace(/^agent-/, "");
-                agentMap.set(agentKey, {
-                  id: String(agentKey),
-                  name: slug || "Agent",
-                  store_name: `${slug} Store`,
-                  store_slug: slug,
-                  email: "",
-                  phone: ord.phone || "",
-                  momo_number: ord.phone || "",
-                  momo_network: "MTN",
-                  description: "",
-                  logo_url: "/agent-icon.png",
-                  password_hash: "123456",
-                  theme: "emerald",
-                  wallet_balance: 0,
-                  total_earned: 0,
-                  total_withdrawn: 0,
-                  is_active: true,
-                  registration_paid: true,
-                  custom_prices: {},
-                  cloaked_url: "",
-                  created_at: ord.created_at || new Date().toISOString(),
-                });
-              }
-            }
-          }
-        }
-      } catch {}
+        } catch {}
+      }
     }
 
     const merged = Array.from(agentMap.values());
@@ -3486,6 +3339,17 @@ export const db = {
       (globalStore.__bmgh_deleted_agents || []).map((a) => a.toLowerCase().trim())
     );
     if (deletedAgents.has(cleanId.toLowerCase())) return null;
+
+    // Fast in-memory check
+    if (globalStore.__bmgh_agents && globalStore.__bmgh_agents.length > 0) {
+      const memAgent = globalStore.__bmgh_agents.find(
+        (a) => a.id === cleanId || a.store_slug.toLowerCase() === cleanId.toLowerCase()
+      );
+      if (memAgent && !includeFinances) {
+        if (!memAgent.logo_url) memAgent.logo_url = "/agent-icon.png";
+        return memAgent;
+      }
+    }
 
     const all = await this.getAgents();
     let found = all.find((a) => a.id === cleanId || a.store_slug.toLowerCase() === cleanId.toLowerCase()) || null;
@@ -3568,8 +3432,49 @@ export const db = {
     );
     if (deletedAgents.has(clean)) return null;
 
+    // 1. Fast in-memory check
+    if (globalStore.__bmgh_agents && globalStore.__bmgh_agents.length > 0) {
+      const foundMem = globalStore.__bmgh_agents.find(
+        (a) => a.store_slug.toLowerCase() === clean || a.id.toLowerCase() === clean
+      );
+      if (foundMem) {
+        if (!foundMem.logo_url) foundMem.logo_url = "/agent-icon.png";
+        return foundMem;
+      }
+    }
+
+    // 2. Direct single-row query to Supabase (saves egress, < 1 KB)
+    if (isSupabaseConfigured && supabaseAdmin) {
+      try {
+        const { data, error } = await supabaseAdmin
+          .from("agents")
+          .select("id, name, store_name, store_slug, email, phone, momo_number, momo_network, description, logo_url, theme, wallet_balance, total_earned, total_withdrawn, is_active, registration_paid, custom_prices, cloaked_url, created_at")
+          .or(`store_slug.ilike.${clean},id.eq.${clean}`)
+          .maybeSingle();
+        if (!error && data) {
+          const agentObj: Agent = {
+            ...data,
+            wallet_balance: Number(data.wallet_balance || 0),
+            total_earned: Number(data.total_earned || 0),
+            total_withdrawn: Number(data.total_withdrawn || 0),
+            logo_url: data.logo_url || "/agent-icon.png",
+          };
+          if (!globalStore.__bmgh_agents) globalStore.__bmgh_agents = [];
+          const existingIdx = globalStore.__bmgh_agents.findIndex((a) => a.id === agentObj.id);
+          if (existingIdx !== -1) {
+            globalStore.__bmgh_agents[existingIdx] = agentObj;
+          } else {
+            globalStore.__bmgh_agents.push(agentObj);
+          }
+          return agentObj;
+        }
+      } catch (err) {
+        console.warn("Direct getAgentBySlug error:", err);
+      }
+    }
+
     const all = await this.getAgents();
-    const found = all.find((a) => a.store_slug.toLowerCase() === clean);
+    const found = all.find((a) => a.store_slug.toLowerCase() === clean || a.id.toLowerCase() === clean);
     if (found) {
       if (!found.logo_url) found.logo_url = "/agent-icon.png";
       return found;
@@ -4939,9 +4844,9 @@ export const db = {
       try {
         let storeQuery = supabaseAdmin
           .from("orders")
-          .select("*")
+          .select("id, reference, network, package_size, phone, amount, paystack_ref, payment_status, delivery_status, status, datamart_response, created_at")
           .order("created_at", { ascending: false })
-          .limit(200);
+          .limit(100);
         if (targetAgentId) {
           storeQuery = storeQuery.or(
             `datamart_response->>agent_id.eq.${targetAgentId},datamart_response->>store_slug.eq.${targetSlug || targetAgentId}${targetSlug ? `,datamart_response->>agent_id.eq.${targetSlug}` : ""}`
@@ -5824,9 +5729,9 @@ export const db = {
       try {
         const { data: dbData } = await supabaseAdmin
           .from("customers")
-          .select("*")
+          .select("id, name, phone, email, wallet_balance, is_active, is_verified, role, created_at")
           .order("created_at", { ascending: false })
-          .limit(5000);
+          .limit(300);
 
         if (Array.isArray(dbData)) {
           for (const raw of dbData) {
@@ -6228,8 +6133,9 @@ export const db = {
       try {
         let query = supabaseAdmin
           .from("customer_transactions")
-          .select("*")
-          .order("created_at", { ascending: false });
+          .select("id, customer_id, amount, type, reference, status, description, created_at")
+          .order("created_at", { ascending: false })
+          .limit(100);
         if (customerId) {
           query = query.eq("customer_id", customerId);
         }

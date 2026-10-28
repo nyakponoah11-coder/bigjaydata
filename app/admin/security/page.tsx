@@ -149,9 +149,11 @@ export default function AdminSecurityPage() {
     fetchData();
     fetchBaileys();
     const interval = setInterval(() => {
-      fetchData();
-      fetchBaileys();
-    }, 10000); // Live poll every 10s
+      if (typeof document !== "undefined" && document.visibilityState === "visible") {
+        fetchData();
+        fetchBaileys();
+      }
+    }, 30000); // Poll every 30s only when active
     return () => clearInterval(interval);
   }, []);
 

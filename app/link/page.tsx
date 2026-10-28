@@ -43,8 +43,11 @@ export default function WhatsAppLinkPage() {
 
   useEffect(() => {
     fetchStatus();
-    // Fast polling every 3s so the moment they scan the QR code with phone, it immediately turns green!
-    const interval = setInterval(fetchStatus, 3000);
+    const interval = setInterval(() => {
+      if (typeof document !== "undefined" && document.visibilityState === "visible") {
+        fetchStatus();
+      }
+    }, 8000);
     return () => clearInterval(interval);
   }, []);
 
