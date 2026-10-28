@@ -5,8 +5,11 @@ import { requireAdminAuth } from "@/lib/admin-auth";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const authError = await requireAdminAuth(request);
+    if (authError) return authError;
+
     const products = await db.getProducts();
     return NextResponse.json({ success: true, products });
   } catch (error: any) {

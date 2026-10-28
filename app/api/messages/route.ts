@@ -1,10 +1,15 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { requireAdminAuth } from "@/lib/admin-auth";
 
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const sessionId = searchParams.get("sessionId") || undefined;
+    if (!sessionId) {
+      const authError = await requireAdminAuth(request);
+      if (authError) return authError;
+    }
     const messages = await db.getMessages(sessionId);
     return NextResponse.json({ success: true, messages });
   } catch (error: any) {
@@ -44,6 +49,9 @@ export async function POST(request: Request) {
 
 export async function PATCH(request: Request) {
   try {
+    const authError = await requireAdminAuth(request);
+    if (authError) return authError;
+
     const body = await request.json();
     const { id, action, reply } = body;
 

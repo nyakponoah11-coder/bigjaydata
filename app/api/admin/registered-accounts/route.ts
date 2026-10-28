@@ -9,14 +9,14 @@ export async function GET(req: Request) {
   const authErr = await requireAdminAuth(req);
   if (authErr) return authErr;
   try {
-    const [customers, orders, transactions] = await Promise.all([
+    const [customers, orders, transactions, agents] = await Promise.all([
       db.getCustomers().catch(() => []),
       db.getOrders().catch(() => []),
       db.getCustomerTransactions().catch(() => []),
+      db.getAgents().catch(() => []),
     ]);
 
-    // Include all customer accounts and cross-sync all registered agents
-    const agents = await db.getAgents().catch(() => []);
+    // Build lookup for reseller agents (for informational cross-reference only, NOT merging into customer list)
     const agentByPhone = new Map<string, any>();
     const agentByEmail = new Map<string, any>();
     for (const ag of agents) {
@@ -25,55 +25,25 @@ export async function GET(req: Request) {
       if (ag.email) agentByEmail.set(ag.email.toLowerCase().trim(), ag);
     }
 
-    const allCustomers: Customer[] = customers.map((c) => {
-      const cleanP = String(c.phone || "").replace(/[^0-9]/g, "");
-      const cleanE = String(c.email || "").toLowerCase().trim();
-      const matchedAgent = agentByPhone.get(cleanP) || (cleanE ? agentByEmail.get(cleanE) : null);
-      if (matchedAgent) {
-        return {
-          ...c,
-          role: "agent",
-          store_name: matchedAgent.store_name,
-          store_slug: matchedAgent.store_slug,
-          wallet_balance: Math.max(Number(c.wallet_balance || 0), Number(matchedAgent.wallet_balance || 0)),
-        } as Customer;
-      }
-      return c;
-    });
-
-    const existingPhones = new Set(allCustomers.map((c) => String(c.phone || "").replace(/[^0-9]/g, "")));
-    for (const ag of agents) {
-      const cleanP = String(ag.phone || "").replace(/[^0-9]/g, "");
-      if (cleanP && !existingPhones.has(cleanP)) {
-        allCustomers.push({
-          id: ag.id,
-          name: ag.name,
-          phone: ag.phone,
-          email: ag.email,
-          password_hash: ag.password_hash || "123456",
-          role: "agent",
-          store_name: ag.store_name,
-          store_slug: ag.store_slug,
-          wallet_balance: Number(ag.wallet_balance || 0),
-          is_active: ag.is_active !== false,
-          is_verified: true,
-          created_at: ag.created_at || new Date().toISOString(),
-        } as unknown as Customer);
-        existingPhones.add(cleanP);
-      }
-    }
-
-    const registeredOnly = allCustomers.filter((c) => isGenuineCustomer(c));
+    // Filter genuine registered customer accounts only
+    // Reseller agents are strictly managed in Agent Store (/admin/agent-store)
+    const genuineCustomers = customers.filter(
+      (c) => isGenuineCustomer(c) && !String(c.id || "").startsWith("agent-")
+    );
 
     // Map order counts and metrics per customer
-    const enrichedCustomers = registeredOnly.map((c) => {
-      const cleanPhone = c.phone.replace(/[^0-9]/g, "");
+    const enrichedCustomers = genuineCustomers.map((c) => {
+      const cleanPhone = c.phone ? c.phone.replace(/[^0-9]/g, "") : "";
+      const cleanEmail = c.email ? c.email.toLowerCase().trim() : "";
+      const matchedAgent = agentByPhone.get(cleanPhone) || (cleanEmail ? agentByEmail.get(cleanEmail) : null);
+
       const customerOrders = orders.filter((o) => {
         if (o.customer_id && o.customer_id === c.id) return true;
         const oPhone = String(o.phone || "").replace(/[^0-9]/g, "");
         return (
-          oPhone === cleanPhone ||
-          (cleanPhone.length >= 9 && oPhone.length >= 9 && oPhone.endsWith(cleanPhone.slice(-9)))
+          cleanPhone &&
+          (oPhone === cleanPhone ||
+            (cleanPhone.length >= 9 && oPhone.length >= 9 && oPhone.endsWith(cleanPhone.slice(-9))))
         );
       });
 
@@ -91,9 +61,10 @@ export async function GET(req: Request) {
 
       return {
         ...safeCustomer,
-        role: (c as any).role || (String(c.id).startsWith("agent-") ? "agent" : "customer"),
-        store_name: (c as any).store_name || "",
-        store_slug: (c as any).store_slug || "",
+        role: "customer",
+        is_also_agent: Boolean(matchedAgent),
+        agent_store_name: matchedAgent?.store_name || undefined,
+        agent_store_slug: matchedAgent?.store_slug || undefined,
         wallet_balance: Number(c.wallet_balance || 0),
         total_orders: customerOrders.length,
         total_deposits: totalDeposits,
@@ -104,8 +75,6 @@ export async function GET(req: Request) {
 
     // Summary stats
     const totalCustomers = enrichedCustomers.length;
-    const totalAgents = enrichedCustomers.filter((c) => (c as any).role === "agent").length;
-    const totalRegular = totalCustomers - totalAgents;
     const activeCustomers = enrichedCustomers.filter((c) => c.is_active).length;
     const suspendedCustomers = totalCustomers - activeCustomers;
     const totalWalletFloat = enrichedCustomers.reduce(
@@ -117,8 +86,8 @@ export async function GET(req: Request) {
       success: true,
       summary: {
         total_customers: totalCustomers,
-        total_regular_customers: totalRegular,
-        total_agents: totalAgents,
+        total_regular_customers: totalCustomers,
+        total_agents: agents.length,
         active_customers: activeCustomers,
         suspended_customers: suspendedCustomers,
         total_wallet_float: Number(totalWalletFloat.toFixed(2)),
@@ -158,26 +127,15 @@ export async function PATCH(req: Request) {
       );
     }
 
-    let customer = await db.getCustomerById(customer_id);
-    let agent: any = await db.getAgentById(customer_id);
-    if (!agent && customer) {
-      const allAgents = await db.getAgents();
-      agent = allAgents.find(
-        (a) =>
-          a.id === customer!.id ||
-          (customer!.email && a.email && a.email.toLowerCase() === customer!.email.toLowerCase()) ||
-          (customer!.phone && a.phone && a.phone.replace(/[^0-9]/g, "").endsWith(customer!.phone.replace(/[^0-9]/g, "").slice(-9)))
-      );
-    }
-
-    if (!customer && !agent) {
+    const customer = await db.getCustomerById(customer_id);
+    if (!customer) {
       return NextResponse.json(
-        { success: false, message: "Account not found." },
+        { success: false, message: "Customer account not found." },
         { status: 404 }
       );
     }
 
-    // Action 1: Adjust Wallet Balance (Admin Top-up or Correction)
+    // Action 1: Adjust Customer Wallet Balance (Admin Top-up or Correction)
     if (action === "adjust_wallet") {
       const numAmount = Number(amount);
       if (isNaN(numAmount) || numAmount === 0) {
@@ -187,27 +145,12 @@ export async function PATCH(req: Request) {
         );
       }
 
-      // If updating an agent account
-      if (agent) {
-        const curBal = Number(agent.wallet_balance || 0);
-        const newBal = Math.max(0, Number((curBal + numAmount).toFixed(2)));
-        await db.updateAgent(agent.id, { wallet_balance: newBal });
-        if (customer) {
-          await db.updateCustomer(customer.id, { wallet_balance: newBal });
-        }
-        return NextResponse.json({
-          success: true,
-          message: `Successfully ${numAmount > 0 ? "credited" : "debited"} GHS ${Math.abs(numAmount).toFixed(2)} ${numAmount > 0 ? "to" : "from"} Agent ${agent.name}'s (${agent.store_name}) wallet.`,
-          new_balance: newBal,
-        });
-      }
-
       const note = reason?.trim() || "Manual Admin Adjustment";
       const ref = `BMGH-ADJ-${Math.floor(100000 + Math.random() * 900000)}`;
 
       if (numAmount > 0) {
         const result = await db.creditCustomerWallet(
-          customer!.id,
+          customer.id,
           numAmount,
           ref,
           "ADMIN_ADJUSTMENT",
@@ -215,20 +158,20 @@ export async function PATCH(req: Request) {
         );
         return NextResponse.json({
           success: true,
-          message: `Successfully credited GHS ${numAmount.toFixed(2)} to ${customer!.name}'s wallet.`,
+          message: `Successfully credited GHS ${numAmount.toFixed(2)} to ${customer.name}'s customer wallet.`,
           new_balance: result.new_balance,
         });
       } else {
         const debitAmount = Math.abs(numAmount);
         const result = await db.debitCustomerWallet(
-          customer!.id,
+          customer.id,
           debitAmount,
           ref,
           `Admin Debit: ${note}`
         );
         return NextResponse.json({
           success: true,
-          message: `Successfully deducted GHS ${debitAmount.toFixed(2)} from ${customer!.name}'s wallet.`,
+          message: `Successfully deducted GHS ${debitAmount.toFixed(2)} from ${customer.name}'s customer wallet.`,
           new_balance: result.new_balance,
         });
       }
@@ -236,17 +179,10 @@ export async function PATCH(req: Request) {
 
     // Action 2: Toggle Account Active/Suspended Status
     if (typeof is_active === "boolean") {
-      if (agent) {
-        await db.updateAgent(agent.id, { is_active });
-        return NextResponse.json({
-          success: true,
-          message: `Agent account ${is_active ? "reactivated" : "suspended"} successfully.`,
-        });
-      }
       const updated = await db.updateCustomer(customer_id, { is_active });
       return NextResponse.json({
         success: true,
-        message: `Account ${is_active ? "reactivated" : "suspended"} successfully.`,
+        message: `Customer account ${is_active ? "reactivated" : "suspended"} successfully.`,
         customer: updated,
       });
     }
@@ -278,23 +214,15 @@ export async function DELETE(req: Request) {
 
     if (!customerId) {
       return NextResponse.json(
-        { success: false, message: "Account ID is required." },
+        { success: false, message: "Customer ID is required." },
         { status: 400 }
       );
     }
 
-    let existing = await db.getCustomerById(customerId);
+    const existing = await db.getCustomerById(customerId);
     if (!existing) {
-      const agent = await db.getAgentById(customerId);
-      if (agent) {
-        await db.deleteAgent(agent.id);
-        return NextResponse.json({
-          success: true,
-          message: `Agent account "${agent.name}" (${agent.store_name}) permanently deleted.`,
-        });
-      }
       return NextResponse.json(
-        { success: false, message: "Account not found." },
+        { success: false, message: "Customer account not found." },
         { status: 404 }
       );
     }
