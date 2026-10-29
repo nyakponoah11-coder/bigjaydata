@@ -272,6 +272,8 @@ CREATE TABLE IF NOT EXISTS public.agent_withdrawals (
     id TEXT PRIMARY KEY,
     agent_id TEXT NOT NULL,
     amount NUMERIC(10, 2) NOT NULL,
+    fee NUMERIC(10, 2) DEFAULT 0.00,
+    net_amount NUMERIC(10, 2),
     momo_number TEXT NOT NULL,
     momo_network TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'pending',
@@ -393,3 +395,5 @@ ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS avatar_url TEXT;
 ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS pending_new_email TEXT;
 ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS email_change_code TEXT;
 ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS email_change_expires_at BIGINT;
+ALTER TABLE public.agent_withdrawals ADD COLUMN IF NOT EXISTS fee NUMERIC(10, 2) DEFAULT 0.00;
+ALTER TABLE public.agent_withdrawals ADD COLUMN IF NOT EXISTS net_amount NUMERIC(10, 2);

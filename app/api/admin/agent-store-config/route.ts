@@ -34,13 +34,25 @@ export async function POST(req: Request) {
     }
 
     if (action === "update_config") {
-      const { is_enabled, developer_master_enabled, admin_enabled, registration_fee, custom_domain } = body;
+      const {
+        is_enabled,
+        developer_master_enabled,
+        admin_enabled,
+        registration_fee,
+        custom_domain,
+        withdrawal_fee_enabled,
+        withdrawal_fee_type,
+        withdrawal_fee_value,
+      } = body;
       const updated = await db.updateAgentStoreConfig({
         is_enabled: is_enabled !== undefined ? Boolean(is_enabled) : undefined,
         developer_master_enabled: developer_master_enabled !== undefined ? Boolean(developer_master_enabled) : undefined,
         admin_enabled: admin_enabled !== undefined ? Boolean(admin_enabled) : undefined,
         registration_fee: registration_fee !== undefined ? Number(registration_fee) : undefined,
         custom_domain: custom_domain !== undefined ? String(custom_domain) : undefined,
+        withdrawal_fee_enabled: withdrawal_fee_enabled !== undefined ? Boolean(withdrawal_fee_enabled) : undefined,
+        withdrawal_fee_type: withdrawal_fee_type !== undefined ? (withdrawal_fee_type === "percent" ? "percent" : "flat") : undefined,
+        withdrawal_fee_value: withdrawal_fee_value !== undefined ? Number(withdrawal_fee_value) : undefined,
       });
       return NextResponse.json({ success: true, message: "Agent store configuration updated.", config: updated });
     }

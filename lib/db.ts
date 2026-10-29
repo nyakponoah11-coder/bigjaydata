@@ -216,6 +216,9 @@ export interface AgentStoreConfig {
   registration_fee: number;
   custom_domain?: string;
   auto_paystack_payout?: boolean;
+  withdrawal_fee_enabled?: boolean;
+  withdrawal_fee_type?: "flat" | "percent";
+  withdrawal_fee_value?: number;
 }
 
 export interface AgentBaseProduct {
@@ -294,6 +297,8 @@ export interface AgentWithdrawal {
   id: string;
   agent_id: string;
   amount: number;
+  fee?: number;
+  net_amount?: number;
   momo_number: string;
   momo_network: string;
   status: "pending" | "completed" | "rejected";
@@ -2482,7 +2487,7 @@ export const db = {
           .select("id, voucher_id, batch_id, phone, network, amount, created_at")
           .order("created_at", { ascending: false })
           .limit(100);
-        if (!error && data) return data as VoucherClaim[];
+        if (!error && data) return data as unknown as VoucherClaim[];
       } catch (err) {
         console.error("Supabase getVoucherClaims error:", err);
       }
@@ -2512,6 +2517,9 @@ export const db = {
           let admin_enabled = true;
           let custom_domain = "";
           let auto_paystack_payout = false;
+          let withdrawal_fee_enabled = true;
+          let withdrawal_fee_type: "flat" | "percent" = "flat";
+          let withdrawal_fee_value = 1.00;
           try {
             if (data.store_name.startsWith("{")) {
               const parsed = JSON.parse(data.store_name);
@@ -2519,6 +2527,9 @@ export const db = {
               admin_enabled = parsed.admin_enabled !== false;
               custom_domain = parsed.custom_domain || "";
               auto_paystack_payout = Boolean(parsed.auto_paystack_payout);
+              withdrawal_fee_enabled = parsed.withdrawal_fee_enabled !== false;
+              withdrawal_fee_type = parsed.withdrawal_fee_type === "percent" ? "percent" : "flat";
+              withdrawal_fee_value = parsed.withdrawal_fee_value !== undefined ? Number(parsed.withdrawal_fee_value) : 1.00;
             } else {
               developer_master_enabled = data.store_name !== "false" && data.store_name !== "0";
               admin_enabled = developer_master_enabled;
@@ -2537,6 +2548,9 @@ export const db = {
             registration_fee,
             custom_domain,
             auto_paystack_payout,
+            withdrawal_fee_enabled,
+            withdrawal_fee_type,
+            withdrawal_fee_value,
           };
           markCacheFresh("agent_config");
           return globalStore.__bmgh_agent_config;
@@ -2551,6 +2565,9 @@ export const db = {
       const devMaster = current.developer_master_enabled !== false;
       const adminEn = current.admin_enabled !== false;
       current.is_enabled = Boolean(devMaster && adminEn);
+      if (current.withdrawal_fee_enabled === undefined) current.withdrawal_fee_enabled = true;
+      if (!current.withdrawal_fee_type) current.withdrawal_fee_type = "flat";
+      if (current.withdrawal_fee_value === undefined) current.withdrawal_fee_value = 1.00;
       return current;
     }
     return {
@@ -2560,6 +2577,9 @@ export const db = {
       registration_fee: 0,
       custom_domain: "fastdata-gh.vercel.app",
       auto_paystack_payout: false,
+      withdrawal_fee_enabled: true,
+      withdrawal_fee_type: "flat",
+      withdrawal_fee_value: 1.00,
     };
   },
 
@@ -2587,6 +2607,19 @@ export const db = {
         ? Boolean(config.auto_paystack_payout)
         : current.auto_paystack_payout ?? false;
 
+    const withdrawal_fee_enabled =
+      config.withdrawal_fee_enabled !== undefined
+        ? Boolean(config.withdrawal_fee_enabled)
+        : current.withdrawal_fee_enabled ?? true;
+
+    const withdrawal_fee_type =
+      config.withdrawal_fee_type === "percent" ? "percent" : (current.withdrawal_fee_type || "flat");
+
+    const withdrawal_fee_value =
+      config.withdrawal_fee_value !== undefined
+        ? Number(config.withdrawal_fee_value)
+        : (current.withdrawal_fee_value !== undefined ? current.withdrawal_fee_value : 1.00);
+
     // If caller specifically set is_enabled directly without specifying master:
     if (config.developer_master_enabled === undefined && config.admin_enabled === undefined && config.is_enabled !== undefined) {
       // Default direct caller to admin_enabled AND developer_master_enabled, respecting master lock
@@ -2607,6 +2640,9 @@ export const db = {
       registration_fee,
       custom_domain,
       auto_paystack_payout,
+      withdrawal_fee_enabled,
+      withdrawal_fee_type,
+      withdrawal_fee_value,
     };
     invalidateDbCache("agent_config");
     saveToDisk();
@@ -2615,7 +2651,15 @@ export const db = {
       try {
         await supabaseAdmin.from("settings").upsert({
           id: "agent_store_config",
-          store_name: JSON.stringify({ developer_master_enabled, admin_enabled, custom_domain, auto_paystack_payout }),
+          store_name: JSON.stringify({
+            developer_master_enabled,
+            admin_enabled,
+            custom_domain,
+            auto_paystack_payout,
+            withdrawal_fee_enabled,
+            withdrawal_fee_type,
+            withdrawal_fee_value,
+          }),
           announcement_text: String(registration_fee),
         });
       } catch (err) {
@@ -3263,7 +3307,7 @@ export const db = {
                 momo_network: a.momo_network || existing?.momo_network || "MTN",
                 description: a.description || existing?.description || "",
                 logo_url: a.logo_url || existing?.logo_url || "/agent-icon.png",
-                password_hash: a.password_hash || existing?.password_hash || "123456",
+                password_hash: (a as any).password_hash || existing?.password_hash || "123456",
                 theme: a.theme || existing?.theme || "emerald",
                 wallet_balance: Math.max(Number(existing?.wallet_balance || 0), Number(a.wallet_balance || 0)),
                 total_earned: Math.max(Number(existing?.total_earned || 0), Number(a.total_earned || 0)),
@@ -3458,6 +3502,7 @@ export const db = {
         if (!error && data) {
           const agentObj: Agent = {
             ...data,
+            password_hash: (data as any).password_hash || "123456",
             wallet_balance: Number(data.wallet_balance || 0),
             total_earned: Number(data.total_earned || 0),
             total_withdrawn: Number(data.total_withdrawn || 0),
@@ -5257,12 +5302,16 @@ export const db = {
               id: w.id,
               agent_id: w.agent_id,
               amount: Number(w.amount),
+              fee: w.fee !== undefined && w.fee !== null ? Number(w.fee) : undefined,
+              net_amount: w.net_amount !== undefined && w.net_amount !== null ? Number(w.net_amount) : undefined,
               momo_number: w.momo_number,
               momo_network: w.momo_network,
               status: w.status,
               verification_code: w.verification_code,
               verified: w.verified !== false,
               note: w.note,
+              paystack_transfer_code: w.paystack_transfer_code,
+              paystack_status: w.paystack_status,
               created_at: w.created_at,
             };
             listMap.set(mapped.id, mapped);
@@ -5323,11 +5372,15 @@ export const db = {
     return finalFullList;
   },
 
-  async createAgentWithdrawal(w: Omit<AgentWithdrawal, "id" | "status" | "verified" | "created_at">): Promise<AgentWithdrawal> {
+  async createAgentWithdrawal(
+    w: Omit<AgentWithdrawal, "id" | "status" | "verified" | "created_at"> & {
+      status?: "pending" | "completed" | "rejected";
+    }
+  ): Promise<AgentWithdrawal> {
     const newWithdrawal: AgentWithdrawal = {
       ...w,
       id: "wd-" + crypto.randomUUID().slice(0, 8),
-      status: "pending",
+      status: w.status || "pending",
       verified: true,
       created_at: new Date().toISOString(),
     };
@@ -5347,12 +5400,13 @@ export const db = {
     if (!globalStore.__bmgh_agent_withdrawals) globalStore.__bmgh_agent_withdrawals = [];
     globalStore.__bmgh_agent_withdrawals.unshift(newWithdrawal);
 
+    invalidateDbCache("agent_withdrawals");
     saveToDisk();
 
     if (isSupabaseConfigured && supabaseAdmin) {
       // 1. Direct agent_withdrawals table
       try {
-        await supabaseAdmin.from("agent_withdrawals").upsert({
+        const payload: any = {
           id: newWithdrawal.id,
           agent_id: newWithdrawal.agent_id,
           amount: newWithdrawal.amount,
@@ -5361,10 +5415,24 @@ export const db = {
           status: newWithdrawal.status,
           verification_code: newWithdrawal.verification_code,
           verified: newWithdrawal.verified,
-          note: newWithdrawal.note,
+          note: newWithdrawal.note || null,
+          paystack_transfer_code: newWithdrawal.paystack_transfer_code || null,
+          paystack_status: newWithdrawal.paystack_status || null,
           created_at: newWithdrawal.created_at,
-        });
-      } catch {}
+        };
+        if (newWithdrawal.fee !== undefined) payload.fee = newWithdrawal.fee;
+        if (newWithdrawal.net_amount !== undefined) payload.net_amount = newWithdrawal.net_amount;
+
+        const { error: upsertErr } = await supabaseAdmin.from("agent_withdrawals").upsert(payload);
+        if (upsertErr) {
+          // If error was due to unknown columns (fee/net_amount), retry without them
+          delete payload.fee;
+          delete payload.net_amount;
+          await supabaseAdmin.from("agent_withdrawals").upsert(payload);
+        }
+      } catch (e) {
+        console.warn("createAgentWithdrawal Supabase insert error:", e);
+      }
 
       // 2. Direct agents table update
       if (agent) {
@@ -5398,7 +5466,7 @@ export const db = {
     id: string,
     status: "pending" | "completed" | "rejected",
     note?: string,
-    extra?: { paystack_transfer_code?: string; paystack_status?: string }
+    extra?: { paystack_transfer_code?: string; paystack_status?: string; fee?: number; net_amount?: number }
   ): Promise<AgentWithdrawal | null> {
     const list = globalStore.__bmgh_agent_withdrawals || [];
     const w = list.find((x) => x.id === id);
@@ -5415,9 +5483,55 @@ export const db = {
     if (note) w.note = note;
     if (extra?.paystack_transfer_code) w.paystack_transfer_code = extra.paystack_transfer_code;
     if (extra?.paystack_status) w.paystack_status = extra.paystack_status;
+    if (extra?.fee !== undefined) w.fee = extra.fee;
+    if (extra?.net_amount !== undefined) w.net_amount = extra.net_amount;
+
+    invalidateDbCache("agent_withdrawals");
     saveToDisk();
 
     if (isSupabaseConfigured && supabaseAdmin) {
+      // 1. DIRECT UPDATE OF agent_withdrawals TABLE IN SUPABASE
+      try {
+        const updatePayload: any = {
+          status: w.status,
+          note: w.note || null,
+          paystack_transfer_code: w.paystack_transfer_code || null,
+          paystack_status: w.paystack_status || null,
+        };
+        if (w.fee !== undefined) updatePayload.fee = w.fee;
+        if (w.net_amount !== undefined) updatePayload.net_amount = w.net_amount;
+
+        const { error: updErr } = await supabaseAdmin
+          .from("agent_withdrawals")
+          .update(updatePayload)
+          .eq("id", id);
+
+        if (updErr) {
+          delete updatePayload.fee;
+          delete updatePayload.net_amount;
+          await supabaseAdmin
+            .from("agent_withdrawals")
+            .update(updatePayload)
+            .eq("id", id);
+        }
+      } catch (err) {
+        console.warn("Direct agent_withdrawals table update error:", err);
+      }
+
+      // 2. Direct agent balance update if rejected
+      if (status === "rejected") {
+        const agent = (globalStore.__bmgh_agents || []).find((a) => a.id === w.agent_id);
+        if (agent) {
+          try {
+            await supabaseAdmin.from("agents").update({
+              wallet_balance: agent.wallet_balance,
+              total_withdrawn: agent.total_withdrawn,
+            }).eq("id", agent.id);
+          } catch {}
+        }
+      }
+
+      // 3. Sync fallback settings registries
       try {
         await Promise.all([
           supabaseAdmin.from("settings").upsert({
@@ -5748,6 +5862,7 @@ export const db = {
             const cust: Customer = {
               ...(existing || {}),
               ...raw,
+              password_hash: (raw as any).password_hash || existing?.password_hash || "",
               wallet_balance: Math.max(Number(existing?.wallet_balance || 0), Number(raw.wallet_balance || 0)),
             };
             accountMap.set(p, cust);

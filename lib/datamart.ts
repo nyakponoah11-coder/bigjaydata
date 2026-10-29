@@ -1281,7 +1281,7 @@ export async function fetchDeliveryTracker(): Promise<DeliveryTrackerData> {
   }
 
   // If DataMart is momentarily unreachable or returned non-200, use dynamic real-time calculations
-  const fallback = generateLiveTrackerFallback(settings);
+  const fallback = generateLiveTrackerFallback();
   trackerServerCache = { data: fallback, ts: Date.now() };
   return fallback;
 }

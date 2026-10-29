@@ -115,17 +115,30 @@ export async function POST(req: Request) {
       withdrawalOtps.delete(agent_id);
       await db.updateAgent(agent_id, { withdrawal_otp: null, withdrawal_otp_expires: null });
 
+      // Calculate withdrawal fee and net payout amount
+      const storeConfig = await db.getAgentStoreConfig();
+      let fee = 0;
+      if (storeConfig.withdrawal_fee_enabled !== false) {
+        const feeVal = Number(storeConfig.withdrawal_fee_value ?? 1.00);
+        if (storeConfig.withdrawal_fee_type === "percent") {
+          fee = Math.round((numAmount * (feeVal / 100)) * 100) / 100;
+        } else {
+          fee = feeVal;
+        }
+        fee = Math.max(0, Math.min(fee, numAmount - 1));
+      }
+      const netAmount = Math.max(1, Number((numAmount - fee).toFixed(2)));
+
       // Create withdrawal and deduct wallet balance
-      let payoutNote = `Payout request for ${numAmount.toFixed(2)} GHS to ${momo_network} ${momo_number}`;
+      let payoutNote = `Payout request: Gross GHS ${numAmount.toFixed(2)} (Fee: GHS ${fee.toFixed(2)}, Net: GHS ${netAmount.toFixed(2)}) to ${momo_network} ${momo_number}`;
       let finalStatus: "pending" | "completed" = "pending";
       let paystackTransferCode: string | undefined = undefined;
 
-      const storeConfig = await db.getAgentStoreConfig();
       const shouldAttemptPaystack = Boolean(storeConfig.auto_paystack_payout || instant_paystack);
 
       if (shouldAttemptPaystack) {
         const transferRes = await disbursePaystackTransfer({
-          amount: numAmount,
+          amount: netAmount,
           recipient_phone: String(momo_number).trim(),
           recipient_name: agent.name || agent.store_name || "Agent",
           network: String(momo_network).trim(),
@@ -144,16 +157,23 @@ export async function POST(req: Request) {
       const withdrawal = await db.createAgentWithdrawal({
         agent_id,
         amount: numAmount,
+        fee,
+        net_amount: netAmount,
         momo_number: String(momo_number).trim(),
         momo_network: String(momo_network).trim(),
         verification_code: cleanCode,
         note: payoutNote,
+        status: finalStatus,
+        paystack_transfer_code: paystackTransferCode,
+        paystack_status: finalStatus === "completed" ? "success" : undefined,
       });
 
       if (finalStatus === "completed") {
         await db.updateWithdrawalStatus(withdrawal.id, "completed", payoutNote, {
           paystack_transfer_code: paystackTransferCode,
           paystack_status: "success",
+          fee,
+          net_amount: netAmount,
         });
         withdrawal.status = "completed";
       }
@@ -166,8 +186,8 @@ export async function POST(req: Request) {
         new_balance: refreshedAgent ? refreshedAgent.wallet_balance : Math.max(0, Number((agent.wallet_balance - numAmount).toFixed(2))),
         paystack_disbursed: finalStatus === "completed",
         message: finalStatus === "completed"
-          ? `Payout of GHS ${numAmount.toFixed(2)} sent directly to your ${momo_network.toUpperCase()} (${momo_number}) via Paystack!`
-          : `Payout request for GHS ${numAmount.toFixed(2)} submitted successfully! (Pending review)`,
+          ? `Payout of GHS ${netAmount.toFixed(2)} (Net after GHS ${fee.toFixed(2)} fee) sent directly to your ${momo_network.toUpperCase()} (${momo_number}) via Paystack!`
+          : `Payout request for GHS ${numAmount.toFixed(2)} (Fee: GHS ${fee.toFixed(2)}, Net: GHS ${netAmount.toFixed(2)}) submitted successfully! (Pending review)`,
       });
     }
 

@@ -417,6 +417,73 @@ export async function POST(request: Request) {
       }
     }
 
+    // =============================================================
+    // PAYSTACK TRANSFER / WITHDRAWAL WEBHOOK EVENTS
+    // =============================================================
+    if (event.event === "transfer.success") {
+      const data = event.data;
+      const transferCode = data?.transfer_code;
+      const reference = data?.reference;
+      const recipientCode = data?.recipient?.recipient_code;
+      const momoPhone = data?.recipient?.details?.account_number;
+
+      console.log(`[Paystack Webhook] Transfer Success: ${transferCode} (Recipient: ${recipientCode || momoPhone})`);
+
+      const allWds = await db.getAgentWithdrawals();
+      const matched = allWds.find(
+        (w) =>
+          (transferCode && w.paystack_transfer_code === transferCode) ||
+          (reference && (w.id === reference || w.paystack_transfer_code === reference)) ||
+          (momoPhone && w.status === "pending" && (w.momo_number === momoPhone || "0" + w.momo_number.replace(/^233/, "") === momoPhone))
+      );
+
+      if (matched) {
+        await db.updateWithdrawalStatus(
+          matched.id,
+          "completed",
+          (matched.note ? matched.note + " | " : "") + `Paystack Transfer Confirmed (${transferCode || "success"})`,
+          {
+            paystack_transfer_code: transferCode || matched.paystack_transfer_code,
+            paystack_status: "success",
+          }
+        );
+        console.log(`[Paystack Webhook] Marked agent withdrawal ${matched.id} as completed.`);
+      }
+
+      return NextResponse.json({ status: "success", message: "Transfer marked completed" });
+    }
+
+    if (event.event === "transfer.failed" || event.event === "transfer.reversed") {
+      const data = event.data;
+      const transferCode = data?.transfer_code;
+      const reference = data?.reference;
+      const reason = data?.reason || data?.gateway_response || "Paystack transfer declined/reversed";
+
+      console.warn(`[Paystack Webhook] Transfer Failed/Reversed: ${transferCode}. Reason: ${reason}`);
+
+      const allWds = await db.getAgentWithdrawals();
+      const matched = allWds.find(
+        (w) =>
+          (transferCode && w.paystack_transfer_code === transferCode) ||
+          (reference && (w.id === reference || w.paystack_transfer_code === reference))
+      );
+
+      if (matched && matched.status !== "rejected") {
+        await db.updateWithdrawalStatus(
+          matched.id,
+          "rejected",
+          `Transfer failed: ${reason} (Refunded to agent wallet)`,
+          {
+            paystack_transfer_code: transferCode || matched.paystack_transfer_code,
+            paystack_status: "failed",
+          }
+        );
+        console.log(`[Paystack Webhook] Marked agent withdrawal ${matched.id} as rejected and refunded agent balance.`);
+      }
+
+      return NextResponse.json({ status: "success", message: "Transfer marked failed & refunded" });
+    }
+
     // Always acknowledge receipt to Paystack
     return NextResponse.json({ status: "success" }, { status: 200 });
   } catch (error: any) {

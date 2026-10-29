@@ -28,15 +28,35 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, message: "Withdrawal request not found" }, { status: 404 });
     }
 
-    let extra: { paystack_transfer_code?: string; paystack_status?: string } | undefined = undefined;
+    let extra: { paystack_transfer_code?: string; paystack_status?: string; fee?: number; net_amount?: number } | undefined = undefined;
     let finalNote = note;
 
     if (pay_with_paystack && status === "completed") {
       const agent = await db.getAgentById(targetWd.agent_id);
       const recipientName = agent?.name || agent?.store_name || "Agent Partner";
+      const storeConfig = await db.getAgentStoreConfig();
+
+      let fee = targetWd.fee;
+      let netPayout = targetWd.net_amount;
+
+      if (netPayout === undefined || netPayout === null) {
+        if (storeConfig.withdrawal_fee_enabled !== false) {
+          const feeVal = Number(storeConfig.withdrawal_fee_value ?? 1.00);
+          if (storeConfig.withdrawal_fee_type === "percent") {
+            fee = Math.round((Number(targetWd.amount) * (feeVal / 100)) * 100) / 100;
+          } else {
+            fee = feeVal;
+          }
+          fee = Math.max(0, Math.min(fee, Number(targetWd.amount) - 1));
+          netPayout = Math.max(1, Number((Number(targetWd.amount) - fee).toFixed(2)));
+        } else {
+          fee = 0;
+          netPayout = Number(targetWd.amount);
+        }
+      }
 
       const transferResult = await disbursePaystackTransfer({
-        amount: targetWd.amount,
+        amount: Number(netPayout),
         recipient_phone: targetWd.momo_number,
         recipient_name: recipientName,
         network: targetWd.momo_network,
@@ -57,8 +77,12 @@ export async function POST(req: Request) {
       extra = {
         paystack_transfer_code: transferResult.transfer_code,
         paystack_status: transferResult.status,
+        fee: Number(fee || 0),
+        net_amount: Number(netPayout),
       };
-      finalNote = (note ? note + " | " : "") + `Paid via Paystack Transfer: ${transferResult.transfer_code || "Success"}`;
+      finalNote =
+        (note ? note + " | " : "") +
+        `Paid via Paystack Transfer: ${transferResult.transfer_code || "Success"} (Gross: GHS ${Number(targetWd.amount).toFixed(2)}, Fee: GHS ${Number(fee || 0).toFixed(2)}, Net Sent: GHS ${Number(netPayout).toFixed(2)})`;
     }
 
     const updated = await db.updateWithdrawalStatus(id, status, finalNote, extra);
@@ -67,7 +91,7 @@ export async function POST(req: Request) {
       success: true,
       withdrawal: updated,
       message: pay_with_paystack
-        ? `Payout of GHS ${Number(targetWd.amount).toFixed(2)} sent via Paystack Transfer!`
+        ? `Payout of GHS ${Number(extra?.net_amount || targetWd.amount).toFixed(2)} sent via Paystack Transfer!`
         : `Withdrawal status updated to ${status}.`,
     });
   } catch (error: any) {

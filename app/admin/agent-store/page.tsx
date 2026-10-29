@@ -38,7 +38,10 @@ export default function AdminAgentStorePage() {
     registration_fee: number;
     developer_master_enabled?: boolean;
     admin_enabled?: boolean;
-  }>({ is_enabled: true, registration_fee: 0 });
+    withdrawal_fee_enabled?: boolean;
+    withdrawal_fee_type?: "flat" | "percent";
+    withdrawal_fee_value?: number;
+  }>({ is_enabled: true, registration_fee: 0, withdrawal_fee_enabled: true, withdrawal_fee_type: "flat", withdrawal_fee_value: 1.00 });
   const [baseProducts, setBaseProducts] = useState<any[]>([]);
   const [agents, setAgents] = useState<any[]>([]);
   const [withdrawals, setWithdrawals] = useState<any[]>([]);
@@ -48,6 +51,10 @@ export default function AdminAgentStorePage() {
 
   // Form states
   const [regFeeInput, setRegFeeInput] = useState<string>("0");
+  const [withdrawalFeeEnabled, setWithdrawalFeeEnabled] = useState(true);
+  const [withdrawalFeeType, setWithdrawalFeeType] = useState<"flat" | "percent">("flat");
+  const [withdrawalFeeValue, setWithdrawalFeeValue] = useState("1.00");
+  const [savingWithdrawalFee, setSavingWithdrawalFee] = useState(false);
   const [updatingConfig, setUpdatingConfig] = useState(false);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
@@ -251,6 +258,11 @@ export default function AdminAgentStorePage() {
       }
       setConfig(data.config || { is_enabled: true, registration_fee: 0 });
       setRegFeeInput(String(data.config?.registration_fee || 0));
+      if (data.config) {
+        setWithdrawalFeeEnabled(data.config.withdrawal_fee_enabled !== false);
+        setWithdrawalFeeType(data.config.withdrawal_fee_type === "percent" ? "percent" : "flat");
+        setWithdrawalFeeValue(String(data.config.withdrawal_fee_value !== undefined ? data.config.withdrawal_fee_value : "1.00"));
+      }
       setBaseProducts(data.baseProducts || []);
       setAgents(data.agents || []);
       setWithdrawals(data.withdrawals || []);
@@ -501,12 +513,65 @@ export default function AdminAgentStorePage() {
     }
   };
 
+  const handleSaveWithdrawalFee = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      setSavingWithdrawalFee(true);
+      setError("");
+      const feeVal = parseFloat(withdrawalFeeValue) || 0;
+      const res = await fetch("/api/admin/agent-store-config", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "update_config",
+          withdrawal_fee_enabled: withdrawalFeeEnabled,
+          withdrawal_fee_type: withdrawalFeeType,
+          withdrawal_fee_value: feeVal,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setConfig(data.config);
+        setNotice(
+          `Withdrawal fee updated: ${withdrawalFeeEnabled ? (withdrawalFeeType === "percent" ? `${feeVal}%` : `GHS ${feeVal.toFixed(2)} flat`) : "Disabled"}`
+        );
+        setTimeout(() => setNotice(""), 4000);
+      } else {
+        throw new Error(data.message || "Failed to save fee settings");
+      }
+    } catch (err: any) {
+      setError(err?.message || "Failed to save withdrawal fee settings");
+    } finally {
+      setSavingWithdrawalFee(false);
+    }
+  };
+
   const handlePaystackPayout = async (id: string) => {
     const target = withdrawals.find((w) => w.id === id);
     if (!target) return;
+
+    const storeFeeVal = Number(config.withdrawal_fee_value ?? 1.00);
+    const calculatedFee =
+      target.fee !== undefined
+        ? Number(target.fee)
+        : config.withdrawal_fee_enabled !== false
+        ? config.withdrawal_fee_type === "percent"
+          ? Math.round(Number(target.amount) * (storeFeeVal / 100) * 100) / 100
+          : storeFeeVal
+        : 0;
+    const netPayout =
+      target.net_amount !== undefined
+        ? Number(target.net_amount)
+        : Math.max(1, Number((Number(target.amount) - calculatedFee).toFixed(2)));
+
     if (
       !confirm(
-        `Are you sure you want to disburse GHS ${Number(target.amount).toFixed(2)} to ${target.momo_network.toUpperCase()} (${target.momo_number}) via live Paystack Transfer?`
+        `Disburse MoMo payout via live Paystack Transfer?\n\n` +
+        `• Agent: ${target.momo_network.toUpperCase()} (${target.momo_number})\n` +
+        `• Gross Amount Requested: GHS ${Number(target.amount).toFixed(2)}\n` +
+        `• Withdrawal Fee: -GHS ${Number(calculatedFee).toFixed(2)}\n` +
+        `• Net Amount Disbursed: GHS ${Number(netPayout).toFixed(2)}\n\n` +
+        `The agent pays the GHS ${Number(calculatedFee).toFixed(2)} fee, covering Paystack's transfer charge so your business account is protected.`
       )
     ) {
       return;
@@ -587,8 +652,8 @@ export default function AdminAgentStorePage() {
           </div>
         )}
 
-        {/* Master Controls: System ON/OFF & Registration Fee */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+        {/* Master Controls: System ON/OFF, Registration Fee & Withdrawal Fee */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
           {/* System ON/OFF Card */}
           <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl relative overflow-hidden space-y-4">
             {config.developer_master_enabled === false && (
@@ -658,16 +723,18 @@ export default function AdminAgentStorePage() {
           </div>
 
           {/* Registration Fee Card */}
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl">
-            <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
-              Agent Onboarding
-            </span>
-            <h3 className="text-lg font-black text-white mt-1">
-              Registration Fee (GHS)
-            </h3>
-            <p className="text-xs text-slate-400 mt-1">
-              Set the one-time signup fee agents must pay via Paystack to open their store. Set to 0 for free registration.
-            </p>
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl flex flex-col justify-between">
+            <div>
+              <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                Agent Onboarding
+              </span>
+              <h3 className="text-lg font-black text-white mt-1">
+                Registration Fee (GHS)
+              </h3>
+              <p className="text-xs text-slate-400 mt-1">
+                One-time signup fee agents must pay via Paystack to open their store. Set to 0 for free.
+              </p>
+            </div>
 
             <form onSubmit={handleSaveFee} className="mt-4 flex items-center gap-3">
               <div className="relative flex-1">
@@ -690,6 +757,66 @@ export default function AdminAgentStorePage() {
                 className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl transition-all shadow-md shrink-0"
               >
                 {updatingConfig ? <Loader2 className="w-4 h-4 animate-spin" /> : "Save Fee"}
+              </button>
+            </form>
+          </div>
+
+          {/* Withdrawal Fee Card */}
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl flex flex-col justify-between">
+            <div>
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                  Agent Payout Fee
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setWithdrawalFeeEnabled(!withdrawalFeeEnabled)}
+                  className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase transition-all ${
+                    withdrawalFeeEnabled
+                      ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
+                      : "bg-slate-800 text-slate-500 border border-slate-700"
+                  }`}
+                >
+                  {withdrawalFeeEnabled ? "Fee Active" : "No Fee"}
+                </button>
+              </div>
+              <h3 className="text-lg font-black text-white mt-1">
+                Withdrawal Fee
+              </h3>
+              <p className="text-xs text-slate-400 mt-1">
+                Deducted from agent payout to cover Paystack&apos;s transfer charge so your business account is never debited.
+              </p>
+            </div>
+
+            <form onSubmit={handleSaveWithdrawalFee} className="mt-4 flex items-center gap-2">
+              <select
+                value={withdrawalFeeType}
+                onChange={(e) => setWithdrawalFeeType(e.target.value as "flat" | "percent")}
+                className="bg-slate-800 border border-slate-700 rounded-xl px-2.5 py-2 text-white font-bold text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500 shrink-0"
+              >
+                <option value="flat">GHS Flat</option>
+                <option value="percent">% Percent</option>
+              </select>
+              <div className="relative flex-1">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 font-bold text-xs">
+                  {withdrawalFeeType === "percent" ? "%" : "GHS"}
+                </span>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={withdrawalFeeValue}
+                  onChange={(e) => setWithdrawalFeeValue(e.target.value)}
+                  className="w-full bg-slate-800 border border-slate-700 rounded-xl pl-11 pr-3 py-2 text-white font-mono font-bold text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  placeholder="1.00"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={savingWithdrawalFee}
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl transition-all shadow-md shrink-0"
+              >
+                {savingWithdrawalFee ? <Loader2 className="w-4 h-4 animate-spin" /> : "Save"}
               </button>
             </form>
           </div>
@@ -1132,14 +1259,23 @@ export default function AdminAgentStorePage() {
         {/* TAB 3: Withdrawal Requests */}
         {activeTab === "withdrawals" && (
           <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-4">
-            <h3 className="text-base font-bold text-white">Agent Withdrawal Requests</h3>
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-base font-bold text-white">Agent Withdrawal Requests</h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Fees are deducted from agent payouts to cover Paystack&apos;s transfer costs, keeping your account balance intact.
+                </p>
+              </div>
+            </div>
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs">
                 <thead>
                   <tr className="border-b border-slate-800 text-slate-400 uppercase text-[10px] font-bold">
                     <th className="py-3 px-4">Date</th>
                     <th className="py-3 px-4">Agent</th>
-                    <th className="py-3 px-4">Amount</th>
+                    <th className="py-3 px-4">Gross Requested</th>
+                    <th className="py-3 px-4">Fee (Deducted)</th>
+                    <th className="py-3 px-4">Net Payout</th>
                     <th className="py-3 px-4">MoMo Details</th>
                     <th className="py-3 px-4">Status</th>
                     <th className="py-3 px-4 text-right">Action</th>
@@ -1148,13 +1284,27 @@ export default function AdminAgentStorePage() {
                 <tbody className="divide-y divide-slate-800/60 font-medium">
                   {withdrawals.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="py-8 text-center text-slate-500">
+                      <td colSpan={8} className="py-8 text-center text-slate-500">
                         No withdrawal requests found.
                       </td>
                     </tr>
                   ) : (
                     withdrawals.map((w) => {
                       const agent = agents.find((a) => a.id === w.agent_id);
+                      const storeFeeVal = Number(config.withdrawal_fee_value ?? 1.00);
+                      const calculatedFee =
+                        w.fee !== undefined
+                          ? Number(w.fee)
+                          : config.withdrawal_fee_enabled !== false
+                          ? config.withdrawal_fee_type === "percent"
+                            ? Math.round(Number(w.amount) * (storeFeeVal / 100) * 100) / 100
+                            : storeFeeVal
+                          : 0;
+                      const netPayout =
+                        w.net_amount !== undefined
+                          ? Number(w.net_amount)
+                          : Math.max(1, Number((Number(w.amount) - calculatedFee).toFixed(2)));
+
                       return (
                         <tr key={w.id} className="hover:bg-slate-800/40 transition-colors">
                           <td className="py-3 px-4 text-slate-400">
@@ -1163,8 +1313,14 @@ export default function AdminAgentStorePage() {
                           <td className="py-3 px-4 font-bold text-white">
                             {agent ? agent.store_name : w.agent_id}
                           </td>
-                          <td className="py-3 px-4 font-mono font-black text-amber-300 text-sm">
+                          <td className="py-3 px-4 font-mono font-bold text-slate-300">
                             GHS {Number(w.amount).toFixed(2)}
+                          </td>
+                          <td className="py-3 px-4 font-mono text-amber-400/90 text-xs">
+                            {calculatedFee > 0 ? `-GHS ${calculatedFee.toFixed(2)}` : "GHS 0.00"}
+                          </td>
+                          <td className="py-3 px-4 font-mono font-black text-emerald-400 text-sm">
+                            GHS {netPayout.toFixed(2)}
                           </td>
                           <td className="py-3 px-4 font-mono">
                             <span className="px-1.5 py-0.5 rounded bg-slate-800 text-[10px] uppercase font-bold mr-1.5">
@@ -1179,7 +1335,7 @@ export default function AdminAgentStorePage() {
                                   ? "bg-emerald-500/20 text-emerald-400"
                                   : w.status === "rejected"
                                   ? "bg-rose-500/20 text-rose-400"
-                                   : "bg-amber-500/20 text-amber-400"
+                                  : "bg-amber-500/20 text-amber-400"
                               }`}
                             >
                               {w.status}

@@ -1439,6 +1439,22 @@ export default function AgentDashboardPage() {
                       className="w-full pl-12 pr-4 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white text-sm font-mono font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500"
                     />
                   </div>
+                  {parseFloat(withdrawAmount) >= 5 && (
+                    <div className="mt-2 p-2.5 rounded-xl bg-slate-800/60 border border-slate-700/50 text-xs space-y-1">
+                      <div className="flex items-center justify-between text-slate-400 text-[11px]">
+                        <span>Gross Requested:</span>
+                        <span className="font-mono text-slate-200">GHS {parseFloat(withdrawAmount).toFixed(2)}</span>
+                      </div>
+                      <div className="flex items-center justify-between text-slate-400 text-[11px]">
+                        <span>Network & Transfer Fee:</span>
+                        <span className="font-mono text-amber-400">-GHS 1.00</span>
+                      </div>
+                      <div className="flex items-center justify-between border-t border-slate-700/60 pt-1 font-bold text-xs">
+                        <span className="text-slate-300">You Will Receive:</span>
+                        <span className="font-mono text-emerald-400">GHS {Math.max(1, parseFloat(withdrawAmount) - 1.00).toFixed(2)}</span>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Network */}
@@ -1531,7 +1547,9 @@ export default function AgentDashboardPage() {
                   <thead>
                     <tr className="border-b border-slate-800 text-slate-400 uppercase text-[10px] font-bold">
                       <th className="py-3 px-3">Date</th>
-                      <th className="py-3 px-3">Amount</th>
+                      <th className="py-3 px-3">Requested</th>
+                      <th className="py-3 px-3">Fee</th>
+                      <th className="py-3 px-3">Net Sent</th>
                       <th className="py-3 px-3">MoMo Destination</th>
                       <th className="py-3 px-3">Status</th>
                     </tr>
@@ -1539,45 +1557,55 @@ export default function AgentDashboardPage() {
                   <tbody className="divide-y divide-slate-800/60 font-medium">
                     {withdrawals.length === 0 ? (
                       <tr>
-                        <td colSpan={4} className="py-8 text-center text-slate-500">
+                        <td colSpan={6} className="py-8 text-center text-slate-500">
                           No withdrawal history found. Minimum withdrawal is GHS 5.00.
                         </td>
                       </tr>
                     ) : (
-                      withdrawals.map((w) => (
-                        <tr key={w.id} className="hover:bg-slate-800/40 transition-colors">
-                          <td className="py-3 px-3 text-slate-400">
-                            {new Date(w.created_at).toLocaleDateString()}
-                          </td>
-                          <td className="py-3 px-3 font-mono font-black text-amber-300">
-                            GHS {Number(w.amount).toFixed(2)}
-                          </td>
-                          <td className="py-3 px-3 font-mono text-slate-300">
-                            <span className="px-1.5 py-0.5 rounded bg-slate-800 text-[10px] uppercase font-bold mr-1">
-                              {w.momo_network}
-                            </span>
-                            {w.momo_number}
-                          </td>
-                          <td className="py-3 px-3">
-                            <span
-                              className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
-                                w.status === "completed"
-                                  ? "bg-emerald-500/20 text-emerald-400"
-                                  : w.status === "rejected"
-                                  ? "bg-rose-500/20 text-rose-400"
-                                  : "bg-amber-500/20 text-amber-400"
-                              }`}
-                            >
-                              {w.status}
-                            </span>
-                            {(w.paystack_transfer_code || (w.note && w.note.includes("Paystack"))) && (
-                              <div className="text-[9px] text-blue-400 font-mono mt-0.5 font-bold flex items-center gap-1">
-                                <span>⚡ Paystack</span>
-                              </div>
-                            )}
-                          </td>
-                        </tr>
-                      ))
+                      withdrawals.map((w) => {
+                        const feeAmt = w.fee !== undefined ? Number(w.fee) : (w.net_amount ? Number(w.amount) - Number(w.net_amount) : 0);
+                        const netAmt = w.net_amount !== undefined ? Number(w.net_amount) : (Number(w.amount) - feeAmt);
+                        return (
+                          <tr key={w.id} className="hover:bg-slate-800/40 transition-colors">
+                            <td className="py-3 px-3 text-slate-400">
+                              {new Date(w.created_at).toLocaleDateString()}
+                            </td>
+                            <td className="py-3 px-3 font-mono font-bold text-slate-300">
+                              GHS {Number(w.amount).toFixed(2)}
+                            </td>
+                            <td className="py-3 px-3 font-mono text-amber-400/90 text-xs">
+                              {feeAmt > 0 ? `-GHS ${feeAmt.toFixed(2)}` : "GHS 0.00"}
+                            </td>
+                            <td className="py-3 px-3 font-mono font-black text-emerald-400">
+                              GHS {netAmt.toFixed(2)}
+                            </td>
+                            <td className="py-3 px-3 font-mono text-slate-300">
+                              <span className="px-1.5 py-0.5 rounded bg-slate-800 text-[10px] uppercase font-bold mr-1">
+                                {w.momo_network}
+                              </span>
+                              {w.momo_number}
+                            </td>
+                            <td className="py-3 px-3">
+                              <span
+                                className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
+                                  w.status === "completed"
+                                    ? "bg-emerald-500/20 text-emerald-400"
+                                    : w.status === "rejected"
+                                    ? "bg-rose-500/20 text-rose-400"
+                                    : "bg-amber-500/20 text-amber-400"
+                                }`}
+                              >
+                                {w.status}
+                              </span>
+                              {(w.paystack_transfer_code || (w.note && w.note.includes("Paystack"))) && (
+                                <div className="text-[9px] text-blue-400 font-mono mt-0.5 font-bold flex items-center gap-1">
+                                  <span>⚡ Paystack</span>
+                                </div>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })
                     )}
                   </tbody>
                 </table>
