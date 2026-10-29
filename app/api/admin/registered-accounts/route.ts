@@ -9,14 +9,15 @@ export async function GET(req: Request) {
   const authErr = await requireAdminAuth(req);
   if (authErr) return authErr;
   try {
-    const [customers, orders, transactions, agents] = await Promise.all([
+    const [customers, orders, agentOrders, transactions, agents] = await Promise.all([
       db.getCustomers().catch(() => []),
       db.getOrders().catch(() => []),
+      db.getAgentOrders().catch(() => []),
       db.getCustomerTransactions().catch(() => []),
       db.getAgents().catch(() => []),
     ]);
 
-    // Build lookup for reseller agents (for informational cross-reference only, NOT merging into customer list)
+    // Build lookup for reseller agents
     const agentByPhone = new Map<string, any>();
     const agentByEmail = new Map<string, any>();
     for (const ag of agents) {
@@ -25,14 +26,13 @@ export async function GET(req: Request) {
       if (ag.email) agentByEmail.set(ag.email.toLowerCase().trim(), ag);
     }
 
-    // Filter genuine registered customer accounts only
-    // Reseller agents are strictly managed in Agent Store (/admin/agent-store)
+    // Filter genuine customer accounts
     const genuineCustomers = customers.filter(
       (c) => isGenuineCustomer(c) && !String(c.id || "").startsWith("agent-")
     );
 
-    // Map order counts and metrics per customer
-    const enrichedCustomers = genuineCustomers.map((c) => {
+    // Map customer accounts
+    const enrichedCustomers: any[] = genuineCustomers.map((c) => {
       const cleanPhone = c.phone ? c.phone.replace(/[^0-9]/g, "") : "";
       const cleanEmail = c.email ? c.email.toLowerCase().trim() : "";
       const matchedAgent = agentByPhone.get(cleanPhone) || (cleanEmail ? agentByEmail.get(cleanEmail) : null);
@@ -56,7 +56,6 @@ export async function GET(req: Request) {
         .filter((t) => t.type === "purchase" && t.status === "success")
         .reduce((sum, t) => sum + Math.abs(Number(t.amount || 0)), 0);
 
-      // Safe customer object without password hash
       const { password_hash, ...safeCustomer } = c;
 
       return {
@@ -73,23 +72,73 @@ export async function GET(req: Request) {
       };
     });
 
-    // Summary stats
-    const totalCustomers = enrichedCustomers.length;
-    const activeCustomers = enrichedCustomers.filter((c) => c.is_active).length;
-    const suspendedCustomers = totalCustomers - activeCustomers;
-    const totalWalletFloat = enrichedCustomers.reduce(
-      (sum, c) => sum + Number(c.wallet_balance || 0),
-      0
+    // Check which agents are not already in customers list and include them with role="agent"
+    const customerPhones = new Set(
+      enrichedCustomers.map((c) => String(c.phone || "").replace(/[^0-9]/g, ""))
     );
+    const customerEmails = new Set(
+      enrichedCustomers.map((c) => String(c.email || "").toLowerCase().trim()).filter(Boolean)
+    );
+
+    for (const ag of agents) {
+      const cleanP = String(ag.phone || "").replace(/[^0-9]/g, "");
+      const cleanE = String(ag.email || "").toLowerCase().trim();
+
+      const alreadyExists =
+        (cleanP && customerPhones.has(cleanP)) || (cleanE && customerEmails.has(cleanE));
+
+      if (!alreadyExists) {
+        const agOrders = agentOrders.filter(
+          (ao) => ao.agent_id === ag.id || ao.agent_id === ag.store_slug
+        );
+
+        enrichedCustomers.push({
+          id: ag.id,
+          name: ag.name,
+          phone: ag.phone,
+          email: ag.email,
+          role: "agent",
+          is_also_agent: false,
+          store_name: ag.store_name,
+          store_slug: ag.store_slug,
+          wallet_balance: Number(ag.wallet_balance || 0),
+          is_active: ag.is_active !== false,
+          created_at: ag.created_at || new Date().toISOString(),
+          total_orders: agOrders.length,
+          total_deposits: 0,
+          total_spent: 0,
+          recent_transactions: [],
+        });
+      }
+    }
+
+    // Summary stats
+    const totalAccounts = enrichedCustomers.length;
+    const totalCustomers = enrichedCustomers.filter((c) => c.role === "customer").length;
+    const totalAgents = enrichedCustomers.filter((c) => c.role === "agent" || c.is_also_agent).length;
+    const activeAccounts = enrichedCustomers.filter((c) => c.is_active).length;
+    const suspendedAccounts = totalAccounts - activeAccounts;
+
+    const customerWalletFloat = enrichedCustomers
+      .filter((c) => c.role === "customer")
+      .reduce((sum, c) => sum + Number(c.wallet_balance || 0), 0);
+
+    const agentWalletFloat = enrichedCustomers
+      .filter((c) => c.role === "agent")
+      .reduce((sum, c) => sum + Number(c.wallet_balance || 0), 0);
+
+    const totalWalletFloat = customerWalletFloat + agentWalletFloat;
 
     return NextResponse.json({
       success: true,
       summary: {
+        total_accounts: totalAccounts,
         total_customers: totalCustomers,
-        total_regular_customers: totalCustomers,
         total_agents: agents.length,
-        active_customers: activeCustomers,
-        suspended_customers: suspendedCustomers,
+        active_accounts: activeAccounts,
+        suspended_accounts: suspendedAccounts,
+        customer_wallet_float: Number(customerWalletFloat.toFixed(2)),
+        agent_wallet_float: Number(agentWalletFloat.toFixed(2)),
         total_wallet_float: Number(totalWalletFloat.toFixed(2)),
       },
       customers: enrichedCustomers,
@@ -122,20 +171,22 @@ export async function PATCH(req: Request) {
 
     if (!customer_id) {
       return NextResponse.json(
-        { success: false, message: "Customer ID is required." },
+        { success: false, message: "Account ID is required." },
         { status: 400 }
       );
     }
 
-    const customer = await db.getCustomerById(customer_id);
-    if (!customer) {
+    let customer = await db.getCustomerById(customer_id);
+    let agent: any = await db.getAgentById(customer_id);
+
+    if (!customer && !agent) {
       return NextResponse.json(
-        { success: false, message: "Customer account not found." },
+        { success: false, message: "Account not found." },
         { status: 404 }
       );
     }
 
-    // Action 1: Adjust Customer Wallet Balance (Admin Top-up or Correction)
+    // Action 1: Adjust Wallet Balance (Admin Top-up or Correction)
     if (action === "adjust_wallet") {
       const numAmount = Number(amount);
       if (isNaN(numAmount) || numAmount === 0) {
@@ -148,9 +199,20 @@ export async function PATCH(req: Request) {
       const note = reason?.trim() || "Manual Admin Adjustment";
       const ref = `BMGH-ADJ-${Math.floor(100000 + Math.random() * 900000)}`;
 
+      if (agent && !customer) {
+        const curBal = Number(agent.wallet_balance || 0);
+        const newBal = Math.max(0, Number((curBal + numAmount).toFixed(2)));
+        await db.updateAgent(agent.id, { wallet_balance: newBal });
+        return NextResponse.json({
+          success: true,
+          message: `Successfully ${numAmount > 0 ? "credited" : "debited"} GHS ${Math.abs(numAmount).toFixed(2)} ${numAmount > 0 ? "to" : "from"} Agent ${agent.name}'s (${agent.store_name}) wallet.`,
+          new_balance: newBal,
+        });
+      }
+
       if (numAmount > 0) {
         const result = await db.creditCustomerWallet(
-          customer.id,
+          customer!.id,
           numAmount,
           ref,
           "ADMIN_ADJUSTMENT",
@@ -158,20 +220,20 @@ export async function PATCH(req: Request) {
         );
         return NextResponse.json({
           success: true,
-          message: `Successfully credited GHS ${numAmount.toFixed(2)} to ${customer.name}'s customer wallet.`,
+          message: `Successfully credited GHS ${numAmount.toFixed(2)} to ${customer!.name}'s customer wallet.`,
           new_balance: result.new_balance,
         });
       } else {
         const debitAmount = Math.abs(numAmount);
         const result = await db.debitCustomerWallet(
-          customer.id,
+          customer!.id,
           debitAmount,
           ref,
           `Admin Debit: ${note}`
         );
         return NextResponse.json({
           success: true,
-          message: `Successfully deducted GHS ${debitAmount.toFixed(2)} from ${customer.name}'s customer wallet.`,
+          message: `Successfully deducted GHS ${debitAmount.toFixed(2)} from ${customer!.name}'s customer wallet.`,
           new_balance: result.new_balance,
         });
       }
@@ -179,11 +241,15 @@ export async function PATCH(req: Request) {
 
     // Action 2: Toggle Account Active/Suspended Status
     if (typeof is_active === "boolean") {
-      const updated = await db.updateCustomer(customer_id, { is_active });
+      if (agent) {
+        await db.updateAgent(agent.id, { is_active });
+      }
+      if (customer) {
+        await db.updateCustomer(customer.id, { is_active });
+      }
       return NextResponse.json({
         success: true,
-        message: `Customer account ${is_active ? "reactivated" : "suspended"} successfully.`,
-        customer: updated,
+        message: `Account ${is_active ? "reactivated" : "suspended"} successfully.`,
       });
     }
 
@@ -214,29 +280,36 @@ export async function DELETE(req: Request) {
 
     if (!customerId) {
       return NextResponse.json(
-        { success: false, message: "Customer ID is required." },
+        { success: false, message: "Account ID is required." },
         { status: 400 }
       );
     }
 
-    const existing = await db.getCustomerById(customerId);
-    if (!existing) {
+    const customer = await db.getCustomerById(customerId);
+    const agent = await db.getAgentById(customerId);
+
+    if (!customer && !agent) {
       return NextResponse.json(
-        { success: false, message: "Customer account not found." },
+        { success: false, message: "Account not found." },
         { status: 404 }
       );
     }
 
-    await db.deleteCustomer(customerId);
+    if (customer) {
+      await db.deleteCustomer(customer.id);
+    }
+    if (agent) {
+      await db.deleteAgent(agent.id);
+    }
 
     return NextResponse.json({
       success: true,
-      message: `Account for ${existing.name || existing.phone} deleted successfully.`,
+      message: `Account deleted successfully.`,
     });
   } catch (error: any) {
     console.error("Admin delete customer error:", error);
     return NextResponse.json(
-      { success: false, message: error?.message || "Failed to delete customer account." },
+      { success: false, message: error?.message || "Failed to delete account." },
       { status: 500 }
     );
   }

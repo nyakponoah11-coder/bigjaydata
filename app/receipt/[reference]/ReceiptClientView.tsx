@@ -95,14 +95,28 @@ export default function ReceiptClientView({ initialOrder, reference, settings, b
     const isDone = currentDs === "delivered" || currentDs === "completed" || currentDs === "refunded" || currentDs === "cancelled";
     if (isDone) return;
 
-    // Immediately trigger a background check, then poll every 3.5 seconds
+    let pollCount = 0;
+    const maxPolls = 25; // Stop automatic polling after ~2 minutes to protect egress
+
+    // Initial check after 1.5s
     const initialTimer = setTimeout(() => {
-      refreshStatus();
-    }, 1000);
+      if (typeof document === "undefined" || document.visibilityState === "visible") {
+        refreshStatus();
+      }
+    }, 1500);
 
     const interval = setInterval(() => {
+      // Only poll when tab is actively visible to the user
+      if (typeof document !== "undefined" && document.visibilityState !== "visible") {
+        return;
+      }
+      pollCount++;
+      if (pollCount > maxPolls) {
+        clearInterval(interval);
+        return;
+      }
       refreshStatus();
-    }, 3500);
+    }, 5000);
 
     return () => {
       clearTimeout(initialTimer);

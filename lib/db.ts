@@ -762,8 +762,8 @@ const CACHE_TTLS = {
   agent_orders: 60 * 1000,               // 60 seconds
   agent_withdrawals: 60 * 1000,          // 60 seconds
   messages: 60 * 1000,                   // 60 seconds
-  customers: 30 * 1000,                  // 30 seconds
-  customer_transactions: 30 * 1000,      // 30 seconds
+  customers: 5 * 60 * 1000,              // 5 minutes (invalidated on updates/actions)
+  customer_transactions: 5 * 60 * 1000,  // 5 minutes (invalidated on transactions)
 };
 
 const memCacheTimestamps: Record<string, number> = ((globalThis as any).__bmgh_cache_ts =
@@ -3201,6 +3201,10 @@ export const db = {
 
   // AGENTS
   async getAgents(): Promise<Agent[]> {
+    if (isCacheFresh("agents", CACHE_TTLS.agents) && Array.isArray(globalStore.__bmgh_agents) && globalStore.__bmgh_agents.length > 0) {
+      return globalStore.__bmgh_agents;
+    }
+
     const deletedAgents = new Set(
       (globalStore.__bmgh_deleted_agents || []).map((a) => a.toLowerCase().trim())
     );
@@ -5727,13 +5731,15 @@ export const db = {
 
     if (isSupabaseConfigured && supabaseAdmin) {
       try {
-        const { data: dbData } = await supabaseAdmin
+        const { data: dbData, error: dbErr } = await supabaseAdmin
           .from("customers")
-          .select("id, name, phone, email, wallet_balance, is_active, is_verified, role, created_at")
+          .select("id, name, phone, email, wallet_balance, is_active, is_verified, provider, created_at, updated_at")
           .order("created_at", { ascending: false })
-          .limit(300);
+          .limit(500);
 
-        if (Array.isArray(dbData)) {
+        if (dbErr) {
+          console.warn("Supabase customers fetch error:", dbErr);
+        } else if (Array.isArray(dbData)) {
           for (const raw of dbData) {
             const p = String(raw.phone || "").replace(/[^0-9]/g, "");
             if (!p) continue;

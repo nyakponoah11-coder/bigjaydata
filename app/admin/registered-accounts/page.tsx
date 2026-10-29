@@ -5,6 +5,8 @@ import AdminLayout from "@/components/AdminLayout";
 import Link from "next/link";
 import {
   Users,
+  UserCheck,
+  Store,
   Wallet,
   Search,
   RefreshCw,
@@ -46,6 +48,8 @@ interface EnrichedCustomer {
   email?: string;
   role?: string;
   is_also_agent?: boolean;
+  store_name?: string;
+  store_slug?: string;
   agent_store_name?: string;
   agent_store_slug?: string;
   wallet_balance: number;
@@ -59,11 +63,15 @@ interface EnrichedCustomer {
 }
 
 interface SummaryData {
+  total_accounts?: number;
   total_customers: number;
-  total_regular_customers?: number;
   total_agents?: number;
-  active_customers: number;
-  suspended_customers: number;
+  active_accounts?: number;
+  active_customers?: number;
+  suspended_accounts?: number;
+  suspended_customers?: number;
+  customer_wallet_float?: number;
+  agent_wallet_float?: number;
   total_wallet_float: number;
 }
 
@@ -72,7 +80,7 @@ export default function AdminRegisteredAccountsPage() {
   const [customers, setCustomers] = useState<EnrichedCustomer[]>([]);
   const [summary, setSummary] = useState<SummaryData | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [roleFilter, setRoleFilter] = useState<"all" | "regular" | "with_agent_store">("all");
+  const [roleFilter, setRoleFilter] = useState<"all" | "customer" | "agent">("all");
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "suspended">("all");
   const [balanceFilter, setBalanceFilter] = useState<"all" | "has_balance" | "zero">("all");
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -264,8 +272,8 @@ export default function AdminRegisteredAccountsPage() {
   // Filter customers
   const filteredCustomers = customers.filter((c) => {
     // Role filter
-    if (roleFilter === "regular" && c.is_also_agent) return false;
-    if (roleFilter === "with_agent_store" && !c.is_also_agent) return false;
+    if (roleFilter === "customer" && c.role !== "customer") return false;
+    if (roleFilter === "agent" && c.role !== "agent" && !c.is_also_agent) return false;
 
     const q = searchQuery.toLowerCase().trim();
     const matchesSearch =
@@ -274,6 +282,8 @@ export default function AdminRegisteredAccountsPage() {
       c.phone.includes(q) ||
       (c.email && c.email.toLowerCase().includes(q)) ||
       c.id.toLowerCase().includes(q) ||
+      (c.store_name && c.store_name.toLowerCase().includes(q)) ||
+      (c.store_slug && c.store_slug.toLowerCase().includes(q)) ||
       (c.agent_store_name && c.agent_store_name.toLowerCase().includes(q)) ||
       (c.agent_store_slug && c.agent_store_slug.toLowerCase().includes(q));
 
@@ -310,10 +320,10 @@ export default function AdminRegisteredAccountsPage() {
               </div>
               <div>
                 <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
-                  Registered Customer Accounts
+                  Registered Accounts & Ledgers
                 </h1>
                 <p className="text-xs text-slate-400">
-                  User accounts with purchasing wallets for ordering data directly on the main store
+                  Manage registered customer accounts, reseller agent stores & wallet balances
                 </p>
               </div>
             </div>
@@ -376,9 +386,9 @@ export default function AdminRegisteredAccountsPage() {
           <div className="flex items-start md:items-center gap-2.5 text-amber-300 font-medium">
             <ShieldCheck className="w-5 h-5 shrink-0 text-amber-400 mt-0.5 md:mt-0" />
             <div>
-              <p className="font-bold text-white">Registered Customer Accounts (Main Store Wallets)</p>
+              <p className="font-bold text-white">Registered Customer Accounts & Reseller Agents</p>
               <p className="text-slate-300 text-[11px] mt-0.5">
-                This page lists <strong>verified registered customer accounts</strong> with login credentials and customer wallets. <strong>Reseller Agents</strong> (who run their own sub-stores with wholesale pricing and payout withdrawals) are separated into the <Link href="/admin/agent-store" className="text-emerald-400 underline font-bold">Agent Store Hub</Link>.
+                Switch between <strong>👤 Customers</strong> (registered shopping wallets) and <strong>🏪 Reseller Agents</strong> (sub-store operators) below. Storefront guest buyers (1,000+) are kept separately in <Link href="/admin/customers" className="text-emerald-400 underline font-bold">Guest Buyer Leads</Link>.
               </p>
             </div>
           </div>
@@ -397,15 +407,45 @@ export default function AdminRegisteredAccountsPage() {
           <div className="p-4 rounded-2xl bg-slate-900/90 border border-slate-800 flex items-center justify-between">
             <div>
               <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
-                Total Customers
+                Total Accounts
               </span>
               <span className="text-2xl font-black text-white font-mono mt-0.5 block">
-                {summary?.total_customers ?? 0}
+                {summary?.total_accounts ?? customers.length}
               </span>
-              <span className="text-[10px] text-slate-500">Sign-up accounts</span>
+              <span className="text-[10px] text-slate-500">Sign-ups & agents</span>
+            </div>
+            <div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 text-purple-400 flex items-center justify-center">
+              <Users className="w-5 h-5" />
+            </div>
+          </div>
+
+          <div className="p-4 rounded-2xl bg-slate-900/90 border border-slate-800 flex items-center justify-between">
+            <div>
+              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
+                Customers
+              </span>
+              <span className="text-2xl font-black text-blue-400 font-mono mt-0.5 block">
+                {summary?.total_customers ?? customers.filter(c => c.role === "customer").length}
+              </span>
+              <span className="text-[10px] text-blue-400/80">Storefront buyers</span>
             </div>
             <div className="w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-400 flex items-center justify-center">
-              <Users className="w-5 h-5" />
+              <UserCheck className="w-5 h-5" />
+            </div>
+          </div>
+
+          <div className="p-4 rounded-2xl bg-slate-900/90 border border-slate-800 flex items-center justify-between">
+            <div>
+              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
+                Reseller Agents
+              </span>
+              <span className="text-2xl font-black text-emerald-400 font-mono mt-0.5 block">
+                {summary?.total_agents ?? customers.filter(c => c.role === "agent" || c.is_also_agent).length}
+              </span>
+              <span className="text-[10px] text-emerald-400/80">Sub-store operators</span>
+            </div>
+            <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center">
+              <Store className="w-5 h-5" />
             </div>
           </div>
 
@@ -415,7 +455,7 @@ export default function AdminRegisteredAccountsPage() {
                 Customer Float
               </span>
               <span className="text-2xl font-black text-amber-400 font-mono mt-0.5 block">
-                GHS {(summary?.total_wallet_float ?? 0).toFixed(2)}
+                GHS {(summary?.customer_wallet_float ?? 0).toFixed(2)}
               </span>
               <span className="text-[10px] text-slate-500">Held in wallets</span>
             </div>
@@ -427,51 +467,57 @@ export default function AdminRegisteredAccountsPage() {
           <div className="p-4 rounded-2xl bg-slate-900/90 border border-slate-800 flex items-center justify-between">
             <div>
               <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
-                Active Users
+                Agent Float
               </span>
-              <span className="text-2xl font-black text-emerald-400 font-mono mt-0.5 block">
-                {summary?.active_customers ?? 0}
+              <span className="text-2xl font-black text-teal-400 font-mono mt-0.5 block">
+                GHS {(summary?.agent_wallet_float ?? 0).toFixed(2)}
               </span>
-              <span className="text-[10px] text-emerald-500/80">Can buy & deposit</span>
+              <span className="text-[10px] text-slate-500">Reseller balances</span>
             </div>
-            <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center">
-              <ShieldCheck className="w-5 h-5" />
-            </div>
-          </div>
-
-          <div className="p-4 rounded-2xl bg-slate-900/90 border border-slate-800 flex items-center justify-between">
-            <div>
-              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
-                Suspended Users
-              </span>
-              <span className="text-2xl font-black text-rose-400 font-mono mt-0.5 block">
-                {summary?.suspended_customers ?? 0}
-              </span>
-              <span className="text-[10px] text-rose-400/80">Blocked from store</span>
-            </div>
-            <div className="w-10 h-10 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 flex items-center justify-center">
-              <ShieldAlert className="w-5 h-5" />
+            <div className="w-10 h-10 rounded-xl bg-teal-500/10 border border-teal-500/20 text-teal-400 flex items-center justify-center">
+              <TrendingUp className="w-5 h-5" />
             </div>
           </div>
+        </div>
 
-          <Link
-            href="/admin/agent-store"
-            className="p-4 rounded-2xl bg-slate-900/90 hover:bg-slate-800/80 border border-emerald-500/30 flex items-center justify-between transition-colors group cursor-pointer"
-            title="Manage Reseller Agents in Agent Store Hub"
+        {/* Quick Filter Navigation Tabs */}
+        <div className="flex items-center gap-2 overflow-x-auto pb-1">
+          <button
+            type="button"
+            onClick={() => setRoleFilter("all")}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shrink-0 ${
+              roleFilter === "all"
+                ? "bg-white text-slate-950 shadow-md font-black"
+                : "bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800"
+            }`}
           >
-            <div>
-              <span className="text-[11px] font-bold text-emerald-400 uppercase tracking-wider block">
-                Reseller Agents
-              </span>
-              <span className="text-2xl font-black text-emerald-400 font-mono mt-0.5 block">
-                {summary?.total_agents ?? 0}
-              </span>
-              <span className="text-[10px] text-emerald-400/80 group-hover:underline">Open Agent Hub →</span>
-            </div>
-            <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center group-hover:scale-105 transition-transform">
-              <ArrowRight className="w-5 h-5" />
-            </div>
-          </Link>
+            <Users className="w-3.5 h-3.5" />
+            <span>All Accounts ({customers.length})</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setRoleFilter("customer")}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shrink-0 ${
+              roleFilter === "customer"
+                ? "bg-blue-500 text-white shadow-md shadow-blue-500/30 font-black"
+                : "bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800"
+            }`}
+          >
+            <UserCheck className="w-3.5 h-3.5" />
+            <span>Customer Accounts ({customers.filter(c => c.role === "customer").length})</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setRoleFilter("agent")}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shrink-0 ${
+              roleFilter === "agent"
+                ? "bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/30 font-black"
+                : "bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800"
+            }`}
+          >
+            <Store className="w-3.5 h-3.5" />
+            <span>Reseller Agents ({customers.filter(c => c.role === "agent" || c.is_also_agent).length})</span>
+          </button>
         </div>
 
         {/* Search & Filter Toolbar */}
@@ -493,9 +539,9 @@ export default function AdminRegisteredAccountsPage() {
               onChange={(e: any) => setRoleFilter(e.target.value)}
               className="bg-slate-950 border border-slate-800 text-xs text-slate-300 rounded-xl px-3 py-2 focus:outline-none focus:ring-1 focus:ring-emerald-500 cursor-pointer font-bold"
             >
-              <option value="all">All Registered Customers ({customers.length})</option>
-              <option value="regular">Standard Customers ({customers.filter(c => !c.is_also_agent).length})</option>
-              <option value="with_agent_store">Also Reseller Agents ({customers.filter(c => c.is_also_agent).length})</option>
+              <option value="all">All Accounts ({customers.length})</option>
+              <option value="customer">Customers Only ({customers.filter(c => c.role === "customer").length})</option>
+              <option value="agent">Reseller Agents ({customers.filter(c => c.role === "agent" || c.is_also_agent).length})</option>
             </select>
 
             <select
@@ -558,27 +604,45 @@ export default function AdminRegisteredAccountsPage() {
                       {/* Customer Name */}
                       <td className="py-3.5 px-4">
                         <div className="flex items-center gap-3">
-                          <div className="w-9 h-9 rounded-xl font-black text-xs flex items-center justify-center shrink-0 shadow-sm bg-gradient-to-br from-amber-400 to-yellow-500 text-slate-950">
-                            {cust.name ? cust.name.charAt(0).toUpperCase() : "U"}
+                          <div
+                            className={`w-9 h-9 rounded-xl font-black text-xs flex items-center justify-center shrink-0 shadow-sm ${
+                              cust.role === "agent"
+                                ? "bg-gradient-to-br from-emerald-500 to-teal-600 text-slate-950"
+                                : "bg-gradient-to-br from-amber-400 to-yellow-500 text-slate-950"
+                            }`}
+                          >
+                            {cust.role === "agent" ? (
+                              <Store className="w-4 h-4 text-slate-950" />
+                            ) : (
+                              cust.name ? cust.name.charAt(0).toUpperCase() : "U"
+                            )}
                           </div>
                           <div>
                             <div className="flex items-center gap-2 flex-wrap">
                               <span className="font-bold text-white block leading-tight text-sm">
                                 {cust.name}
                               </span>
-                              {cust.is_also_agent && (
-                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[10px] font-bold" title="This customer also has a registered reseller agent store">
+                              {cust.role === "agent" ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[10px] font-bold">
                                   <span>🏪 Reseller Agent</span>
-                                  {cust.agent_store_slug && (
+                                  {(cust.store_slug || cust.agent_store_slug) && (
                                     <a
-                                      href={`/${cust.agent_store_slug}`}
+                                      href={`/${cust.store_slug || cust.agent_store_slug}`}
                                       target="_blank"
                                       className="font-mono underline hover:text-emerald-300"
                                       onClick={(e) => e.stopPropagation()}
                                     >
-                                      /{cust.agent_store_slug}
+                                      /{cust.store_slug || cust.agent_store_slug}
                                     </a>
                                   )}
+                                </span>
+                              ) : cust.is_also_agent ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-400 border border-blue-500/30 text-[10px] font-bold">
+                                  <span>👤 Customer + 🏪 Agent</span>
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-400 border border-blue-500/30 text-[10px] font-bold">
+                                  <span>👤 Customer</span>
                                 </span>
                               )}
                             </div>
@@ -586,9 +650,9 @@ export default function AdminRegisteredAccountsPage() {
                               <span className="text-[10px] text-slate-500 font-mono">
                                 ID: {cust.id}
                               </span>
-                              {cust.agent_store_name && (
+                              {(cust.store_name || cust.agent_store_name) && (
                                 <span className="text-[10px] text-emerald-400 font-medium">
-                                  Agent Store: {cust.agent_store_name}
+                                  Store: {cust.store_name || cust.agent_store_name}
                                 </span>
                               )}
                             </div>
@@ -633,7 +697,9 @@ export default function AdminRegisteredAccountsPage() {
                             GHS {cust.wallet_balance.toFixed(2)}
                           </span>
                           <span className="text-[10px] text-slate-500">
-                            Deposited: ₵{(cust.total_deposits || 0).toFixed(0)}
+                            {cust.role === "agent"
+                              ? "Agent Float"
+                              : `Deposited: ₵${(cust.total_deposits || 0).toFixed(0)}`}
                           </span>
                         </div>
                       </td>
