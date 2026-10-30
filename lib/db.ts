@@ -1,6 +1,7 @@
 import { supabaseAdmin, isSupabaseConfigured } from "./supabase";
 import fs from "fs";
 import path from "path";
+import { bigjdb } from "./bigjdb";
 
 import { isMaskedSecret, isValidPaystackSecret } from "./secrets";
 export { isMaskedSecret, isValidPaystackSecret } from "./secrets";
@@ -751,6 +752,59 @@ if (!globalStore.__bmgh_customers) {
 if (!globalStore.__bmgh_customer_transactions) {
   globalStore.__bmgh_customer_transactions = diskData?.customer_transactions || [];
 }
+
+// ================= BIGJDB STUDIO EGRESS SHIELD SYNCHRONIZATION =================
+// Pre-warm BigJDB engine with all disk / memory records to ensure microsecond reads
+try {
+  if (Array.isArray(globalStore.__bmgh_orders) && globalStore.__bmgh_orders.length > 0) {
+    bigjdb.upsert("orders", globalStore.__bmgh_orders);
+  }
+  if (Array.isArray(globalStore.__bmgh_agents) && globalStore.__bmgh_agents.length > 0) {
+    bigjdb.upsert("agents", globalStore.__bmgh_agents);
+  }
+  if (Array.isArray(globalStore.__bmgh_agent_orders) && globalStore.__bmgh_agent_orders.length > 0) {
+    bigjdb.upsert("agent_orders", globalStore.__bmgh_agent_orders);
+  }
+  if (Array.isArray(globalStore.__bmgh_agent_withdrawals) && globalStore.__bmgh_agent_withdrawals.length > 0) {
+    bigjdb.upsert("agent_withdrawals", globalStore.__bmgh_agent_withdrawals);
+  }
+  if (Array.isArray(globalStore.__bmgh_customers) && globalStore.__bmgh_customers.length > 0) {
+    bigjdb.upsert("customers", globalStore.__bmgh_customers);
+  }
+  if (Array.isArray(globalStore.__bmgh_customer_transactions) && globalStore.__bmgh_customer_transactions.length > 0) {
+    bigjdb.upsert("customer_transactions", globalStore.__bmgh_customer_transactions);
+  }
+  if (Array.isArray(globalStore.__bmgh_products) && globalStore.__bmgh_products.length > 0) {
+    bigjdb.upsert("products", globalStore.__bmgh_products);
+  }
+} catch (_) {}
+
+// Two-way bridge: when BigJDB Studio updates or syncs from Supabase, propagate to globalStore & disk
+bigjdb.onTableChange((table, records) => {
+  if (table === "orders") {
+    globalStore.__bmgh_orders = records as any;
+    invalidateDbCache("orders");
+  } else if (table === "agents") {
+    globalStore.__bmgh_agents = records as any;
+    invalidateDbCache("agents");
+  } else if (table === "agent_orders") {
+    globalStore.__bmgh_agent_orders = records as any;
+    invalidateDbCache("agent_orders");
+  } else if (table === "agent_withdrawals") {
+    globalStore.__bmgh_agent_withdrawals = records as any;
+    invalidateDbCache("agent_withdrawals");
+  } else if (table === "customers") {
+    globalStore.__bmgh_customers = records as any;
+    invalidateDbCache("customers");
+  } else if (table === "customer_transactions") {
+    globalStore.__bmgh_customer_transactions = records as any;
+    invalidateDbCache("customer_transactions");
+  } else if (table === "products") {
+    globalStore.__bmgh_products = records as any;
+    invalidateDbCache("products");
+  }
+  saveToDisk();
+});
 
 // ================= HIGH-PERFORMANCE EGRESS PROTECTION & SERVER TTL CACHE =================
 const CACHE_TTLS = {
@@ -1665,6 +1719,24 @@ export const db = {
   },
 
   async getOrderByReference(reference: string): Promise<Order | null> {
+    const cleanRef = reference.trim().toLowerCase();
+    if (!cleanRef) return null;
+
+    // 1. EGRESS SHIELD: Check local memory & BigJDB Studio first (0ms latency, 0 egress)
+    const foundMem = (globalStore.__bmgh_orders || []).find(
+      (o) => o.reference.toLowerCase() === cleanRef
+    );
+    if (foundMem) return normalizeOrder(foundMem);
+
+    const foundBigJ = bigjdb.find<Order>("orders", (o) => String(o.reference ?? "").toLowerCase() === cleanRef);
+    if (foundBigJ) {
+      const normalized = normalizeOrder(foundBigJ);
+      if (!globalStore.__bmgh_orders) globalStore.__bmgh_orders = [];
+      globalStore.__bmgh_orders.unshift(normalized);
+      return normalized;
+    }
+
+    // 2. Fallback to Supabase on local miss (e.g. freshly deployed instance)
     if (isSupabaseConfigured && supabaseAdmin) {
       try {
         const { data, error } = await supabaseAdmin
@@ -1672,21 +1744,38 @@ export const db = {
           .select("*")
           .ilike("reference", reference.trim())
           .maybeSingle();
-        if (!error && data) return normalizeOrder(data as Order);
+        if (!error && data) {
+          const ord = normalizeOrder(data as Order);
+          if (!globalStore.__bmgh_orders) globalStore.__bmgh_orders = [];
+          globalStore.__bmgh_orders.unshift(ord);
+          bigjdb.upsert("orders", ord);
+          return ord;
+        }
       } catch (err) {
         console.error("Supabase getOrderByReference error:", err);
       }
     }
 
-    const found = globalStore.__bmgh_orders!.find(
-      (o) => o.reference.toLowerCase() === reference.trim().toLowerCase()
-    );
-    return found ? normalizeOrder(found) : null;
+    return null;
   },
 
   async getOrderById(id: string): Promise<Order | null> {
     const cleanId = (id || "").trim();
     if (!cleanId) return null;
+
+    // 1. EGRESS SHIELD: Check local memory & BigJDB Studio first
+    const foundMem = (globalStore.__bmgh_orders || []).find((o) => o.id === cleanId);
+    if (foundMem) return normalizeOrder(foundMem);
+
+    const foundBigJ = bigjdb.find<Order>("orders", (o) => String(o.id ?? "") === cleanId);
+    if (foundBigJ) {
+      const normalized = normalizeOrder(foundBigJ);
+      if (!globalStore.__bmgh_orders) globalStore.__bmgh_orders = [];
+      globalStore.__bmgh_orders.unshift(normalized);
+      return normalized;
+    }
+
+    // 2. Fallback to Supabase on local miss
     if (isSupabaseConfigured && supabaseAdmin) {
       try {
         const { data, error } = await supabaseAdmin
@@ -1694,19 +1783,44 @@ export const db = {
           .select("*")
           .eq("id", cleanId)
           .maybeSingle();
-        if (!error && data) return normalizeOrder(data as Order);
+        if (!error && data) {
+          const ord = normalizeOrder(data as Order);
+          if (!globalStore.__bmgh_orders) globalStore.__bmgh_orders = [];
+          globalStore.__bmgh_orders.unshift(ord);
+          bigjdb.upsert("orders", ord);
+          return ord;
+        }
       } catch (err) {
         console.error("Supabase getOrderById error:", err);
       }
     }
 
-    const found = (globalStore.__bmgh_orders || []).find((o) => o.id === cleanId);
-    return found ? normalizeOrder(found) : null;
+    return null;
   },
 
   async getOrdersByPhone(phone: string): Promise<Order[]> {
     const cleanPhone = phone.trim().replace(/\s+/g, "");
     if (!cleanPhone) return [];
+
+    // 1. EGRESS SHIELD: Read from memory if cache is populated
+    const memResults = (globalStore.__bmgh_orders || [])
+      .filter((o) => o.phone.replace(/\s+/g, "").includes(cleanPhone))
+      .map(normalizeOrder);
+
+    if (memResults.length > 0) {
+      return memResults;
+    }
+
+    // Check BigJDB
+    const bigJResults = (bigjdb.loadTable("orders") as Order[])
+      .filter((o) => (o.phone || "").replace(/\s+/g, "").includes(cleanPhone))
+      .map(normalizeOrder);
+
+    if (bigJResults.length > 0) {
+      return bigJResults;
+    }
+
+    // 2. Query Supabase on cache miss
     if (isSupabaseConfigured && supabaseAdmin) {
       try {
         const { data, error } = await supabaseAdmin
@@ -1715,15 +1829,19 @@ export const db = {
           .ilike("phone", `%${cleanPhone}%`)
           .order("created_at", { ascending: false })
           .limit(50);
-        if (!error && data) return (data as Order[]).map(normalizeOrder);
+        if (!error && data) {
+          const normalized = (data as Order[]).map(normalizeOrder);
+          if (normalized.length > 0) {
+            bigjdb.upsert("orders", normalized);
+          }
+          return normalized;
+        }
       } catch (err) {
         console.error("Supabase getOrdersByPhone error:", err);
       }
     }
 
-    return globalStore.__bmgh_orders!
-      .filter((o) => o.phone.includes(cleanPhone))
-      .map(normalizeOrder);
+    return [];
   },
 
   async createOrder(orderData: Omit<Order, "id" | "created_at">): Promise<Order> {
@@ -1792,7 +1910,15 @@ export const db = {
         }
         if (data) {
           const ord = normalizeOrder(data as Order);
-          globalStore.__bmgh_orders = [ord, ...(globalStore.__bmgh_orders || [])];
+          const existingList = globalStore.__bmgh_orders || [];
+          const idx = existingList.findIndex((o) => o.id === ord.id || o.reference.toLowerCase() === ord.reference.toLowerCase());
+          if (idx !== -1) {
+            existingList[idx] = ord;
+          } else {
+            existingList.unshift(ord);
+          }
+          globalStore.__bmgh_orders = existingList;
+          bigjdb.upsert("orders", ord);
           invalidateDbCache("orders");
           saveToDisk();
           return ord;
@@ -1827,6 +1953,7 @@ export const db = {
     });
 
     globalStore.__bmgh_orders!.unshift(newOrder);
+    bigjdb.upsert("orders", newOrder);
     invalidateDbCache("orders");
     saveToDisk();
     return newOrder;
@@ -1939,6 +2066,7 @@ export const db = {
           } else {
             globalStore.__bmgh_orders = [ord, ...(globalStore.__bmgh_orders || [])];
           }
+          bigjdb.upsert("orders", ord);
           invalidateDbCache("orders");
           saveToDisk();
 
@@ -1968,6 +2096,7 @@ export const db = {
     if (options?.netflix_code_fetched_at) order.netflix_code_fetched_at = options.netflix_code_fetched_at;
     if (options?.service_type) order.service_type = options.service_type;
     if (options?.duration_days) order.duration_days = options.duration_days;
+    bigjdb.upsert("orders", order);
     invalidateDbCache("orders");
     saveToDisk();
 
@@ -3480,7 +3609,7 @@ export const db = {
     );
     if (deletedAgents.has(clean)) return null;
 
-    // 1. Fast in-memory check
+    // 1. Fast in-memory check (globalStore & BigJDB Studio - 0 egress)
     if (globalStore.__bmgh_agents && globalStore.__bmgh_agents.length > 0) {
       const foundMem = globalStore.__bmgh_agents.find(
         (a) => a.store_slug.toLowerCase() === clean || a.id.toLowerCase() === clean
@@ -3489,6 +3618,16 @@ export const db = {
         if (!foundMem.logo_url) foundMem.logo_url = "/agent-icon.png";
         return foundMem;
       }
+    }
+
+    const foundBigJ = bigjdb.find<Agent>("agents", (a) => 
+      String(a.store_slug ?? "").toLowerCase() === clean || String(a.id ?? "").toLowerCase() === clean
+    );
+    if (foundBigJ) {
+      if (!foundBigJ.logo_url) foundBigJ.logo_url = "/agent-icon.png";
+      if (!globalStore.__bmgh_agents) globalStore.__bmgh_agents = [];
+      globalStore.__bmgh_agents.push(foundBigJ);
+      return foundBigJ;
     }
 
     // 2. Direct single-row query to Supabase (saves egress, < 1 KB)
@@ -3595,6 +3734,7 @@ export const db = {
 
     if (!globalStore.__bmgh_agents) globalStore.__bmgh_agents = [];
     globalStore.__bmgh_agents.unshift(newAgent);
+    bigjdb.upsert("agents", newAgent);
     invalidateServerCache("agents");
 
     // Initialize custom products with suggested prices from base products
@@ -3677,6 +3817,7 @@ export const db = {
     if (idx === -1) return null;
     agents[idx] = { ...agents[idx], ...updates };
     globalStore.__bmgh_agents = agents;
+    bigjdb.upsert("agents", agents[idx]);
 
     // Keep initialAgents in sync if this is a seeded agent
     const seeded = initialAgents.find(
@@ -3731,6 +3872,9 @@ export const db = {
 
     const filtered = agents.filter((a) => a.id !== targetId && a.store_slug.toLowerCase() !== targetSlug);
     globalStore.__bmgh_agents = filtered;
+    bigjdb.delete("agents", [
+      { field: "id", operator: "eq", value: targetId }
+    ]);
 
     if (!globalStore.__bmgh_deleted_agents) {
       globalStore.__bmgh_deleted_agents = [];
@@ -5018,13 +5162,20 @@ export const db = {
     const cleanRef = (reference || "").trim();
     if (!cleanRef) return null;
 
-    // 1. Check in-memory store first
+    // 1. EGRESS SHIELD: Check in-memory store and BigJDB first (0ms, 0 Supabase egress)
     const memFound = (globalStore.__bmgh_agent_orders || []).find(
       (o) => o.reference?.toLowerCase() === cleanRef.toLowerCase()
     );
     if (memFound) return memFound;
 
-    // 2. Query Supabase directly for this single row with low egress
+    const bigJFound = bigjdb.find<AgentOrder>("agent_orders", (o) => String(o.reference ?? "").toLowerCase() === cleanRef.toLowerCase());
+    if (bigJFound) {
+      if (!globalStore.__bmgh_agent_orders) globalStore.__bmgh_agent_orders = [];
+      globalStore.__bmgh_agent_orders.unshift(bigJFound);
+      return bigJFound;
+    }
+
+    // 2. Query Supabase directly on cache miss
     if (isSupabaseConfigured && supabaseAdmin) {
       try {
         const { data, error } = await supabaseAdmin
@@ -5052,6 +5203,7 @@ export const db = {
           };
           if (!globalStore.__bmgh_agent_orders) globalStore.__bmgh_agent_orders = [];
           globalStore.__bmgh_agent_orders.unshift(mapped);
+          bigjdb.upsert("agent_orders", mapped);
           return mapped;
         }
       } catch (err) {
@@ -5129,6 +5281,10 @@ export const db = {
     // 2. Ensure in-memory cache is populated
     if (!globalStore.__bmgh_agent_orders) globalStore.__bmgh_agent_orders = [];
     globalStore.__bmgh_agent_orders.unshift(newOrder);
+    bigjdb.upsert("agent_orders", newOrder);
+    if (agent) {
+      bigjdb.upsert("agents", agent);
+    }
 
     invalidateDbCache("agents");
     invalidateDbCache("agent_orders");
@@ -5220,6 +5376,7 @@ export const db = {
             ...(typeof response === "object" ? response : { response }),
           };
         }
+        bigjdb.upsert("agent_orders", match);
       }
     }
 
@@ -5399,6 +5556,10 @@ export const db = {
 
     if (!globalStore.__bmgh_agent_withdrawals) globalStore.__bmgh_agent_withdrawals = [];
     globalStore.__bmgh_agent_withdrawals.unshift(newWithdrawal);
+    bigjdb.upsert("agent_withdrawals", newWithdrawal);
+    if (agent) {
+      bigjdb.upsert("agents", agent);
+    }
 
     invalidateDbCache("agent_withdrawals");
     saveToDisk();
@@ -5485,6 +5646,12 @@ export const db = {
     if (extra?.paystack_status) w.paystack_status = extra.paystack_status;
     if (extra?.fee !== undefined) w.fee = extra.fee;
     if (extra?.net_amount !== undefined) w.net_amount = extra.net_amount;
+
+    bigjdb.upsert("agent_withdrawals", w);
+    const agentMatch = (globalStore.__bmgh_agents || []).find((a) => a.id === w.agent_id);
+    if (agentMatch) {
+      bigjdb.upsert("agents", agentMatch);
+    }
 
     invalidateDbCache("agent_withdrawals");
     saveToDisk();
@@ -5883,6 +6050,21 @@ export const db = {
   async getCustomerById(id: string): Promise<Customer | null> {
     const cleanId = String(id).trim();
     if (!cleanId) return null;
+
+    // 1. EGRESS SHIELD: Check local memory & BigJDB first (0ms latency, 0 Supabase egress)
+    const local = globalStore.__bmgh_customers || [];
+    const memFound = local.find((c) => c.id === cleanId);
+    if (memFound) return memFound;
+
+    const bigJFound = bigjdb.find<Customer>("customers", (c) => String(c.id ?? "") === cleanId);
+    if (bigJFound) {
+      const cust: Customer = { ...bigJFound, wallet_balance: Number(bigJFound.wallet_balance || 0) };
+      if (!globalStore.__bmgh_customers) globalStore.__bmgh_customers = [];
+      globalStore.__bmgh_customers.unshift(cust);
+      return cust;
+    }
+
+    // 2. Query Supabase on cache miss
     if (isSupabaseConfigured && supabaseAdmin) {
       try {
         const { data, error } = await supabaseAdmin
@@ -5897,17 +6079,40 @@ export const db = {
             if (idx !== -1) globalStore.__bmgh_customers[idx] = cust;
             else globalStore.__bmgh_customers.unshift(cust);
           }
+          bigjdb.upsert("customers", cust);
           return cust;
         }
       } catch {}
     }
-    const local = globalStore.__bmgh_customers || [];
-    return local.find((c) => c.id === cleanId) || null;
+    return null;
   },
 
   async getCustomerByPhone(phone: string, registeredOnly: boolean = false): Promise<Customer | null> {
     const clean = phone.replace(/[^0-9]/g, "");
     if (!clean) return null;
+
+    // 1. EGRESS SHIELD: Check memory first
+    const local = globalStore.__bmgh_customers || [];
+    const memFound = local.find((c) => {
+      const cPhone = (c.phone || "").replace(/[^0-9]/g, "");
+      const matches = cPhone === clean || (clean.length >= 9 && cPhone.endsWith(clean.slice(-9)));
+      return matches && (!registeredOnly || isGenuineCustomer(c));
+    });
+    if (memFound) return memFound;
+
+    const bigJFound = (bigjdb.loadTable("customers") as Customer[]).find((c) => {
+      const cPhone = (c.phone || "").replace(/[^0-9]/g, "");
+      const matches = cPhone === clean || (clean.length >= 9 && cPhone.endsWith(clean.slice(-9)));
+      return matches && (!registeredOnly || isGenuineCustomer(c));
+    });
+    if (bigJFound) {
+      const cust = { ...bigJFound, wallet_balance: Number(bigJFound.wallet_balance || 0) };
+      if (!globalStore.__bmgh_customers) globalStore.__bmgh_customers = [];
+      globalStore.__bmgh_customers.unshift(cust);
+      return cust;
+    }
+
+    // 2. Query Supabase on cache miss
     if (isSupabaseConfigured && supabaseAdmin) {
       try {
         let query = supabaseAdmin
@@ -5920,15 +6125,20 @@ export const db = {
         const { data, error } = await query.limit(1).maybeSingle();
         if (!error && data) {
           if (!registeredOnly || isGenuineCustomer(data)) {
-            return { ...data, wallet_balance: Number(data.wallet_balance || 0) };
+            const cust: Customer = { ...data, wallet_balance: Number(data.wallet_balance || 0) };
+            if (!globalStore.__bmgh_customers) globalStore.__bmgh_customers = [];
+            globalStore.__bmgh_customers.unshift(cust);
+            bigjdb.upsert("customers", cust);
+            return cust;
           }
         }
       } catch {}
     }
-    const local = await this.getCustomers();
+
+    const allCusts = await this.getCustomers();
     return (
-      local.find((c) => {
-        const cPhone = c.phone.replace(/[^0-9]/g, "");
+      allCusts.find((c) => {
+        const cPhone = (c.phone || "").replace(/[^0-9]/g, "");
         const matches = cPhone === clean || (clean.length >= 9 && cPhone.endsWith(clean.slice(-9)));
         return matches && (!registeredOnly || isGenuineCustomer(c));
       }) || null
@@ -6007,6 +6217,7 @@ export const db = {
 
     if (!globalStore.__bmgh_customers) globalStore.__bmgh_customers = [];
     globalStore.__bmgh_customers.unshift(newCustomer);
+    bigjdb.upsert("customers", newCustomer);
     invalidateServerCache("customers");
     saveToDisk();
 
@@ -6037,6 +6248,7 @@ export const db = {
 
     if (target) {
       Object.assign(target, updates, { updated_at: new Date().toISOString() });
+      bigjdb.upsert("customers", target);
     }
     saveToDisk(true);
 
@@ -6058,10 +6270,12 @@ export const db = {
     invalidateServerCache("customer_transactions");
     if (!globalStore.__bmgh_customers) globalStore.__bmgh_customers = [];
     globalStore.__bmgh_customers = globalStore.__bmgh_customers.filter((c) => c.id !== id);
+    bigjdb.delete("customers", [{ field: "id", operator: "eq", value: id }]);
     if (globalStore.__bmgh_customer_transactions) {
       globalStore.__bmgh_customer_transactions = globalStore.__bmgh_customer_transactions.filter(
         (t) => t.customer_id !== id
       );
+      bigjdb.delete("customer_transactions", [{ field: "customer_id", operator: "eq", value: id }]);
     }
     saveToDisk();
 
@@ -6294,6 +6508,7 @@ export const db = {
 
     if (!globalStore.__bmgh_customer_transactions) globalStore.__bmgh_customer_transactions = [];
     globalStore.__bmgh_customer_transactions.unshift(newTx);
+    bigjdb.upsert("customer_transactions", newTx);
     invalidateServerCache("customer_transactions");
     saveToDisk();
 

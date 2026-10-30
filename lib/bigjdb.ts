@@ -63,13 +63,28 @@ export const CORE_TABLES = [
   "messages",
 ];
 
+export type TableChangeListener = (table: string, records: DbRecord[]) => void;
+
 class BigJDBEngine {
   private inMemoryData: Map<string, DbRecord[]> = new Map();
   private startTime = Date.now();
   private mode: "standalone" | "hybrid" = "standalone";
+  private listeners: TableChangeListener[] = [];
 
   constructor() {
     this.initCoreTables();
+  }
+
+  public onTableChange(fn: TableChangeListener) {
+    this.listeners.push(fn);
+  }
+
+  private notifyChange(table: string, records: DbRecord[]) {
+    for (const fn of this.listeners) {
+      try {
+        fn(table, records);
+      } catch (_) {}
+    }
   }
 
   public initCoreTables() {
@@ -124,6 +139,25 @@ class BigJDBEngine {
       ];
     }
     return [];
+  }
+
+  /**
+   * Fast in-memory single record search by predicate (0ms latency, zero Supabase egress)
+   */
+  public find<T = DbRecord>(table: string, predicate: (record: DbRecord) => boolean): T | null {
+    const records = this.loadTable(table);
+    const found = records.find(predicate);
+    return (found as unknown as T) || null;
+  }
+
+  /**
+   * Fast in-memory single record search by field/value (case-insensitive)
+   */
+  public findOne<T = DbRecord>(table: string, field: string, value: any): T | null {
+    const records = this.loadTable(table);
+    const valStr = String(value ?? "").toLowerCase().trim();
+    const found = records.find((r) => String(r[field] ?? "").toLowerCase().trim() === valStr);
+    return (found as unknown as T) || null;
   }
 
   /**
@@ -239,6 +273,7 @@ class BigJDBEngine {
       inserted.push(newRow);
     }
 
+    this.notifyChange(table, records);
     return { data: inserted, error: null };
   }
 
@@ -264,6 +299,9 @@ class BigJDBEngine {
       }
     }
 
+    if (updated.length > 0) {
+      this.notifyChange(table, records);
+    }
     return { data: updated, error: null };
   }
 
@@ -302,6 +340,7 @@ class BigJDBEngine {
       }
     }
 
+    this.notifyChange(table, records);
     return { data: upserted, error: null };
   }
 
@@ -323,6 +362,7 @@ class BigJDBEngine {
     }
 
     this.inMemoryData.set(table, remaining);
+    this.notifyChange(table, remaining);
     return { data: deleted, error: null };
   }
 
@@ -331,6 +371,7 @@ class BigJDBEngine {
    */
   public clear(table: string): { success: boolean } {
     this.inMemoryData.set(table, []);
+    this.notifyChange(table, []);
     return { success: true };
   }
 
@@ -386,6 +427,7 @@ class BigJDBEngine {
       if (Array.isArray(records)) {
         this.inMemoryData.set(tableName, records);
         tablesRestored.push(tableName);
+        this.notifyChange(tableName, records);
       }
     }
     return { success: true, tablesRestored };
@@ -411,6 +453,7 @@ class BigJDBEngine {
         if (!error && Array.isArray(data)) {
           this.inMemoryData.set(table, data);
           synced[table] = data.length;
+          this.notifyChange(table, data);
         }
       } catch (err: any) {
         console.warn(`[BigJDB Sync] Table ${table} fetch notice:`, err.message);
