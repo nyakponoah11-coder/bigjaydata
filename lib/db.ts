@@ -4266,6 +4266,46 @@ export const db = {
           }
         }
       } catch {}
+
+      // 5. Scan agent_orders
+      sources.push("agent_orders");
+      try {
+        const { data: aoList } = await supabaseAdmin.from("agent_orders").select("*").limit(2000);
+        if (Array.isArray(aoList)) {
+          for (const ao of aoList) {
+            if (ao.agent_id && !agentMap.has(ao.agent_id)) {
+              const slug = String(ao.agent_id).replace(/^agent-/, "");
+              if (!agentMap.has(slug.toLowerCase())) {
+                const targetId = String(ao.agent_id).startsWith("agent-") ? ao.agent_id : `agent-${slug}`;
+                const newAg: Agent = {
+                  id: targetId,
+                  name: (ao as any).agent_name || slug || "Agent",
+                  store_name: `${slug} Store`,
+                  store_slug: slug,
+                  email: "",
+                  phone: (ao as any).agent_phone || (ao as any).momo_number || "",
+                  momo_number: (ao as any).agent_phone || (ao as any).momo_number || "",
+                  momo_network: "MTN",
+                  description: "",
+                  logo_url: "/agent-icon.png",
+                  password_hash: "123456",
+                  theme: "emerald",
+                  wallet_balance: 0,
+                  total_earned: Number(ao.agent_profit || 0),
+                  total_withdrawn: 0,
+                  is_active: true,
+                  registration_paid: true,
+                  custom_prices: {},
+                  cloaked_url: "",
+                  created_at: ao.created_at || new Date().toISOString(),
+                };
+                agentMap.set(newAg.id, newAg);
+                agentMap.set(slug.toLowerCase(), newAg);
+              }
+            }
+          }
+        }
+      } catch {}
     }
 
     // Deduplicate by unique agent ID
@@ -4273,20 +4313,61 @@ export const db = {
       .map((id) => agentMap.get(id)!)
       .filter(Boolean);
 
+    for (const a of uniqueAgents) {
+      bigjdb.upsert("agents", a);
+    }
+
     globalStore.__bmgh_agents = uniqueAgents;
     saveToDisk();
 
     if (isSupabaseConfigured && supabaseAdmin) {
+      const sb = supabaseAdmin;
       try {
-        await supabaseAdmin.from("settings").upsert({
-          id: "agents_registry_config",
-          store_name: "AgentsRegistry",
-          support_phone: "+233551234567",
-          whatsapp_number: "233551234567",
-          email: "support@bundlemartgh.com",
-          announcement_text: JSON.stringify(uniqueAgents),
-        });
-      } catch {}
+        await Promise.all([
+          sb.from("settings").upsert({
+            id: "agents_registry_config",
+            store_name: "AgentsRegistry",
+            support_phone: "+233551234567",
+            whatsapp_number: "233551234567",
+            email: "support@bundlemartgh.com",
+            announcement_text: JSON.stringify(uniqueAgents),
+          }),
+          sb.from("settings").upsert({
+            id: "agent_store_registry_config",
+            store_name: "AgentsRegistry",
+            support_phone: "+233551234567",
+            whatsapp_number: "233551234567",
+            email: "support@bundlemartgh.com",
+            announcement_text: JSON.stringify(uniqueAgents),
+          }),
+          ...uniqueAgents.map((ag) =>
+            sb.from("agents").upsert({
+              id: ag.id,
+              name: ag.name,
+              store_name: ag.store_name,
+              store_slug: ag.store_slug,
+              email: ag.email,
+              phone: ag.phone,
+              momo_number: ag.momo_number,
+              momo_network: ag.momo_network,
+              description: ag.description,
+              logo_url: ag.logo_url,
+              password_hash: ag.password_hash,
+              theme: ag.theme,
+              wallet_balance: ag.wallet_balance || 0,
+              total_earned: ag.total_earned || 0,
+              total_withdrawn: ag.total_withdrawn || 0,
+              is_active: ag.is_active !== false,
+              registration_paid: ag.registration_paid !== false,
+              custom_prices: ag.custom_prices || {},
+              cloaked_url: ag.cloaked_url || "",
+              created_at: ag.created_at,
+            })
+          ),
+        ]);
+      } catch (err) {
+        console.warn("Supabase recovery persistence warning:", err);
+      }
     }
 
     const newlyRecovered = uniqueAgents.filter((m) => !existing.some((e) => e.id === m.id));
