@@ -118,12 +118,23 @@ export async function POST(req: Request) {
 
     // Find agent by email, phone, or store slug
     const agents = await db.getAgents();
-    const agent = agents.find(
+    let agent = agents.find(
       (a) =>
-        a.email.toLowerCase() === cleanInput ||
-        a.phone.replace(/[^0-9]/g, "") === cleanInput.replace(/[^0-9]/g, "") ||
-        a.store_slug === cleanInput
+        (a.email || "").toLowerCase() === cleanInput ||
+        (a.phone || "").replace(/[^0-9]/g, "") === cleanInput.replace(/[^0-9]/g, "") ||
+        (a.store_slug || "").toLowerCase() === cleanInput
     );
+
+    if (!agent) {
+      if (cleanInput.includes("@")) {
+        agent = (await db.getAgentByEmail(cleanInput)) || undefined;
+      } else if (cleanInput.replace(/[^0-9]/g, "").length >= 9) {
+        agent = (await db.getAgentByPhone(cleanInput)) || undefined;
+      }
+      if (!agent) {
+        agent = (await db.getAgentBySlug(cleanInput)) || undefined;
+      }
+    }
 
     if (!agent) {
       return NextResponse.json(

@@ -3405,15 +3405,42 @@ export const db = {
       }
     }
 
+    // 3. Local-First BigJDB Studio persistent cache
+    try {
+      const bigjAgents = bigjdb.loadTable("agents") as unknown as Agent[];
+      if (Array.isArray(bigjAgents)) {
+        for (const a of bigjAgents) {
+          if (a && a.id && !deletedAgents.has(a.id.toLowerCase()) && !deletedAgents.has((a.store_slug || "").toLowerCase())) {
+            const existing = agentMap.get(a.id);
+            agentMap.set(a.id, {
+              ...(existing || {}),
+              ...a,
+              id: a.id,
+              name: a.name || existing?.name || "Agent",
+              store_name: a.store_name || existing?.store_name || "Agent Store",
+              store_slug: a.store_slug || existing?.store_slug || a.id,
+              email: a.email || existing?.email || "",
+              phone: a.phone || existing?.phone || "",
+              password_hash: a.password_hash || existing?.password_hash || "123456",
+              wallet_balance: Math.max(Number(existing?.wallet_balance || 0), Number(a.wallet_balance || 0)),
+              total_earned: Math.max(Number(existing?.total_earned || 0), Number(a.total_earned || 0)),
+              total_withdrawn: Math.max(Number(existing?.total_withdrawn || 0), Number(a.total_withdrawn || 0)),
+            } as Agent);
+          }
+        }
+      }
+    } catch {}
+
+    // 4. Primary & Secondary Cloud Sync (Supabase agents table + settings fallback)
     if (isSupabaseConfigured && supabaseAdmin) {
-      // Dedicated agents table is the primary and official source of truth
+      // Dedicated agents table is the primary source of truth
       try {
-        const { data: dbAgents } = await supabaseAdmin
+        const { data: dbAgents, error: agentsErr } = await supabaseAdmin
           .from("agents")
           .select(
             "id, name, store_name, store_slug, email, phone, momo_number, momo_network, description, logo_url, password_hash, theme, wallet_balance, total_earned, total_withdrawn, is_active, registration_paid, custom_prices, cloaked_url, created_at"
           )
-          .limit(300);
+          .limit(500);
 
         if (Array.isArray(dbAgents) && dbAgents.length > 0) {
           for (const a of dbAgents) {
@@ -3454,59 +3481,72 @@ export const db = {
         console.warn("Supabase agents fetch warning:", err);
       }
 
-      // Fallback only if agentMap is still empty (e.g. fresh installation)
-      if (agentMap.size === 0) {
-        try {
-          const { data: sRow } = await supabaseAdmin
-            .from("settings")
-            .select("announcement_text")
-            .eq("id", "agent_store_registry_config")
-            .maybeSingle();
-          if (sRow?.announcement_text && typeof sRow.announcement_text === "string" && sRow.announcement_text.includes("{")) {
-            try {
-              const parsed = JSON.parse(sRow.announcement_text);
-              const list = Array.isArray(parsed) ? parsed : [parsed];
-              for (const a of list) {
-                if (a && (a.store_slug || a.store_name || String(a.id || "").startsWith("agent-"))) {
-                  const key = a.id || a.store_slug;
-                  if (!deletedAgents.has(String(key).toLowerCase())) {
-                    const targetId = a.id || ("agent-" + crypto.randomUUID().slice(0, 8));
-                    agentMap.set(targetId, {
-                      id: targetId,
-                      name: a.name || "Agent",
-                      store_name: a.store_name || "Agent Store",
-                      store_slug: a.store_slug || targetId,
-                      email: a.email || "",
-                      phone: a.phone || "",
-                      momo_number: a.momo_number || a.phone || "",
-                      momo_network: a.momo_network || "MTN",
-                      description: a.description || "",
-                      logo_url: a.logo_url || "/agent-icon.png",
-                      password_hash: a.password_hash || "123456",
-                      theme: a.theme || "emerald",
-                      wallet_balance: Number(a.wallet_balance || 0),
-                      total_earned: Number(a.total_earned || 0),
-                      total_withdrawn: Number(a.total_withdrawn || 0),
-                      is_active: a.is_active !== false,
-                      registration_paid: true,
-                      custom_prices: a.custom_prices || {},
-                      cloaked_url: a.cloaked_url || "",
-                      created_at: a.created_at || new Date().toISOString(),
-                    });
+      // Check both settings registry IDs ("agents_registry_config" and "agent_store_registry_config")
+      try {
+        const { data: sRows } = await supabaseAdmin
+          .from("settings")
+          .select("id, announcement_text")
+          .in("id", ["agents_registry_config", "agent_store_registry_config"]);
+
+        if (Array.isArray(sRows)) {
+          for (const sRow of sRows) {
+            if (sRow?.announcement_text && typeof sRow.announcement_text === "string" && sRow.announcement_text.includes("{")) {
+              try {
+                const parsed = JSON.parse(sRow.announcement_text);
+                const list = Array.isArray(parsed) ? parsed : [parsed];
+                for (const a of list) {
+                  if (a && (a.store_slug || a.store_name || String(a.id || "").startsWith("agent-"))) {
+                    const key = a.id || a.store_slug;
+                    if (!deletedAgents.has(String(key).toLowerCase()) && !deletedAgents.has(String(a.store_slug || "").toLowerCase())) {
+                      const targetId = a.id || ("agent-" + crypto.randomUUID().slice(0, 8));
+                      const existing = agentMap.get(targetId);
+                      agentMap.set(targetId, {
+                        ...(existing || {}),
+                        id: targetId,
+                        name: a.name || existing?.name || "Agent",
+                        store_name: a.store_name || existing?.store_name || "Agent Store",
+                        store_slug: a.store_slug || existing?.store_slug || targetId,
+                        email: a.email || existing?.email || "",
+                        phone: a.phone || existing?.phone || "",
+                        momo_number: a.momo_number || existing?.momo_number || a.phone || "",
+                        momo_network: a.momo_network || existing?.momo_network || "MTN",
+                        description: a.description || existing?.description || "",
+                        logo_url: a.logo_url || existing?.logo_url || "/agent-icon.png",
+                        password_hash: a.password_hash || existing?.password_hash || "123456",
+                        theme: a.theme || existing?.theme || "emerald",
+                        wallet_balance: Math.max(Number(existing?.wallet_balance || 0), Number(a.wallet_balance || 0)),
+                        total_earned: Math.max(Number(existing?.total_earned || 0), Number(a.total_earned || 0)),
+                        total_withdrawn: Math.max(Number(existing?.total_withdrawn || 0), Number(a.total_withdrawn || 0)),
+                        is_active: a.is_active !== false,
+                        registration_paid: a.registration_paid !== false,
+                        custom_prices: { ...(existing?.custom_prices || {}), ...(a.custom_prices || {}) },
+                        cloaked_url: a.cloaked_url || existing?.cloaked_url || "",
+                        created_at: a.created_at || existing?.created_at || new Date().toISOString(),
+                      });
+                    }
                   }
                 }
-              }
-            } catch {}
+              } catch {}
+            }
           }
-        } catch {}
-      }
+        }
+      } catch {}
     }
 
     const merged = Array.from(agentMap.values());
-    globalStore.__bmgh_agents = merged;
+    // Preserve existing in-memory agents if merged array is inexplicably smaller due to cold network drop
+    if (Array.isArray(globalStore.__bmgh_agents) && globalStore.__bmgh_agents.length > merged.length) {
+      for (const a of globalStore.__bmgh_agents) {
+        if (a && a.id && !agentMap.has(a.id) && !deletedAgents.has(a.id.toLowerCase()) && !deletedAgents.has((a.store_slug || "").toLowerCase())) {
+          agentMap.set(a.id, a);
+        }
+      }
+    }
+    const finalMerged = Array.from(agentMap.values());
+    globalStore.__bmgh_agents = finalMerged;
     markCacheFresh("agents");
     markServerCache("agents");
-    return merged;
+    return finalMerged;
   },
 
   async getAgentById(id: string, includeFinances = true): Promise<Agent | null> {
@@ -3672,14 +3712,60 @@ export const db = {
 
   async getAgentByEmail(email: string): Promise<Agent | null> {
     const clean = email.toLowerCase().trim();
+    if (!clean) return null;
     const all = await this.getAgents();
-    return all.find((a) => a.email.toLowerCase() === clean) || null;
+    const found = all.find((a) => (a.email || "").toLowerCase() === clean);
+    if (found) return found;
+
+    const fromBigJ = bigjdb.find<Agent>("agents", (a) => (a.email || "").toLowerCase() === clean);
+    if (fromBigJ) return fromBigJ;
+
+    if (isSupabaseConfigured && supabaseAdmin) {
+      try {
+        const { data } = await supabaseAdmin
+          .from("agents")
+          .select("id, name, store_name, store_slug, email, phone, momo_number, momo_network, description, logo_url, password_hash, theme, wallet_balance, total_earned, total_withdrawn, is_active, registration_paid, custom_prices, cloaked_url, created_at")
+          .ilike("email", clean)
+          .maybeSingle();
+        if (data) {
+          return {
+            ...data,
+            password_hash: (data as any).password_hash || "123456",
+          } as Agent;
+        }
+      } catch {}
+    }
+    return null;
   },
 
   async getAgentByPhone(phone: string): Promise<Agent | null> {
     const clean = phone.replace(/[^0-9]/g, "");
+    if (!clean) return null;
     const all = await this.getAgents();
-    return all.find((a) => a.phone.replace(/[^0-9]/g, "").endsWith(clean.slice(-9))) || null;
+    const found = all.find((a) => (a.phone || "").replace(/[^0-9]/g, "").endsWith(clean.slice(-9)));
+    if (found) return found;
+
+    const fromBigJ = bigjdb.find<Agent>("agents", (a) =>
+      (a.phone || "").replace(/[^0-9]/g, "").endsWith(clean.slice(-9))
+    );
+    if (fromBigJ) return fromBigJ;
+
+    if (isSupabaseConfigured && supabaseAdmin) {
+      try {
+        const { data } = await supabaseAdmin
+          .from("agents")
+          .select("id, name, store_name, store_slug, email, phone, momo_number, momo_network, description, logo_url, password_hash, theme, wallet_balance, total_earned, total_withdrawn, is_active, registration_paid, custom_prices, cloaked_url, created_at")
+          .ilike("phone", `%${clean.slice(-9)}%`)
+          .maybeSingle();
+        if (data) {
+          return {
+            ...data,
+            password_hash: (data as any).password_hash || "123456",
+          } as Agent;
+        }
+      } catch {}
+    }
+    return null;
   },
 
   async createAgent(
@@ -3732,8 +3818,25 @@ export const db = {
     }
     newAgent.cloaked_url = cloaked_url;
 
+    // Purge new agent id and slug from deleted_agents blacklist so they can never be suppressed
+    if (Array.isArray(globalStore.__bmgh_deleted_agents)) {
+      const idLower = newAgent.id.toLowerCase();
+      const slugLower = newAgent.store_slug.toLowerCase();
+      globalStore.__bmgh_deleted_agents = globalStore.__bmgh_deleted_agents.filter(
+        (x) => x && x.toLowerCase() !== idLower && x.toLowerCase() !== slugLower
+      );
+    }
+
     if (!globalStore.__bmgh_agents) globalStore.__bmgh_agents = [];
-    globalStore.__bmgh_agents.unshift(newAgent);
+    // If agent with same id/slug already in array, replace, otherwise unshift
+    const existingIdx = globalStore.__bmgh_agents.findIndex(
+      (a) => a.id === newAgent.id || a.store_slug.toLowerCase() === newAgent.store_slug.toLowerCase()
+    );
+    if (existingIdx !== -1) {
+      globalStore.__bmgh_agents[existingIdx] = newAgent;
+    } else {
+      globalStore.__bmgh_agents.unshift(newAgent);
+    }
     bigjdb.upsert("agents", newAgent);
     invalidateServerCache("agents");
 
@@ -3762,6 +3865,14 @@ export const db = {
           supabaseAdmin.from("settings").upsert({
             id: "agents_registry_config",
             announcement_text: JSON.stringify(globalStore.__bmgh_agents),
+          }),
+          supabaseAdmin.from("settings").upsert({
+            id: "agent_store_registry_config",
+            announcement_text: JSON.stringify(globalStore.__bmgh_agents),
+          }),
+          supabaseAdmin.from("settings").upsert({
+            id: "deleted_agents_config",
+            announcement_text: JSON.stringify(globalStore.__bmgh_deleted_agents || []),
           }),
           supabaseAdmin.from("settings").upsert({
             id: "agent_products_registry_config",
@@ -3893,14 +4004,24 @@ export const db = {
 
     if (isSupabaseConfigured && supabaseAdmin) {
       try {
-        await supabaseAdmin.from("settings").upsert({
-          id: "agents_registry_config",
-          store_name: "AgentsRegistry",
-          support_phone: "+233551234567",
-          whatsapp_number: "233551234567",
-          email: "support@bundlemartgh.com",
-          announcement_text: JSON.stringify(filtered),
-        });
+        await Promise.all([
+          supabaseAdmin.from("settings").upsert({
+            id: "agents_registry_config",
+            store_name: "AgentsRegistry",
+            support_phone: "+233551234567",
+            whatsapp_number: "233551234567",
+            email: "support@bundlemartgh.com",
+            announcement_text: JSON.stringify(filtered),
+          }),
+          supabaseAdmin.from("settings").upsert({
+            id: "agent_store_registry_config",
+            store_name: "AgentsRegistry",
+            support_phone: "+233551234567",
+            whatsapp_number: "233551234567",
+            email: "support@bundlemartgh.com",
+            announcement_text: JSON.stringify(filtered),
+          }),
+        ]);
       } catch (err) {
         console.warn("Agents registry delete error:", err);
       }
