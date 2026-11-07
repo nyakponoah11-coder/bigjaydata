@@ -845,15 +845,25 @@ export async function syncOrderWithDataMart(order: Order): Promise<Order> {
   const dmOrderRef =
     order.datamart_response?.data?.orderReference ||
     order.datamart_response?.order_reference ||
-    order.datamart_response?.data?.reference;
+    order.datamart_response?.data?.reference ||
+    (order.datamart_response as any)?.raw_response?.data?.orderReference ||
+    (order.datamart_response as any)?.raw_response?.data?.reference ||
+    (order.datamart_response as any)?.raw_response?.data?.purchaseId;
 
   const dmPurchaseId =
     order.datamart_response?.data?.purchaseId ||
-    order.datamart_response?.datamart_id;
+    order.datamart_response?.datamart_id ||
+    (order.datamart_response as any)?.raw_response?.data?.purchaseId;
 
   const candidates: string[] = [];
   if (dmOrderRef && typeof dmOrderRef === "string") candidates.push(dmOrderRef.trim());
-  if (order.reference) candidates.push(order.reference.trim());
+  if (order.reference) {
+    const raw = order.reference.trim();
+    candidates.push(raw);
+    if (!raw.toLowerCase().startsWith("bmgh-")) {
+      candidates.push(`bmgh-${raw}`);
+    }
+  }
   if (dmPurchaseId && typeof dmPurchaseId === "string" && !dmPurchaseId.startsWith("DM-")) {
     candidates.push(dmPurchaseId.trim());
   }

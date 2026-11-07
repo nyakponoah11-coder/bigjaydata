@@ -27,6 +27,7 @@ export async function GET(request: Request) {
     if (!order) {
       const agOrder = await db.getAgentOrderByReference(trimmed);
       if (agOrder) {
+        const agDelivery = agOrder.delivery_status || agOrder.status || "pending";
         order = {
           id: agOrder.id,
           reference: agOrder.reference,
@@ -36,8 +37,8 @@ export async function GET(request: Request) {
           amount: agOrder.amount,
           paystack_ref: agOrder.paystack_ref,
           payment_status: agOrder.payment_status || "paid",
-          delivery_status: agOrder.delivery_status || agOrder.status || "delivered",
-          status: agOrder.status || agOrder.delivery_status || "delivered",
+          delivery_status: agDelivery,
+          status: agDelivery,
           datamart_response: agOrder.datamart_response || {},
           created_at: agOrder.created_at,
         };
@@ -116,6 +117,7 @@ export async function POST(request: Request) {
         }
       }
       if (agOrder) {
+        const agDelivery = agOrder.delivery_status || agOrder.status || "pending";
         order = {
           id: agOrder.id,
           reference: agOrder.reference,
@@ -125,8 +127,8 @@ export async function POST(request: Request) {
           amount: agOrder.amount,
           paystack_ref: agOrder.paystack_ref,
           payment_status: agOrder.payment_status || "paid",
-          delivery_status: agOrder.delivery_status || agOrder.status || "delivered",
-          status: agOrder.status || agOrder.delivery_status || "delivered",
+          delivery_status: agDelivery,
+          status: agDelivery,
           datamart_response: agOrder.datamart_response || {},
           created_at: agOrder.created_at,
         };
