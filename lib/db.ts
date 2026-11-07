@@ -3411,7 +3411,7 @@ export const db = {
         const { data: dbAgents } = await supabaseAdmin
           .from("agents")
           .select(
-            "id, name, store_name, store_slug, email, phone, momo_number, momo_network, description, logo_url, theme, wallet_balance, total_earned, total_withdrawn, is_active, registration_paid, custom_prices, cloaked_url, created_at"
+            "id, name, store_name, store_slug, email, phone, momo_number, momo_network, description, logo_url, password_hash, theme, wallet_balance, total_earned, total_withdrawn, is_active, registration_paid, custom_prices, cloaked_url, created_at"
           )
           .limit(300);
 
@@ -3635,7 +3635,7 @@ export const db = {
       try {
         const { data, error } = await supabaseAdmin
           .from("agents")
-          .select("id, name, store_name, store_slug, email, phone, momo_number, momo_network, description, logo_url, theme, wallet_balance, total_earned, total_withdrawn, is_active, registration_paid, custom_prices, cloaked_url, created_at")
+          .select("id, name, store_name, store_slug, email, phone, momo_number, momo_network, description, logo_url, password_hash, theme, wallet_balance, total_earned, total_withdrawn, is_active, registration_paid, custom_prices, cloaked_url, created_at")
           .or(`store_slug.ilike.${clean},id.eq.${clean}`)
           .maybeSingle();
         if (!error && data) {
@@ -3836,12 +3836,15 @@ export const db = {
         console.warn("Direct agents table update warning:", err);
       }
 
-      // Also sync wallet_balance to customers table if updated
-      if (updates.wallet_balance !== undefined) {
+      // Also sync wallet_balance and password_hash to customers table if updated
+      if (updates.wallet_balance !== undefined || updates.password_hash !== undefined) {
         try {
+          const custUpdate: any = {};
+          if (updates.wallet_balance !== undefined) custUpdate.wallet_balance = updates.wallet_balance;
+          if (updates.password_hash !== undefined) custUpdate.password_hash = updates.password_hash;
           await supabaseAdmin
             .from("customers")
-            .update({ wallet_balance: updates.wallet_balance })
+            .update(custUpdate)
             .or(`id.eq.${agents[idx].id},email.eq.${agents[idx].email},phone.eq.${agents[idx].phone}`);
         } catch {}
       }

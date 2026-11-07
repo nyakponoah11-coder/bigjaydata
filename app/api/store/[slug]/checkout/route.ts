@@ -185,8 +185,17 @@ export async function POST(
       });
     }
 
-    // If already delivered by webhook, link profit metadata to master order if missing and return
-    if (existingOrder && (existingOrder.delivery_status === "delivered" || existingOrder.status === "delivered")) {
+    // If already dispatched or delivered by webhook, link profit metadata to master order if missing and return
+    const alreadyDispatched =
+      existingOrder &&
+      (existingOrder.delivery_status === "delivered" ||
+        existingOrder.status === "delivered" ||
+        existingOrder.delivery_status === "processing" ||
+        existingOrder.delivery_status === "completed" ||
+        Boolean((existingOrder.datamart_response as any)?.purchaseId) ||
+        Boolean((existingOrder.datamart_response as any)?.dispatched_at));
+
+    if (alreadyDispatched) {
       if (!existingOrder.datamart_response?.agent_id || !existingOrder.datamart_response?.agent_profit) {
         const mergedDatamart = {
           ...(typeof existingOrder.datamart_response === "object" ? existingOrder.datamart_response : {}),
@@ -195,9 +204,9 @@ export async function POST(
           store_slug: agent.store_slug,
           source: "agent",
         };
-        await db.updateOrderStatus(existingOrder.id, existingOrder.delivery_status, mergedDatamart, {
+        await db.updateOrderStatus(existingOrder.id, existingOrder.delivery_status || "processing", mergedDatamart, {
           payment_status: "paid",
-          delivery_status: existingOrder.delivery_status,
+          delivery_status: existingOrder.delivery_status || "processing",
         });
       }
       return NextResponse.json({
@@ -267,25 +276,22 @@ export async function POST(
       }
     }
 
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      try {
-        deliveryResult = await sendDataMartDelivery({
-          network: masterOrder.network,
-          package_size: masterOrder.package_size,
-          phone: masterOrder.phone,
-          reference: masterOrder.reference,
-          idempotency_key: masterOrder.reference,
-        });
-      } catch (dmErr: any) {
-        console.error(`[DataMart] Agent Store dispatch error (attempt ${attempt}):`, dmErr);
-        deliveryResult = {
-          success: false,
-          message: dmErr?.message || "Delivery exception",
-          raw_response: { error: String(dmErr) },
-        };
-      }
-      if (deliveryResult?.success) break;
-      if (attempt < 3) await new Promise((r) => setTimeout(r, 1500 * attempt));
+    // 7. Dispatch data bundle to DataMart API (single request with deterministic idempotency)
+    try {
+      deliveryResult = await sendDataMartDelivery({
+        network: masterOrder.network,
+        package_size: masterOrder.package_size,
+        phone: masterOrder.phone,
+        reference: masterOrder.reference,
+        idempotency_key: masterOrder.reference,
+      });
+    } catch (dmErr: any) {
+      console.error("[DataMart] Agent Store dispatch error:", dmErr);
+      deliveryResult = {
+        success: false,
+        message: dmErr?.message || "Delivery exception",
+        raw_response: { error: String(dmErr) },
+      };
     }
 
     // Once payment is verified, delivery status is either delivered (instant) or processing (telecom fast lane queue).

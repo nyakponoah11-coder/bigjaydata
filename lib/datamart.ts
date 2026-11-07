@@ -1,4 +1,5 @@
 import { db, Order } from "./db";
+import crypto from "crypto";
 
 export interface DataMartDeliveryParams {
   network: string; // mtn, telecel, at
@@ -254,11 +255,22 @@ export async function sendDataMartDelivery(params: DataMartDeliveryParams): Prom
     const formattedPhone = formatGhanaPhone(params.phone);
     const datamartNetwork = mapNetworkToDataMart(params.network);
     const capacityGb = extractCapacityInGb(params.package_size);
-    // Always use a compliant UUID v4 as specified in DataMart documentation
-    const idempotencyKey = crypto.randomUUID();
 
     const rawRef = params.reference ? String(params.reference).trim() : `order_${Date.now()}`;
     const orderRef = rawRef.startsWith("bmgh-") ? rawRef : `bmgh-${rawRef}`;
+
+    // Deterministic UUID v4 mapped to this exact order reference so duplicate dispatches
+    // (e.g. browser checkout + paystack webhook arriving simultaneously) send the SAME idempotency key.
+    // DataMart uses X-Idempotency-Key to recognize duplicate requests and prevents double wallet deductions.
+    const idempotencySeed = (params.idempotency_key || orderRef).toLowerCase().trim();
+    const hash = crypto.createHash("sha256").update(idempotencySeed).digest("hex");
+    const idempotencyKey = [
+      hash.substring(0, 8),
+      hash.substring(8, 12),
+      "4" + hash.substring(13, 16),
+      (((parseInt(hash.substring(16, 18), 16) & 0x3f) | 0x80).toString(16).padStart(2, "0") + hash.substring(18, 20)),
+      hash.substring(20, 32),
+    ].join("-");
 
     const requestBody: Record<string, any> = {
       phoneNumber: formattedPhone,
@@ -326,10 +338,7 @@ export async function sendDataMartDelivery(params: DataMartDeliveryParams): Prom
         try {
           const altResponse = await fetch(altUrl, {
             method: "POST",
-            headers: {
-              ...baseHeaders,
-              "X-Idempotency-Key": crypto.randomUUID(),
-            },
+            headers: baseHeaders,
             body: JSON.stringify(requestBody),
           });
           const altText = await altResponse.text();
@@ -356,10 +365,7 @@ export async function sendDataMartDelivery(params: DataMartDeliveryParams): Prom
         try {
           const numResponse = await fetch(purchaseUrl, {
             method: "POST",
-            headers: {
-              ...baseHeaders,
-              "X-Idempotency-Key": crypto.randomUUID(),
-            },
+            headers: baseHeaders,
             body: JSON.stringify({ ...requestBody, capacity: numCapacity }),
           });
           const numText = await numResponse.text();

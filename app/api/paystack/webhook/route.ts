@@ -261,11 +261,19 @@ export async function POST(request: Request) {
       }
 
       if (existingOrder) {
-        // Avoid duplicate dispatch if already fulfilled
-        if (existingOrder.status === "delivered") {
-          console.log(`[Paystack Webhook] Order ${reference} already marked delivered.`);
+        // STRICT DEDUPLICATION: Check if order has already been dispatched to DataMart or delivered
+        const alreadyDispatched =
+          existingOrder.status === "delivered" ||
+          existingOrder.delivery_status === "delivered" ||
+          existingOrder.delivery_status === "processing" ||
+          existingOrder.delivery_status === "completed" ||
+          Boolean((existingOrder.datamart_response as any)?.purchaseId) ||
+          Boolean((existingOrder.datamart_response as any)?.dispatched_at);
 
-          // Ensure agent order exists and has profit credited even if marked delivered
+        if (alreadyDispatched) {
+          console.log(`[Paystack Webhook] Order ${reference} already dispatched or delivered (status: ${existingOrder.status}, delivery: ${existingOrder.delivery_status}). Skipping duplicate DataMart call.`);
+
+          // Ensure agent order exists and has profit credited
           if (resolvedAgent) {
             try {
               const existingAgOrders = await db.getAgentOrders(resolvedAgent.id);
@@ -282,13 +290,13 @@ export async function POST(request: Request) {
                   agent_profit: webhookAgentProfit,
                   paystack_ref: paystackRef,
                   payment_status: "paid",
-                  delivery_status: "delivered",
-                  status: "delivered",
+                  delivery_status: existingOrder.delivery_status || "processing",
+                  status: existingOrder.status || "processing",
                 });
               }
             } catch (err) {}
           }
-          return NextResponse.json({ status: "success", message: "Order already delivered" });
+          return NextResponse.json({ status: "success", message: "Order already dispatched" });
         }
 
         // If order was pending, dispatch through DataMart

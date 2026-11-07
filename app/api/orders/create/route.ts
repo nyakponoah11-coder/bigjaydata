@@ -151,8 +151,15 @@ export async function POST(request: Request) {
 
     console.log(`[Order Ready] ${reference} - Payment: ${order.payment_status}, Delivery: ${order.delivery_status || order.status}`);
 
-    // If already delivered (e.g. by webhook dispatch), return success immediately
-    if (order.delivery_status === "delivered" || order.status === "delivered") {
+    // If already dispatched or delivered (e.g. by webhook dispatch), return success immediately
+    const alreadyDispatched =
+      order.delivery_status === "delivered" ||
+      order.status === "delivered" ||
+      Boolean((order.datamart_response as any)?.purchaseId) ||
+      Boolean((order.datamart_response as any)?.dispatched_at);
+
+    if (alreadyDispatched) {
+      console.log(`[Order Already Dispatched] ${reference} - Skipping duplicate DataMart call.`);
       return NextResponse.json({
         success: true,
         order,
