@@ -557,19 +557,22 @@ export function isGhostAgent(a: any): boolean {
   // Test demo seeds
   if (id === "agent-mabel-siripi" || storeSlug === "mabel") return true;
 
-  // No phone and no valid email
-  const hasNoContact = phone.length < 5 && (!email || email.includes("example.com") || !email.includes("@"));
+  // A genuine agent who has a contact phone or real email is NEVER a ghost
+  const hasContact = phone.length >= 7 || (email.length > 5 && email.includes("@") && !email.includes("example.com"));
+  if (hasContact) {
+    return false;
+  }
 
-  // Check if name or slug is a random hex ID like "9aa42742" or "e2ce7cdc" with no contact info
+  // Without contact info: check if name or slug is a random hex ID like "9aa42742" or "e2ce7cdc"
   const isHexId = /^[0-9a-f]{6,12}$/i.test(name) || /^[0-9a-f]{6,12}$/i.test(storeSlug) || /^[0-9a-f]{6,12}$/i.test(id.replace(/^agent-/, ""));
   const isGenericStore = /^[0-9a-f]{6,12}\s+store$/i.test(storeName) || storeName === "Agent Store" || storeName === "Recovered Agent's Store";
 
-  if (hasNoContact && (isHexId || isGenericStore || name === "Agent" || name === "Recovered Agent")) {
+  if (isHexId || isGenericStore || name === "Agent" || name === "Recovered Agent") {
     return true;
   }
 
   // Any account with no contact info at all and 0 wallet balance and 0 earned
-  if (hasNoContact && Number(a.wallet_balance || 0) === 0 && Number(a.total_earned || 0) === 0) {
+  if (Number(a.wallet_balance || 0) === 0 && Number(a.total_earned || 0) === 0) {
     return true;
   }
 
@@ -1075,12 +1078,18 @@ export const db = {
               let adminEn = true;
               let customDom = "";
               let autoPayout = false;
+              let withdrawal_fee_enabled = true;
+              let withdrawal_fee_type: "percent" = "percent";
+              let withdrawal_fee_value = 1.00;
               if (agentRow.store_name.startsWith("{")) {
                 const p = JSON.parse(agentRow.store_name);
                 devMaster = p.developer_master_enabled !== false;
                 adminEn = p.admin_enabled !== false;
                 customDom = p.custom_domain || "";
                 autoPayout = Boolean(p.auto_paystack_payout);
+                withdrawal_fee_enabled = p.withdrawal_fee_enabled !== false;
+                withdrawal_fee_type = "percent";
+                withdrawal_fee_value = p.withdrawal_fee_value !== undefined ? Number(p.withdrawal_fee_value) : 1.00;
               } else {
                 devMaster = agentRow.store_name !== "false" && agentRow.store_name !== "0";
                 adminEn = devMaster;
@@ -1092,6 +1101,9 @@ export const db = {
                 registration_fee: Number(agentRow.announcement_text) || 0,
                 custom_domain: customDom,
                 auto_paystack_payout: autoPayout,
+                withdrawal_fee_enabled,
+                withdrawal_fee_type,
+                withdrawal_fee_value,
               };
               markCacheFresh("agent_config");
             } catch (_) {}

@@ -630,6 +630,32 @@ export default function AdminAgentStorePage() {
     }
   };
 
+  const handleToggleWithdrawalFee = async () => {
+    const nextState = !withdrawalFeeEnabled;
+    setWithdrawalFeeEnabled(nextState);
+    const feeVal = parseFloat(withdrawalFeeValue) || 1.00;
+    try {
+      const res = await fetch("/api/admin/agent-store-config", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "update_config",
+          withdrawal_fee_enabled: nextState,
+          withdrawal_fee_type: "percent",
+          withdrawal_fee_value: feeVal,
+        }),
+      });
+      const data = await res.json();
+      if (data.success && data.config) {
+        setConfig(data.config);
+        setNotice(`Withdrawal fee ${nextState ? `activated (${feeVal}%)` : "disabled"}`);
+        setTimeout(() => setNotice(""), 3500);
+      }
+    } catch (err: any) {
+      console.warn("Toggle fee warning:", err);
+    }
+  };
+
   const handlePaystackPayout = async (id: string) => {
     const target = withdrawals.find((w) => w.id === id);
     if (!target) return;
@@ -852,7 +878,7 @@ export default function AdminAgentStorePage() {
                 </span>
                 <button
                   type="button"
-                  onClick={() => setWithdrawalFeeEnabled(!withdrawalFeeEnabled)}
+                  onClick={handleToggleWithdrawalFee}
                   className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase transition-all ${
                     withdrawalFeeEnabled
                       ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
