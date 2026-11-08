@@ -465,7 +465,7 @@ export default function AdminOrdersPage() {
                 ) : (
                   orders.map((o) => {
                     const paymentStatus = o.payment_status || (o.paystack_ref ? "paid" : "paid");
-                    const deliveryStatus = o.delivery_status || (o.status === "delivered" ? "delivered" : o.status === "failed" ? "failed" : "pending");
+                    const deliveryStatus = o.delivery_status || o.status || "processing";
 
                     return (
                       <tr key={o.id} className="hover:bg-slate-800/40 transition-colors">

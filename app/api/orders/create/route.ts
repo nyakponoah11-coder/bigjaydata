@@ -114,7 +114,7 @@ export async function POST(request: Request) {
           paystack_ref: verification.reference || paystack_ref,
           payment_status: "paid",
           delivery_status: "processing",
-          status: "pending",
+          status: "processing",
           source: customer_id ? "customer_momo" : "web",
           customer_id: customer_id || undefined,
           customer_name: customer_name || undefined,

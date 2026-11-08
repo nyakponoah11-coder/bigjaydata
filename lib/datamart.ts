@@ -750,9 +750,13 @@ export async function checkDataMartOrderStatus(orderReference: string): Promise<
     for (const r of refVariants) {
       candidateUrls.push(
         `${devBase}/order-status/${encodeURIComponent(r)}`,
+        `${devBase}/order-status?reference=${encodeURIComponent(r)}`,
         `https://api.datamartgh.shop/api/developer/order-status/${encodeURIComponent(r)}`,
+        `https://api.datamartgh.shop/api/developer/order-status?reference=${encodeURIComponent(r)}`,
         `https://api.datamartgh.shop/api/order-status/${encodeURIComponent(r)}`,
-        `https://api.datamartgh.shop/order-status/${encodeURIComponent(r)}`
+        `https://api.datamartgh.shop/order-status/${encodeURIComponent(r)}`,
+        `${devBase}/orders/${encodeURIComponent(r)}`,
+        `${devBase}/order/${encodeURIComponent(r)}`
       );
     }
     const uniqueUrls = Array.from(new Set(candidateUrls));

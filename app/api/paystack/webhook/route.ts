@@ -373,7 +373,7 @@ export async function POST(request: Request) {
           paystack_ref: paystackRef,
           payment_status: "paid",
           delivery_status: "processing",
-          status: "pending",
+          status: "processing",
           datamart_response: {
             status: "pending",
             source: "paystack_webhook",

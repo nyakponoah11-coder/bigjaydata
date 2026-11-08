@@ -67,24 +67,65 @@ export function normalizeOrder(order: any): Order {
 
   const payment_status = order.payment_status || (isPaid ? "paid" : "pending");
 
-  let delivery_status = (order.delivery_status || "").toLowerCase().trim();
-  if (!delivery_status) {
-    const rawStatus = (order.status || "").toLowerCase().trim();
-    if (rawStatus === "delivered" || rawStatus === "completed") delivery_status = "delivered";
-    else if (rawStatus === "processing" || rawStatus === "in_progress") delivery_status = "processing";
-    else if (rawStatus === "waiting" || rawStatus === "pending") delivery_status = "pending";
-    else if (rawStatus === "failed") delivery_status = "failed";
-    else if (rawStatus === "refunded") delivery_status = "refunded";
-    else if (rawStatus === "cancelled") delivery_status = "cancelled";
-    else delivery_status = "pending";
-  } else if (delivery_status === "completed") {
-    delivery_status = "delivered";
+  // 1. Inspect datamart_response for authoritative live status
+  let dmDeliveryStatus: string | null = null;
+  if (order.datamart_response && typeof order.datamart_response === "object") {
+    const dm = order.datamart_response;
+    const rawDm =
+      dm.last_datamart_sync?.order_status ||
+      dm.last_datamart_sync?.data?.orderStatus ||
+      dm.last_datamart_sync?.data?.deliveryStatus ||
+      dm.last_datamart_sync?.data?.delivery_status ||
+      dm.orderStatus ||
+      dm.order_status ||
+      dm.deliveryStatus ||
+      dm.delivery_status ||
+      dm.data?.orderStatus ||
+      dm.data?.order_status ||
+      dm.data?.deliveryStatus ||
+      dm.data?.delivery_status ||
+      dm.data?.relatedPurchase?.orderStatus ||
+      dm.data?.relatedPurchase?.deliveryStatus ||
+      dm.raw_response?.data?.orderStatus ||
+      dm.raw_response?.data?.deliveryStatus;
+    if (rawDm && typeof rawDm === "string") {
+      const s = rawDm.toLowerCase().trim();
+      if (s === "delivered" || s === "completed" || s === "fulfilled" || s === "done") dmDeliveryStatus = "delivered";
+      else if (s === "failed" || s === "failure" || s === "rejected" || s === "declined") dmDeliveryStatus = "failed";
+      else if (s === "processing" || s === "in_progress" || s === "in-progress" || s === "initiated") dmDeliveryStatus = "processing";
+      else if (s === "refunded" || s === "refund") dmDeliveryStatus = "refunded";
+      else if (s === "cancelled" || s === "canceled") dmDeliveryStatus = "cancelled";
+      else if (s === "waiting" || s === "pending" || s === "queued") dmDeliveryStatus = "pending";
+    }
   }
 
-  let status = (order.status || "").toLowerCase().trim();
-  if (!status) {
-    status = delivery_status;
+  const rawDs = (order.delivery_status || "").toLowerCase().trim();
+  const rawSt = (order.status || "").toLowerCase().trim();
+
+  // 2. Resolve unified delivery and order status so they NEVER contradict each other
+  let unifiedStatus = "processing";
+  if (dmDeliveryStatus) {
+    unifiedStatus = dmDeliveryStatus;
+  } else if (rawDs === "delivered" || rawDs === "completed" || rawSt === "delivered" || rawSt === "completed") {
+    unifiedStatus = "delivered";
+  } else if (rawDs === "failed" || rawSt === "failed" || rawDs === "rejected" || rawSt === "rejected") {
+    unifiedStatus = "failed";
+  } else if (rawDs === "refunded" || rawSt === "refunded") {
+    unifiedStatus = "refunded";
+  } else if (rawDs === "cancelled" || rawSt === "cancelled" || rawDs === "canceled" || rawSt === "canceled") {
+    unifiedStatus = "cancelled";
+  } else if (rawDs === "processing" || rawSt === "processing" || rawDs === "in_progress" || rawSt === "in_progress") {
+    unifiedStatus = "processing";
+  } else if (rawDs === "waiting" || rawSt === "waiting" || rawDs === "queued" || rawSt === "queued") {
+    unifiedStatus = "waiting";
+  } else if (rawDs === "pending" || rawSt === "pending") {
+    unifiedStatus = isPaid ? "processing" : "pending";
+  } else {
+    unifiedStatus = rawDs || rawSt || (isPaid ? "processing" : "pending");
   }
+
+  const delivery_status = unifiedStatus;
+  const status = unifiedStatus;
 
   const rawSource =
     order.source ||
@@ -1652,10 +1693,22 @@ export const db = {
         results = results.filter((o) => o.network.toLowerCase() === filter.network!.toLowerCase());
       }
       if (filter?.status && filter.status !== "all") {
-        results = results.filter((o) => o.status === filter.status);
+        const targetStatus = filter.status.toLowerCase().trim();
+        results = results.filter((o) => {
+          if (targetStatus === "completed" || targetStatus === "delivered") {
+            return o.status === "delivered" || o.status === "completed";
+          }
+          return o.status === targetStatus;
+        });
       }
       if (filter?.delivery_status && filter.delivery_status !== "all") {
-        results = results.filter((o) => o.delivery_status === filter.delivery_status);
+        const targetDelivery = filter.delivery_status.toLowerCase().trim();
+        results = results.filter((o) => {
+          if (targetDelivery === "completed" || targetDelivery === "delivered") {
+            return o.delivery_status === "delivered" || o.delivery_status === "completed";
+          }
+          return o.delivery_status === targetDelivery;
+        });
       }
       if (filter?.payment_status && filter.payment_status !== "all") {
         results = results.filter((o) => o.payment_status === filter.payment_status);
@@ -1677,10 +1730,20 @@ export const db = {
           query = query.eq("network", filter.network.toLowerCase());
         }
         if (filter?.status && filter.status !== "all") {
-          query = query.eq("status", filter.status);
+          const targetStatus = filter.status.toLowerCase().trim();
+          if (targetStatus === "completed" || targetStatus === "delivered") {
+            query = query.in("status", ["delivered", "completed"]);
+          } else {
+            query = query.eq("status", targetStatus);
+          }
         }
         if (filter?.delivery_status && filter.delivery_status !== "all") {
-          query = query.eq("delivery_status", filter.delivery_status);
+          const targetDelivery = filter.delivery_status.toLowerCase().trim();
+          if (targetDelivery === "completed" || targetDelivery === "delivered") {
+            query = query.in("delivery_status", ["delivered", "completed"]);
+          } else {
+            query = query.eq("delivery_status", targetDelivery);
+          }
         }
         if (filter?.payment_status && filter.payment_status !== "all") {
           query = query.eq("payment_status", filter.payment_status);
@@ -1694,7 +1757,22 @@ export const db = {
           }
           let results = normalizedData;
           if (filter?.delivery_status && filter.delivery_status !== "all") {
-            results = results.filter((o) => o.delivery_status === filter.delivery_status);
+            const targetDelivery = filter.delivery_status.toLowerCase().trim();
+            results = results.filter((o) => {
+              if (targetDelivery === "completed" || targetDelivery === "delivered") {
+                return o.delivery_status === "delivered" || o.delivery_status === "completed";
+              }
+              return o.delivery_status === targetDelivery;
+            });
+          }
+          if (filter?.status && filter.status !== "all") {
+            const targetStatus = filter.status.toLowerCase().trim();
+            results = results.filter((o) => {
+              if (targetStatus === "completed" || targetStatus === "delivered") {
+                return o.status === "delivered" || o.status === "completed";
+              }
+              return o.status === targetStatus;
+            });
           }
           if (filter?.payment_status && filter.payment_status !== "all") {
             results = results.filter((o) => o.payment_status === filter.payment_status);
@@ -1722,10 +1800,22 @@ export const db = {
       results = results.filter((o) => o.network.toLowerCase() === filter.network!.toLowerCase());
     }
     if (filter?.status && filter.status !== "all") {
-      results = results.filter((o) => o.status === filter.status);
+      const targetStatus = filter.status.toLowerCase().trim();
+      results = results.filter((o) => {
+        if (targetStatus === "completed" || targetStatus === "delivered") {
+          return o.status === "delivered" || o.status === "completed";
+        }
+        return o.status === targetStatus;
+      });
     }
     if (filter?.delivery_status && filter.delivery_status !== "all") {
-      results = results.filter((o) => o.delivery_status === filter.delivery_status);
+      const targetDelivery = filter.delivery_status.toLowerCase().trim();
+      results = results.filter((o) => {
+        if (targetDelivery === "completed" || targetDelivery === "delivered") {
+          return o.delivery_status === "delivered" || o.delivery_status === "completed";
+        }
+        return o.delivery_status === targetDelivery;
+      });
     }
     if (filter?.payment_status && filter.payment_status !== "all") {
       results = results.filter((o) => o.payment_status === filter.payment_status);
@@ -2000,15 +2090,21 @@ export const db = {
     const cleaned = (statusOrDelivery || "").toLowerCase().trim();
     const isDeliveryStatus = validDeliveryStatuses.includes(cleaned);
     
-    // Normalize target delivery status
-    const targetDeliveryStatus = options?.delivery_status
-      ? options.delivery_status.toLowerCase().trim()
-      : isDeliveryStatus
-      ? cleaned
-      : undefined;
+    // Normalize target delivery status to canonical form
+    let canonicalStatus = (
+      options?.delivery_status
+        ? options.delivery_status.toLowerCase().trim()
+        : isDeliveryStatus
+        ? cleaned
+        : cleaned || "pending"
+    );
+    if (canonicalStatus === "completed") canonicalStatus = "delivered";
+    if (canonicalStatus === "in_progress" || canonicalStatus === "in-progress" || canonicalStatus === "initiated") canonicalStatus = "processing";
+    if (canonicalStatus === "queued") canonicalStatus = "waiting";
 
-    // Both status and delivery_status track the current state
-    const normalizedStatus = targetDeliveryStatus || cleaned || "pending";
+    // Both status and delivery_status track the exact same canonical state
+    const normalizedStatus = canonicalStatus;
+    const targetDeliveryStatus = canonicalStatus;
     const targetPaymentStatus = options?.payment_status;
 
     // Retrieve existing memory order to preserve datamart_response metadata (agent_id, agent_profit, store_slug)
@@ -2034,9 +2130,9 @@ export const db = {
         const trimmed = (orderIdOrRef || "").trim();
         const isExplicitRef = /^(BMGH|BIGJ)-/i.test(trimmed);
         const updatePayload: any = {
-          status: normalizedStatus,
+          status: canonicalStatus,
+          delivery_status: canonicalStatus,
           ...(datamartResponse ? { datamart_response: mergedDatamart } : {}),
-          ...(targetDeliveryStatus ? { delivery_status: targetDeliveryStatus } : {}),
           ...(targetPaymentStatus ? { payment_status: targetPaymentStatus } : {}),
           ...(options?.netflix_email ? { netflix_email: options.netflix_email } : {}),
           ...(options?.netflix_reference ? { netflix_reference: options.netflix_reference } : {}),
@@ -2067,7 +2163,7 @@ export const db = {
         // Handle missing schema columns if delivery_status or payment_status columns don't exist in Supabase
         if (error && (error.message?.includes("delivery_status") || error.message?.includes("payment_status"))) {
           const fallbackPayload: any = {
-            status: normalizedStatus,
+            status: canonicalStatus,
             ...(datamartResponse ? { datamart_response: mergedDatamart } : {}),
           };
           const fallbackQuery = supabaseAdmin.from("orders").update(fallbackPayload);
@@ -2094,7 +2190,7 @@ export const db = {
 
           // Automatically sync corresponding agent order status
           if (ord.reference) {
-            this.updateAgentOrderStatus(ord.reference, ord.delivery_status, ord.datamart_response).catch(() => {});
+            this.updateAgentOrderStatus(ord.reference, canonicalStatus, ord.datamart_response).catch(() => {});
           }
 
           return ord;
@@ -2108,8 +2204,8 @@ export const db = {
       (o) => o.id === orderIdOrRef || o.reference.toLowerCase() === orderIdOrRef.toLowerCase()
     );
     if (!order) return null;
-    order.status = normalizedStatus;
-    if (targetDeliveryStatus) order.delivery_status = targetDeliveryStatus;
+    order.status = canonicalStatus;
+    order.delivery_status = canonicalStatus;
     if (targetPaymentStatus) order.payment_status = targetPaymentStatus;
     if (datamartResponse) order.datamart_response = mergedDatamart;
     if (options?.netflix_email) order.netflix_email = options.netflix_email;
@@ -2124,7 +2220,7 @@ export const db = {
 
     // Automatically sync corresponding agent order status
     if (order.reference) {
-      this.updateAgentOrderStatus(order.reference, order.delivery_status, order.datamart_response).catch(() => {});
+      this.updateAgentOrderStatus(order.reference, canonicalStatus, order.datamart_response).catch(() => {});
     }
 
     return normalizeOrder(order);
@@ -5347,6 +5443,30 @@ export const db = {
       if (k) combinedMap.set(k, o);
     });
 
+    // Ensure status and delivery_status are 100% synchronized on every agent order
+    combinedMap.forEach((ord) => {
+      const rawDs = (ord.delivery_status || "").toLowerCase().trim();
+      const rawSt = (ord.status || "").toLowerCase().trim();
+      let canonical = "processing";
+      if (rawDs === "delivered" || rawDs === "completed" || rawSt === "delivered" || rawSt === "completed") {
+        canonical = "delivered";
+      } else if (rawDs === "failed" || rawSt === "failed" || rawDs === "rejected" || rawSt === "rejected") {
+        canonical = "failed";
+      } else if (rawDs === "refunded" || rawSt === "refunded") {
+        canonical = "refunded";
+      } else if (rawDs === "cancelled" || rawSt === "cancelled") {
+        canonical = "cancelled";
+      } else if (rawDs === "processing" || rawSt === "processing") {
+        canonical = "processing";
+      } else if (rawDs === "waiting" || rawSt === "waiting") {
+        canonical = "waiting";
+      } else {
+        canonical = rawDs || rawSt || "processing";
+      }
+      ord.delivery_status = canonical;
+      ord.status = canonical;
+    });
+
     const finalFullList = Array.from(combinedMap.values()).sort(
       (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
     );
@@ -5581,10 +5701,15 @@ export const db = {
   async updateAgentOrderStatus(orderId: string, deliveryStatus: string, response?: any): Promise<AgentOrder | null> {
     const orders = await this.getAgentOrders();
     const cleanTarget = (orderId || "").trim().toLowerCase();
+    let unifiedStatus = (deliveryStatus || "").toLowerCase().trim();
+    if (unifiedStatus === "completed") unifiedStatus = "delivered";
+    if (unifiedStatus === "in_progress" || unifiedStatus === "in-progress") unifiedStatus = "processing";
+    if (unifiedStatus === "queued") unifiedStatus = "waiting";
+
     const o = orders.find((x) => x.id?.toLowerCase() === cleanTarget || x.reference?.toLowerCase() === cleanTarget);
     if (o) {
-      o.delivery_status = deliveryStatus;
-      o.status = deliveryStatus;
+      o.delivery_status = unifiedStatus;
+      o.status = unifiedStatus;
       if (response) {
         o.datamart_response = {
           ...(typeof o.datamart_response === "object" ? o.datamart_response : {}),
@@ -5598,8 +5723,8 @@ export const db = {
         (x) => x.id?.toLowerCase() === cleanTarget || x.reference?.toLowerCase() === cleanTarget
       );
       if (match) {
-        match.delivery_status = deliveryStatus;
-        match.status = deliveryStatus;
+        match.delivery_status = unifiedStatus;
+        match.status = unifiedStatus;
         if (response) {
           match.datamart_response = {
             ...(typeof match.datamart_response === "object" ? match.datamart_response : {}),
@@ -5619,8 +5744,8 @@ export const db = {
         await supabaseAdmin
           .from("agent_orders")
           .update({
-            delivery_status: deliveryStatus,
-            status: deliveryStatus,
+            delivery_status: unifiedStatus,
+            status: unifiedStatus,
             ...(o?.datamart_response ? { datamart_response: o.datamart_response } : {}),
           })
           .or(`id.ilike.${orderId},reference.ilike.${orderId}`);

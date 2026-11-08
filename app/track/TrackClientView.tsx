@@ -259,8 +259,8 @@ export default function TrackClientView({ storeName }: { storeName: string }) {
               const paymentStatus = o.payment_status || (o.paystack_ref ? "paid" : "paid");
               const isPaid = paymentStatus === "paid" || paymentStatus === "completed" || !!o.paystack_ref;
               let rawDs = (o.delivery_status || o.status || "processing").toLowerCase().trim();
-              if (isPaid && (rawDs === "failed" || rawDs === "pending")) {
-                rawDs = "processing";
+              if (rawDs === "completed") {
+                rawDs = "delivered";
               }
               const deliveryStatus = rawDs;
               const deliveryBadge = getCustomerDeliveryBadge(deliveryStatus);
