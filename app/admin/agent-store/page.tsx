@@ -105,6 +105,32 @@ export default function AdminAgentStorePage() {
     loading: false,
   });
 
+  const [editAgentModal, setEditAgentModal] = useState<{
+    open: boolean;
+    agentId: string;
+    name: string;
+    store_name: string;
+    store_slug: string;
+    email: string;
+    phone: string;
+    password: string;
+    wallet_balance: string;
+    loading: boolean;
+  }>({
+    open: false,
+    agentId: "",
+    name: "",
+    store_name: "",
+    store_slug: "",
+    email: "",
+    phone: "",
+    password: "",
+    wallet_balance: "0",
+    loading: false,
+  });
+
+  const [purgingGhosts, setPurgingGhosts] = useState(false);
+
   const [deleteModal, setDeleteModal] = useState<{
     open: boolean;
     agentId: string;
@@ -163,6 +189,66 @@ export default function AdminAgentStorePage() {
       alert(err.message || "Agent recovery encountered an issue");
     } finally {
       setRecoveringAgents(false);
+    }
+  };
+
+  const handlePurgeGhosts = async () => {
+    if (!confirm("Permanently purge and delete all random, corrupted, or ghost agent accounts with no phone/email or synthetic hex IDs?")) {
+      return;
+    }
+    try {
+      setPurgingGhosts(true);
+      setError("");
+      const res = await fetch("/api/admin/agent-store", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "purge_ghost_agents" }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.message || "Failed to purge ghost accounts");
+      }
+      setNotice(data.message);
+      setTimeout(() => setNotice(""), 6000);
+      await fetchData();
+    } catch (err: any) {
+      alert(err?.message || "Purge failed");
+    } finally {
+      setPurgingGhosts(false);
+    }
+  };
+
+  const handleSaveAgentDetails = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editAgentModal.agentId) return;
+    try {
+      setEditAgentModal((prev) => ({ ...prev, loading: true }));
+      const res = await fetch("/api/admin/agent-store", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "update_agent_details",
+          agent_id: editAgentModal.agentId,
+          name: editAgentModal.name,
+          store_name: editAgentModal.store_name,
+          store_slug: editAgentModal.store_slug,
+          email: editAgentModal.email,
+          phone: editAgentModal.phone,
+          password: editAgentModal.password,
+          wallet_balance: editAgentModal.wallet_balance,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.message || "Failed to update agent details");
+      }
+      setNotice(data.message);
+      setTimeout(() => setNotice(""), 4000);
+      setEditAgentModal((prev) => ({ ...prev, open: false, loading: false }));
+      await fetchData();
+    } catch (err: any) {
+      alert(err?.message || "Failed to update agent");
+      setEditAgentModal((prev) => ({ ...prev, loading: false }));
     }
   };
 
@@ -1055,6 +1141,15 @@ export default function AdminAgentStorePage() {
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <button
+                  onClick={handlePurgeGhosts}
+                  disabled={purgingGhosts}
+                  className="px-3.5 py-2 rounded-xl bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 border border-rose-500/30 text-xs font-bold shadow-sm transition-all flex items-center gap-1.5"
+                  title="Remove all random, corrupted, or synthetic ghost accounts with no phone/email"
+                >
+                  <Trash2 className={`w-3.5 h-3.5 ${purgingGhosts ? "animate-spin" : ""}`} />
+                  <span>{purgingGhosts ? "Purging Ghosts..." : "Purge Ghost Accounts"}</span>
+                </button>
+                <button
                   onClick={handleRecoverAgents}
                   disabled={recoveringAgents}
                   className="px-3.5 py-2 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 text-xs font-bold shadow-sm transition-all flex items-center gap-1.5"
@@ -1144,6 +1239,28 @@ export default function AdminAgentStorePage() {
                         </td>
                         <td className="py-3 px-4 text-right">
                           <div className="flex items-center justify-end gap-1.5">
+                            {/* Edit Agent Details */}
+                            <button
+                              onClick={() =>
+                                setEditAgentModal({
+                                  open: true,
+                                  agentId: a.id,
+                                  name: a.name,
+                                  store_name: a.store_name,
+                                  store_slug: a.store_slug,
+                                  email: a.email || "",
+                                  phone: a.phone || "",
+                                  password: a.password_hash || "",
+                                  wallet_balance: String(a.wallet_balance || "0"),
+                                  loading: false,
+                                })
+                              }
+                              title="Edit Agent Name, Store Name, Contact, PIN, or Wallet"
+                              className="p-1.5 rounded-lg bg-slate-800 hover:bg-sky-500/20 hover:text-sky-300 text-slate-400 border border-slate-700 transition-colors"
+                            >
+                              <Edit2 className="w-3.5 h-3.5 text-sky-400" />
+                            </button>
+
                             {/* Adjust Wallet Balance */}
                             <button
                               onClick={() => {
@@ -1942,6 +2059,135 @@ export default function AdminAgentStorePage() {
                     ) : (
                       "Apply Debit"
                     )}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* Modal: Edit Agent Details */}
+        {editAgentModal.open && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 max-w-lg w-full shadow-2xl space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                <div className="flex items-center gap-2">
+                  <div className="p-2 rounded-xl bg-sky-500/20 text-sky-400 border border-sky-500/30">
+                    <Edit2 className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-white">Edit Agent Profile & Credentials</h3>
+                    <p className="text-xs text-slate-400">Update registered name, storefront link, contact, PIN, and wallet</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setEditAgentModal((prev) => ({ ...prev, open: false }))}
+                  className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <form onSubmit={handleSaveAgentDetails} className="space-y-3 text-xs">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-slate-400 font-bold mb-1">Agent Full Name *</label>
+                    <input
+                      type="text"
+                      required
+                      value={editAgentModal.name}
+                      onChange={(e) => setEditAgentModal((prev) => ({ ...prev, name: e.target.value }))}
+                      placeholder="e.g. Jennifer Mahwayo"
+                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white font-medium focus:outline-none focus:ring-2 focus:ring-sky-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-slate-400 font-bold mb-1">Storefront Name *</label>
+                    <input
+                      type="text"
+                      required
+                      value={editAgentModal.store_name}
+                      onChange={(e) => setEditAgentModal((prev) => ({ ...prev, store_name: e.target.value }))}
+                      placeholder="e.g. Jenny Data Hub"
+                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white font-medium focus:outline-none focus:ring-2 focus:ring-sky-500"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-slate-400 font-bold mb-1">Store URL Slug (/slug)</label>
+                    <input
+                      type="text"
+                      value={editAgentModal.store_slug}
+                      onChange={(e) => setEditAgentModal((prev) => ({ ...prev, store_slug: e.target.value }))}
+                      placeholder="e.g. jenny-data-hub"
+                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono text-[11px] focus:outline-none focus:ring-2 focus:ring-sky-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-slate-400 font-bold mb-1">Phone (MoMo / WhatsApp) *</label>
+                    <input
+                      type="tel"
+                      required
+                      value={editAgentModal.phone}
+                      onChange={(e) => setEditAgentModal((prev) => ({ ...prev, phone: e.target.value }))}
+                      placeholder="0532543968"
+                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono focus:outline-none focus:ring-2 focus:ring-sky-500"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-slate-400 font-bold mb-1">Email Address</label>
+                    <input
+                      type="email"
+                      value={editAgentModal.email}
+                      onChange={(e) => setEditAgentModal((prev) => ({ ...prev, email: e.target.value }))}
+                      placeholder="agent@gmail.com"
+                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white font-medium focus:outline-none focus:ring-2 focus:ring-sky-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-slate-400 font-bold mb-1">Login PIN / Password *</label>
+                    <input
+                      type="text"
+                      required
+                      value={editAgentModal.password}
+                      onChange={(e) => setEditAgentModal((prev) => ({ ...prev, password: e.target.value }))}
+                      placeholder="e.g. 182806"
+                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-amber-400 font-mono font-bold focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-slate-400 font-bold mb-1">Wallet Balance (GHS)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={editAgentModal.wallet_balance}
+                    onChange={(e) => setEditAgentModal((prev) => ({ ...prev, wallet_balance: e.target.value }))}
+                    className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-emerald-400 font-mono font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+
+                <div className="flex gap-2 pt-4 border-t border-slate-800">
+                  <button
+                    type="button"
+                    onClick={() => setEditAgentModal((prev) => ({ ...prev, open: false }))}
+                    className="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={editAgentModal.loading}
+                    className="flex-1 py-2.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs shadow-lg shadow-sky-600/30 flex items-center justify-center gap-1.5 transition-all disabled:opacity-50"
+                  >
+                    {editAgentModal.loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Save Changes"}
                   </button>
                 </div>
               </form>

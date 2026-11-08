@@ -15,6 +15,11 @@ export async function GET(req: Request) {
       await db.resetAllAgentFinances();
     }
 
+    // Auto-scrub any corrupted or random ghost accounts with no phone/email
+    try {
+      await db.purgeGhostAgents();
+    } catch {}
+
     const [config, baseProducts, agents, withdrawals, orders] = await Promise.all([
       db.getAgentStoreConfig(),
       db.getAgentBaseProducts(),
@@ -277,6 +282,57 @@ export async function POST(req: Request) {
         success: true,
         message: `Successfully ${numAmount > 0 ? "credited" : "debited"} GHS ${Math.abs(numAmount).toFixed(2)} ${numAmount > 0 ? "to" : "from"} ${agent.name}'s (${agent.store_name}) wallet. New balance: GHS ${newBal.toFixed(2)}`,
         new_balance: newBal,
+      });
+    }
+
+    if (action === "update_agent_details") {
+      const { agent_id, name, store_name, store_slug, email, phone, password, wallet_balance } = body;
+      if (!agent_id) {
+        return NextResponse.json({ success: false, message: "Agent ID is required." }, { status: 400 });
+      }
+
+      const agent = await db.getAgentById(agent_id);
+      if (!agent) {
+        return NextResponse.json({ success: false, message: "Agent not found." }, { status: 404 });
+      }
+
+      const updates: any = {};
+      if (name !== undefined && String(name).trim()) updates.name = String(name).trim();
+      if (store_name !== undefined && String(store_name).trim()) updates.store_name = String(store_name).trim();
+      if (store_slug !== undefined && String(store_slug).trim()) {
+        updates.store_slug = String(store_slug).toLowerCase().trim().replace(/[^a-z0-9-_]/g, "-");
+      }
+      if (email !== undefined) updates.email = String(email).trim().toLowerCase();
+      if (phone !== undefined) {
+        const cleanPhone = String(phone).replace(/[^0-9]/g, "");
+        updates.phone = cleanPhone;
+        updates.momo_number = cleanPhone;
+      }
+      if (password !== undefined && String(password).trim().length > 0) {
+        updates.password_hash = String(password).trim();
+      }
+      if (wallet_balance !== undefined) {
+        const bal = Number(wallet_balance);
+        if (!isNaN(bal) && bal >= 0) updates.wallet_balance = bal;
+      }
+
+      const updated = await db.updateAgent(agent.id, updates);
+      return NextResponse.json({
+        success: true,
+        agent: updated,
+        message: `Agent "${updated?.name || agent.name}" updated successfully!`,
+      });
+    }
+
+    if (action === "purge_ghost_agents") {
+      const result = await db.purgeGhostAgents();
+      return NextResponse.json({
+        success: true,
+        message: result.purged_count > 0
+          ? `Successfully removed ${result.purged_count} random / corrupted ghost account(s)!`
+          : "No random or corrupted ghost accounts detected. Database is completely clean.",
+        purged_count: result.purged_count,
+        purged_ids: result.purged_ids,
       });
     }
 

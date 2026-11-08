@@ -308,7 +308,22 @@ export default function AgentDashboardPage() {
       }
 
       if (prodData?.success && Array.isArray(prodData.products)) {
-        const sorted = sortProductList(prodData.products);
+        // Read any cached local custom prices as safety fallback
+        let localCustomPrices: Record<string, string> = {};
+        try {
+          localCustomPrices = JSON.parse(localStorage.getItem(`bmgh_agent_custom_prices_${agentId}`) || "{}");
+        } catch {}
+
+        const mergedProducts = prodData.products.map((p: any) => {
+          const key = p.base_product_id || p.id;
+          const cachedPrice = localCustomPrices[key] ?? (p.base_product_id ? localCustomPrices[p.base_product_id] : undefined);
+          if (cachedPrice !== undefined && Number(cachedPrice) >= p.base_price && p.selling_price < Number(cachedPrice)) {
+            return { ...p, selling_price: Number(cachedPrice) };
+          }
+          return p;
+        });
+
+        const sorted = sortProductList(mergedProducts);
         setProducts(sorted);
         try {
           localStorage.setItem(`bmgh_agent_prods_${agentId}`, JSON.stringify(sorted));
@@ -320,7 +335,7 @@ export default function AgentDashboardPage() {
           if (p.base_product_id) pricesMap[p.base_product_id] = String(p.selling_price);
           if (p.id) pricesMap[p.id] = String(p.selling_price);
         });
-        setEditPrices(pricesMap);
+        setEditPrices((prev) => ({ ...pricesMap, ...localCustomPrices, ...prev }));
       }
     } catch (err: any) {
       console.warn("Dashboard refresh warning:", err);
@@ -471,6 +486,10 @@ export default function AgentDashboardPage() {
         );
         try {
           localStorage.setItem(`bmgh_agent_prods_${agent.id}`, JSON.stringify(updated));
+          const cachedPrices = JSON.parse(localStorage.getItem(`bmgh_agent_custom_prices_${agent.id}`) || "{}");
+          cachedPrices[key] = String(newPrice);
+          if (p.base_product_id) cachedPrices[p.base_product_id] = String(newPrice);
+          localStorage.setItem(`bmgh_agent_custom_prices_${agent.id}`, JSON.stringify(cachedPrices));
           invalidateCache(`store_products_${agent.id}`);
           invalidateCache(`store_products_${agent.store_slug}`);
           localStorage.removeItem(`bmgh_sess_store_${agent.store_slug.toLowerCase()}`);
@@ -559,6 +578,11 @@ export default function AgentDashboardPage() {
         );
         try {
           localStorage.setItem(`bmgh_agent_prods_${agent.id}`, JSON.stringify(updated));
+          const cachedPrices = JSON.parse(localStorage.getItem(`bmgh_agent_custom_prices_${agent.id}`) || "{}");
+          payload.forEach((item) => {
+            cachedPrices[item.base_product_id] = String(item.selling_price);
+          });
+          localStorage.setItem(`bmgh_agent_custom_prices_${agent.id}`, JSON.stringify(cachedPrices));
           invalidateCache(`store_products_${agent.id}`);
           invalidateCache(`store_products_${agent.store_slug}`);
           localStorage.removeItem(`bmgh_sess_store_${agent.store_slug.toLowerCase()}`);
@@ -631,6 +655,10 @@ export default function AgentDashboardPage() {
         const updated = prev.filter((item) => item.base_product_id !== p.base_product_id);
         try {
           localStorage.setItem(`bmgh_agent_prods_${agent.id}`, JSON.stringify(updated));
+          const cachedPrices = JSON.parse(localStorage.getItem(`bmgh_agent_custom_prices_${agent.id}`) || "{}");
+          delete cachedPrices[p.base_product_id];
+          if (p.id) delete cachedPrices[p.id];
+          localStorage.setItem(`bmgh_agent_custom_prices_${agent.id}`, JSON.stringify(cachedPrices));
           invalidateCache(`store_products_${agent.id}`);
           invalidateCache(`store_products_${agent.store_slug}`);
           localStorage.removeItem(`bmgh_sess_store_${agent.store_slug.toLowerCase()}`);
