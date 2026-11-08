@@ -41,14 +41,10 @@ export async function POST(req: Request) {
 
       if (netPayout === undefined || netPayout === null) {
         if (storeConfig.withdrawal_fee_enabled !== false) {
-          const feeVal = Number(storeConfig.withdrawal_fee_value ?? 1.00);
-          if (storeConfig.withdrawal_fee_type === "percent") {
-            fee = Math.round((Number(targetWd.amount) * (feeVal / 100)) * 100) / 100;
-          } else {
-            fee = feeVal;
-          }
-          fee = Math.max(0, Math.min(fee, Number(targetWd.amount) - 1));
-          netPayout = Math.max(1, Number((Number(targetWd.amount) - fee).toFixed(2)));
+          const percent = Number(storeConfig.withdrawal_fee_value ?? 1.00);
+          fee = Math.round((Number(targetWd.amount) * (percent / 100)) * 100) / 100;
+          fee = Math.max(0, Math.min(fee, Number(targetWd.amount) - 0.50));
+          netPayout = Math.max(0.50, Number((Number(targetWd.amount) - fee).toFixed(2)));
         } else {
           fee = 0;
           netPayout = Number(targetWd.amount);

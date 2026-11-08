@@ -15,8 +15,18 @@ export async function GET(req: Request) {
       return NextResponse.json({ success: false, message: "Agent ID is required" }, { status: 400 });
     }
 
-    const withdrawals = await db.getAgentWithdrawals(agentId);
-    return NextResponse.json({ success: true, withdrawals });
+    const [withdrawals, storeConfig] = await Promise.all([
+      db.getAgentWithdrawals(agentId),
+      db.getAgentStoreConfig(),
+    ]);
+    return NextResponse.json({
+      success: true,
+      withdrawals,
+      fee_config: {
+        enabled: storeConfig.withdrawal_fee_enabled !== false,
+        percent: Number(storeConfig.withdrawal_fee_value ?? 1.00),
+      },
+    });
   } catch (error: any) {
     return NextResponse.json({ success: false, message: error?.message }, { status: 500 });
   }
@@ -115,19 +125,15 @@ export async function POST(req: Request) {
       withdrawalOtps.delete(agent_id);
       await db.updateAgent(agent_id, { withdrawal_otp: null, withdrawal_otp_expires: null });
 
-      // Calculate withdrawal fee and net payout amount
+      // Calculate withdrawal fee and net payout amount (strictly percentage-based)
       const storeConfig = await db.getAgentStoreConfig();
       let fee = 0;
       if (storeConfig.withdrawal_fee_enabled !== false) {
-        const feeVal = Number(storeConfig.withdrawal_fee_value ?? 1.00);
-        if (storeConfig.withdrawal_fee_type === "percent") {
-          fee = Math.round((numAmount * (feeVal / 100)) * 100) / 100;
-        } else {
-          fee = feeVal;
-        }
-        fee = Math.max(0, Math.min(fee, numAmount - 1));
+        const percent = Number(storeConfig.withdrawal_fee_value ?? 1.00);
+        fee = Math.round((numAmount * (percent / 100)) * 100) / 100;
+        fee = Math.max(0, Math.min(fee, numAmount - 0.50));
       }
-      const netAmount = Math.max(1, Number((numAmount - fee).toFixed(2)));
+      const netAmount = Math.max(0.50, Number((numAmount - fee).toFixed(2)));
 
       // Create withdrawal and deduct wallet balance
       let payoutNote = `Payout request: Gross GHS ${numAmount.toFixed(2)} (Fee: GHS ${fee.toFixed(2)}, Net: GHS ${netAmount.toFixed(2)}) to ${momo_network} ${momo_number}`;

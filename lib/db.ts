@@ -218,8 +218,8 @@ export interface AgentStoreConfig {
   custom_domain?: string;
   auto_paystack_payout?: boolean;
   withdrawal_fee_enabled?: boolean;
-  withdrawal_fee_type?: "flat" | "percent";
-  withdrawal_fee_value?: number;
+  withdrawal_fee_type?: "percent";
+  withdrawal_fee_value?: number; // Fee percentage (e.g. 1.0 for 1%, 1.5 for 1.5%)
 }
 
 export interface AgentBaseProduct {
@@ -611,6 +611,7 @@ const globalStore = globalThis as unknown as {
   __bmgh_customer_transactions?: CustomerTransaction[];
   __bmgh_cache_timestamps?: Record<string, number>;
   __bmgh_agents_zeroed_migrated?: boolean;
+  __bmgh_agents_auto_recovered?: boolean;
   __bmgh_deleted_agents?: string[];
   __bmgh_deleted_base_products?: string[];
 };
@@ -2647,7 +2648,7 @@ export const db = {
           let custom_domain = "";
           let auto_paystack_payout = false;
           let withdrawal_fee_enabled = true;
-          let withdrawal_fee_type: "flat" | "percent" = "flat";
+          let withdrawal_fee_type: "percent" = "percent";
           let withdrawal_fee_value = 1.00;
           try {
             if (data.store_name.startsWith("{")) {
@@ -2657,7 +2658,7 @@ export const db = {
               custom_domain = parsed.custom_domain || "";
               auto_paystack_payout = Boolean(parsed.auto_paystack_payout);
               withdrawal_fee_enabled = parsed.withdrawal_fee_enabled !== false;
-              withdrawal_fee_type = parsed.withdrawal_fee_type === "percent" ? "percent" : "flat";
+              withdrawal_fee_type = "percent";
               withdrawal_fee_value = parsed.withdrawal_fee_value !== undefined ? Number(parsed.withdrawal_fee_value) : 1.00;
             } else {
               developer_master_enabled = data.store_name !== "false" && data.store_name !== "0";
@@ -2695,7 +2696,7 @@ export const db = {
       const adminEn = current.admin_enabled !== false;
       current.is_enabled = Boolean(devMaster && adminEn);
       if (current.withdrawal_fee_enabled === undefined) current.withdrawal_fee_enabled = true;
-      if (!current.withdrawal_fee_type) current.withdrawal_fee_type = "flat";
+      current.withdrawal_fee_type = "percent";
       if (current.withdrawal_fee_value === undefined) current.withdrawal_fee_value = 1.00;
       return current;
     }
@@ -2707,7 +2708,7 @@ export const db = {
       custom_domain: "fastdata-gh.vercel.app",
       auto_paystack_payout: false,
       withdrawal_fee_enabled: true,
-      withdrawal_fee_type: "flat",
+      withdrawal_fee_type: "percent",
       withdrawal_fee_value: 1.00,
     };
   },
@@ -2741,8 +2742,7 @@ export const db = {
         ? Boolean(config.withdrawal_fee_enabled)
         : current.withdrawal_fee_enabled ?? true;
 
-    const withdrawal_fee_type =
-      config.withdrawal_fee_type === "percent" ? "percent" : (current.withdrawal_fee_type || "flat");
+    const withdrawal_fee_type: "percent" = "percent";
 
     const withdrawal_fee_value =
       config.withdrawal_fee_value !== undefined
@@ -3531,6 +3531,24 @@ export const db = {
           }
         }
       } catch {}
+    }
+
+    // Auto-Recovery: If no non-seed agents are found and recovery hasn't run yet in this runtime, run deep recovery automatically
+    const hasCustomAgents = Array.from(agentMap.values()).some(
+      (a) => !initialAgents.some((init) => init.id === a.id)
+    );
+    if (!hasCustomAgents && !globalStore.__bmgh_agents_auto_recovered && isSupabaseConfigured && supabaseAdmin) {
+      globalStore.__bmgh_agents_auto_recovered = true;
+      try {
+        const recResult = await this.recoverAllAgents();
+        if (recResult.recovered && recResult.recovered.length > 0) {
+          for (const a of recResult.recovered) {
+            agentMap.set(a.id, a);
+          }
+        }
+      } catch (e) {
+        console.warn("Automatic agent recovery attempt warning:", e);
+      }
     }
 
     const merged = Array.from(agentMap.values());

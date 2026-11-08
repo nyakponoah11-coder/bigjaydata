@@ -51,7 +51,7 @@ export async function POST(req: Request) {
         registration_fee: registration_fee !== undefined ? Number(registration_fee) : undefined,
         custom_domain: custom_domain !== undefined ? String(custom_domain) : undefined,
         withdrawal_fee_enabled: withdrawal_fee_enabled !== undefined ? Boolean(withdrawal_fee_enabled) : undefined,
-        withdrawal_fee_type: withdrawal_fee_type !== undefined ? (withdrawal_fee_type === "percent" ? "percent" : "flat") : undefined,
+        withdrawal_fee_type: "percent",
         withdrawal_fee_value: withdrawal_fee_value !== undefined ? Number(withdrawal_fee_value) : undefined,
       });
       return NextResponse.json({ success: true, message: "Agent store configuration updated.", config: updated });

@@ -92,6 +92,8 @@ export default function AgentDashboardPage() {
 
   // Withdrawal States
   const [withdrawals, setWithdrawals] = useState<any[]>([]);
+  const [withdrawalFeeEnabled, setWithdrawalFeeEnabled] = useState(true);
+  const [withdrawalFeePercent, setWithdrawalFeePercent] = useState<number>(1.0);
   const [withdrawAmount, setWithdrawAmount] = useState<string>("");
   const [withdrawMomo, setWithdrawMomo] = useState<string>("");
   const [withdrawNetwork, setWithdrawNetwork] = useState<string>("MTN");
@@ -228,6 +230,10 @@ export default function AgentDashboardPage() {
       const loadedWithdrawals = withData?.success ? (withData.withdrawals || []) : null;
       if (loadedOrders) setOrders(loadedOrders);
       if (loadedWithdrawals) setWithdrawals(loadedWithdrawals);
+      if (withData?.fee_config) {
+        setWithdrawalFeeEnabled(withData.fee_config.enabled !== false);
+        setWithdrawalFeePercent(Number(withData.fee_config.percent ?? 1.0));
+      }
 
       if (profData?.success && profData?.agent) {
         const isPaidOrder = (o: any) => {
@@ -1439,22 +1445,27 @@ export default function AgentDashboardPage() {
                       className="w-full pl-12 pr-4 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white text-sm font-mono font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500"
                     />
                   </div>
-                  {parseFloat(withdrawAmount) >= 5 && (
-                    <div className="mt-2 p-2.5 rounded-xl bg-slate-800/60 border border-slate-700/50 text-xs space-y-1">
-                      <div className="flex items-center justify-between text-slate-400 text-[11px]">
-                        <span>Gross Requested:</span>
-                        <span className="font-mono text-slate-200">GHS {parseFloat(withdrawAmount).toFixed(2)}</span>
+                  {parseFloat(withdrawAmount) >= 5 && (() => {
+                    const gross = parseFloat(withdrawAmount) || 0;
+                    const fee = withdrawalFeeEnabled ? Math.round((gross * (withdrawalFeePercent / 100)) * 100) / 100 : 0;
+                    const net = Math.max(0.50, Number((gross - fee).toFixed(2)));
+                    return (
+                      <div className="mt-2 p-2.5 rounded-xl bg-slate-800/60 border border-slate-700/50 text-xs space-y-1">
+                        <div className="flex items-center justify-between text-slate-400 text-[11px]">
+                          <span>Gross Requested:</span>
+                          <span className="font-mono text-slate-200">GHS {gross.toFixed(2)}</span>
+                        </div>
+                        <div className="flex items-center justify-between text-slate-400 text-[11px]">
+                          <span>Payout Fee {withdrawalFeeEnabled ? `(${withdrawalFeePercent}%)` : "(0%)"}:</span>
+                          <span className="font-mono text-amber-400">{fee > 0 ? `-GHS ${fee.toFixed(2)}` : "GHS 0.00"}</span>
+                        </div>
+                        <div className="flex items-center justify-between border-t border-slate-700/60 pt-1 font-bold text-xs">
+                          <span className="text-slate-300">You Will Receive:</span>
+                          <span className="font-mono text-emerald-400">GHS {net.toFixed(2)}</span>
+                        </div>
                       </div>
-                      <div className="flex items-center justify-between text-slate-400 text-[11px]">
-                        <span>Network & Transfer Fee:</span>
-                        <span className="font-mono text-amber-400">-GHS 1.00</span>
-                      </div>
-                      <div className="flex items-center justify-between border-t border-slate-700/60 pt-1 font-bold text-xs">
-                        <span className="text-slate-300">You Will Receive:</span>
-                        <span className="font-mono text-emerald-400">GHS {Math.max(1, parseFloat(withdrawAmount) - 1.00).toFixed(2)}</span>
-                      </div>
-                    </div>
-                  )}
+                    );
+                  })()}
                 </div>
 
                 {/* Network */}

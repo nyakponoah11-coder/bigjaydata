@@ -39,9 +39,9 @@ export default function AdminAgentStorePage() {
     developer_master_enabled?: boolean;
     admin_enabled?: boolean;
     withdrawal_fee_enabled?: boolean;
-    withdrawal_fee_type?: "flat" | "percent";
+    withdrawal_fee_type?: "percent";
     withdrawal_fee_value?: number;
-  }>({ is_enabled: true, registration_fee: 0, withdrawal_fee_enabled: true, withdrawal_fee_type: "flat", withdrawal_fee_value: 1.00 });
+  }>({ is_enabled: true, registration_fee: 0, withdrawal_fee_enabled: true, withdrawal_fee_type: "percent", withdrawal_fee_value: 1.00 });
   const [baseProducts, setBaseProducts] = useState<any[]>([]);
   const [agents, setAgents] = useState<any[]>([]);
   const [withdrawals, setWithdrawals] = useState<any[]>([]);
@@ -52,7 +52,6 @@ export default function AdminAgentStorePage() {
   // Form states
   const [regFeeInput, setRegFeeInput] = useState<string>("0");
   const [withdrawalFeeEnabled, setWithdrawalFeeEnabled] = useState(true);
-  const [withdrawalFeeType, setWithdrawalFeeType] = useState<"flat" | "percent">("flat");
   const [withdrawalFeeValue, setWithdrawalFeeValue] = useState("1.00");
   const [savingWithdrawalFee, setSavingWithdrawalFee] = useState(false);
   const [updatingConfig, setUpdatingConfig] = useState(false);
@@ -260,7 +259,6 @@ export default function AdminAgentStorePage() {
       setRegFeeInput(String(data.config?.registration_fee || 0));
       if (data.config) {
         setWithdrawalFeeEnabled(data.config.withdrawal_fee_enabled !== false);
-        setWithdrawalFeeType(data.config.withdrawal_fee_type === "percent" ? "percent" : "flat");
         setWithdrawalFeeValue(String(data.config.withdrawal_fee_value !== undefined ? data.config.withdrawal_fee_value : "1.00"));
       }
       setBaseProducts(data.baseProducts || []);
@@ -525,7 +523,7 @@ export default function AdminAgentStorePage() {
         body: JSON.stringify({
           action: "update_config",
           withdrawal_fee_enabled: withdrawalFeeEnabled,
-          withdrawal_fee_type: withdrawalFeeType,
+          withdrawal_fee_type: "percent",
           withdrawal_fee_value: feeVal,
         }),
       });
@@ -533,7 +531,7 @@ export default function AdminAgentStorePage() {
       if (data.success) {
         setConfig(data.config);
         setNotice(
-          `Withdrawal fee updated: ${withdrawalFeeEnabled ? (withdrawalFeeType === "percent" ? `${feeVal}%` : `GHS ${feeVal.toFixed(2)} flat`) : "Disabled"}`
+          `Withdrawal fee updated: ${withdrawalFeeEnabled ? `${feeVal}%` : "Disabled"}`
         );
         setTimeout(() => setNotice(""), 4000);
       } else {
@@ -550,19 +548,17 @@ export default function AdminAgentStorePage() {
     const target = withdrawals.find((w) => w.id === id);
     if (!target) return;
 
-    const storeFeeVal = Number(config.withdrawal_fee_value ?? 1.00);
+    const storeFeePercent = Number(config.withdrawal_fee_value ?? 1.00);
     const calculatedFee =
       target.fee !== undefined
         ? Number(target.fee)
         : config.withdrawal_fee_enabled !== false
-        ? config.withdrawal_fee_type === "percent"
-          ? Math.round(Number(target.amount) * (storeFeeVal / 100) * 100) / 100
-          : storeFeeVal
+        ? Math.round(Number(target.amount) * (storeFeePercent / 100) * 100) / 100
         : 0;
     const netPayout =
       target.net_amount !== undefined
         ? Number(target.net_amount)
-        : Math.max(1, Number((Number(target.amount) - calculatedFee).toFixed(2)));
+        : Math.max(0.50, Number((Number(target.amount) - calculatedFee).toFixed(2)));
 
     if (
       !confirm(
@@ -781,33 +777,29 @@ export default function AdminAgentStorePage() {
                 </button>
               </div>
               <h3 className="text-lg font-black text-white mt-1">
-                Withdrawal Fee
+                Withdrawal Fee (%)
               </h3>
               <p className="text-xs text-slate-400 mt-1">
-                Deducted from agent payout to cover Paystack&apos;s transfer charge so your business account is never debited.
+                Percentage charge deducted from agent payout to cover Paystack&apos;s transfer charge so your business account is never debited.
               </p>
             </div>
 
             <form onSubmit={handleSaveWithdrawalFee} className="mt-4 flex items-center gap-2">
-              <select
-                value={withdrawalFeeType}
-                onChange={(e) => setWithdrawalFeeType(e.target.value as "flat" | "percent")}
-                className="bg-slate-800 border border-slate-700 rounded-xl px-2.5 py-2 text-white font-bold text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500 shrink-0"
-              >
-                <option value="flat">GHS Flat</option>
-                <option value="percent">% Percent</option>
-              </select>
+              <div className="px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-emerald-400 font-bold text-xs shrink-0 flex items-center gap-1">
+                <span>% Percentage</span>
+              </div>
               <div className="relative flex-1">
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 font-bold text-xs">
-                  {withdrawalFeeType === "percent" ? "%" : "GHS"}
+                  %
                 </span>
                 <input
                   type="number"
                   step="0.01"
                   min="0"
+                  max="100"
                   value={withdrawalFeeValue}
                   onChange={(e) => setWithdrawalFeeValue(e.target.value)}
-                  className="w-full bg-slate-800 border border-slate-700 rounded-xl pl-11 pr-3 py-2 text-white font-mono font-bold text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  className="w-full bg-slate-800 border border-slate-700 rounded-xl pl-9 pr-3 py-2 text-white font-mono font-bold text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
                   placeholder="1.00"
                 />
               </div>
@@ -1291,19 +1283,17 @@ export default function AdminAgentStorePage() {
                   ) : (
                     withdrawals.map((w) => {
                       const agent = agents.find((a) => a.id === w.agent_id);
-                      const storeFeeVal = Number(config.withdrawal_fee_value ?? 1.00);
+                      const storeFeePercent = Number(config.withdrawal_fee_value ?? 1.00);
                       const calculatedFee =
                         w.fee !== undefined
                           ? Number(w.fee)
                           : config.withdrawal_fee_enabled !== false
-                          ? config.withdrawal_fee_type === "percent"
-                            ? Math.round(Number(w.amount) * (storeFeeVal / 100) * 100) / 100
-                            : storeFeeVal
+                          ? Math.round(Number(w.amount) * (storeFeePercent / 100) * 100) / 100
                           : 0;
                       const netPayout =
                         w.net_amount !== undefined
                           ? Number(w.net_amount)
-                          : Math.max(1, Number((Number(w.amount) - calculatedFee).toFixed(2)));
+                          : Math.max(0.50, Number((Number(w.amount) - calculatedFee).toFixed(2)));
 
                       return (
                         <tr key={w.id} className="hover:bg-slate-800/40 transition-colors">
