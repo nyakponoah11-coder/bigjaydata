@@ -277,6 +277,19 @@ export async function POST(
     }
 
     // 7. Dispatch data bundle to DataMart API (single request with deterministic idempotency)
+    const claim = await db.claimOrderForDispatch(masterOrder.reference);
+    if (!claim.allowed) {
+      console.log(`[Agent Checkout] Order ${masterOrder.reference} already claimed or dispatched by webhook. Skipping duplicate DataMart call.`);
+      const latestOrder = (await db.getOrderByReference(masterOrder.reference)) || masterOrder;
+      return NextResponse.json({
+        success: true,
+        reference,
+        order: latestOrder,
+        agent_order: agentOrder,
+        delivery: latestOrder.datamart_response,
+      });
+    }
+
     try {
       deliveryResult = await sendDataMartDelivery({
         network: masterOrder.network,

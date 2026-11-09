@@ -667,6 +667,7 @@ const globalStore = globalThis as unknown as {
   __bmgh_agents_auto_recovered?: boolean;
   __bmgh_deleted_agents?: string[];
   __bmgh_deleted_base_products?: string[];
+  __bmgh_dispatch_claims?: Map<string, number>;
 };
 
 let saveDiskTimer: NodeJS.Timeout | null = null;
@@ -2224,6 +2225,76 @@ export const db = {
     }
 
     return normalizeOrder(order);
+  },
+
+  /**
+   * Atomic order dispatch claim: Prevents duplicate dispatches to DataMart
+   * when browser checkout and Paystack webhook execute simultaneously.
+   */
+  async claimOrderForDispatch(reference: string): Promise<{ allowed: boolean; order: Order | null }> {
+    const cleanRef = (reference || "").trim().toLowerCase();
+    if (!cleanRef) return { allowed: false, order: null };
+
+    // 1. Process-level memory lock: Prevent simultaneous dispatches in this instance
+    if (!globalStore.__bmgh_dispatch_claims) {
+      globalStore.__bmgh_dispatch_claims = new Map<string, number>();
+    }
+    const lastClaim = globalStore.__bmgh_dispatch_claims.get(cleanRef);
+    if (lastClaim && Date.now() - lastClaim < 10 * 60 * 1000) {
+      const currentOrder = await this.getOrderByReference(reference);
+      return { allowed: false, order: currentOrder };
+    }
+
+    // 2. Check existing order state in memory/database
+    const order = await this.getOrderByReference(reference);
+    if (order) {
+      const dm = order.datamart_response;
+      const isDelivered = order.delivery_status === "delivered" || order.status === "delivered";
+      const hasPurchaseId = Boolean(dm?.purchaseId || dm?.orderReference || dm?.data?.purchaseId);
+      const wasDispatched = Boolean(dm?.dispatched_at);
+      const isDispatching = Boolean(dm?.dispatch_in_progress) && dm?.dispatch_started_at && (Date.now() - new Date(dm.dispatch_started_at).getTime() < 60000);
+
+      if (isDelivered || hasPurchaseId || wasDispatched || isDispatching) {
+        return { allowed: false, order };
+      }
+    }
+
+    // 3. Mark process-level lock immediately
+    globalStore.__bmgh_dispatch_claims.set(cleanRef, Date.now());
+
+    // 4. Mark DB / memory order as dispatch in progress
+    if (order) {
+      const updatedDm = {
+        ...(typeof order.datamart_response === "object" ? order.datamart_response : {}),
+        dispatch_in_progress: true,
+        dispatch_started_at: new Date().toISOString(),
+      };
+      order.datamart_response = updatedDm;
+      bigjdb.upsert("orders", order);
+
+      if (isSupabaseConfigured && supabaseAdmin) {
+        try {
+          await supabaseAdmin
+            .from("orders")
+            .update({ datamart_response: updatedDm })
+            .ilike("reference", reference.trim());
+        } catch {}
+      }
+    }
+
+    return { allowed: true, order };
+  },
+
+  async releaseOrderDispatchClaim(reference: string): Promise<void> {
+    const cleanRef = (reference || "").trim().toLowerCase();
+    if (globalStore.__bmgh_dispatch_claims) {
+      globalStore.__bmgh_dispatch_claims.delete(cleanRef);
+    }
+    const order = await this.getOrderByReference(reference);
+    if (order && order.datamart_response?.dispatch_in_progress) {
+      order.datamart_response.dispatch_in_progress = false;
+      bigjdb.upsert("orders", order);
+    }
   },
 
   // MESSAGES

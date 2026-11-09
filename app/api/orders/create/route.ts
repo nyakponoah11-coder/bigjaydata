@@ -167,6 +167,18 @@ export async function POST(request: Request) {
       });
     }
 
+    // Atomic claim: Strictly prevents duplicate DataMart purchases when browser checkout and Paystack webhook run simultaneously
+    const claim = await db.claimOrderForDispatch(order.reference);
+    if (!claim.allowed) {
+      console.log(`[Order Create] Order ${reference} has already been claimed or dispatched by webhook. Skipping duplicate DataMart call.`);
+      const latest = (await db.getOrderByReference(reference)) || order;
+      return NextResponse.json({
+        success: true,
+        order: latest,
+        delivery: latest.datamart_response,
+      });
+    }
+
     // Handle Netflix automated delivery via Data1 Partner API
     if (isNetflix) {
       let netflixResult;

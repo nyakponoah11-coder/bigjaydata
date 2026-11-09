@@ -299,8 +299,16 @@ export async function POST(request: Request) {
           return NextResponse.json({ status: "success", message: "Order already dispatched" });
         }
 
+        // Atomic claim: Strictly prevents duplicate DataMart purchases when browser checkout and webhook run simultaneously
+        const claim = await db.claimOrderForDispatch(existingOrder.reference);
+        if (!claim.allowed) {
+          console.log(`[Paystack Webhook] Order ${reference} already claimed or dispatched by client. Skipping duplicate DataMart call.`);
+          return NextResponse.json({ status: "success", message: "Order already claimed/dispatched" });
+        }
+
         // If order was pending, dispatch through DataMart
         console.log(`[Paystack Webhook] Dispatching order ${reference} to DataMart API...`);
+
         const deliveryResult = await sendDataMartDelivery({
           network: existingOrder.network,
           package_size: existingOrder.package_size,
@@ -381,6 +389,13 @@ export async function POST(request: Request) {
             ...(resolvedAgent ? { agent_id: resolvedAgent.id, agent_profit: webhookAgentProfit } : {}),
           },
         });
+
+        // Atomic claim: Strictly prevents duplicate DataMart purchases
+        const claim = await db.claimOrderForDispatch(reference);
+        if (!claim.allowed) {
+          console.log(`[Paystack Webhook] Order ${reference} already claimed or dispatched. Skipping duplicate DataMart call.`);
+          return NextResponse.json({ status: "success", message: "Order already dispatched" });
+        }
 
         const deliveryResult = await sendDataMartDelivery({
           network: activeNet,
