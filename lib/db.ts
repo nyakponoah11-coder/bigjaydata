@@ -1031,11 +1031,11 @@ export const db = {
             merged.datamart_api_key = (process.env.DATAMART_API_KEY || "").trim();
           }
 
-          // Prioritize active environment variables from Vercel
-          if (process.env.DATAMART_API_KEY && !process.env.DATAMART_API_KEY.includes("jollof")) {
+          // Fallback to active environment variables from Vercel only if not set in database settings
+          if (!merged.datamart_api_key && process.env.DATAMART_API_KEY && !process.env.DATAMART_API_KEY.includes("jollof")) {
             merged.datamart_api_key = process.env.DATAMART_API_KEY.trim();
           }
-          if (process.env.DATAMART_API_SECRET) {
+          if (!merged.datamart_api_secret && process.env.DATAMART_API_SECRET) {
             merged.datamart_api_secret = process.env.DATAMART_API_SECRET.trim();
           }
 

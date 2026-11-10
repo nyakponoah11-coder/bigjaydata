@@ -36,6 +36,7 @@ export async function POST(req: Request) {
     });
 
     // Record order in database
+    const deliveryStatus = dmResult.status || (dmResult.success ? "delivered" : "failed");
     const order = await db.createOrder({
       reference,
       network: network.toLowerCase(),
@@ -44,14 +45,28 @@ export async function POST(req: Request) {
       amount: 0,
       paystack_ref: null,
       payment_status: "admin_direct",
-      delivery_status: dmResult.success ? "delivered" : "failed",
-      status: dmResult.success ? "delivered" : "failed",
+      delivery_status: deliveryStatus,
+      status: deliveryStatus,
       datamart_response: dmResult.raw_response || { message: dmResult.message, note },
     });
 
+    if (!dmResult.success) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: dmResult.message || "DataMart dispatch failed",
+          message: dmResult.message || "DataMart dispatch failed",
+          reference,
+          order,
+          datamart: dmResult,
+        },
+        { status: 400 }
+      );
+    }
+
     return NextResponse.json({
       success: dmResult.success,
-      message: dmResult.message,
+      message: dmResult.message || "Direct purchase dispatched successfully",
       reference,
       order,
       datamart: dmResult,

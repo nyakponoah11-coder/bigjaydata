@@ -69,8 +69,17 @@ export async function getDatamartCredentials(): Promise<{ apiKey: string; apiSec
 export async function resolveDatamartKeys(): Promise<string[]> {
   const { apiKey } = await getDatamartCredentials();
   const envKey = (process.env.DATAMART_API_KEY || "").trim();
+  let dbKey = "";
+  try {
+    const settings = await db.getSettings();
+    dbKey = (settings?.datamart_api_key || "").trim();
+  } catch {}
+
   const keys: string[] = [];
-  if (apiKey && !isRevokedDatamartKey(apiKey)) {
+  if (dbKey && !isRevokedDatamartKey(dbKey) && !keys.includes(dbKey)) {
+    keys.push(dbKey);
+  }
+  if (apiKey && !isRevokedDatamartKey(apiKey) && !keys.includes(apiKey)) {
     keys.push(apiKey);
   }
   if (envKey && !isRevokedDatamartKey(envKey) && !keys.includes(envKey)) {
@@ -291,24 +300,20 @@ export async function sendDataMartDelivery(params: DataMartDeliveryParams): Prom
       const datamartNetwork = mapNetworkToDataMart(params.network);
       const capacityGb = extractCapacityInGb(params.package_size);
 
-      // Case-insensitive prefix normalization
-      const orderRef = rawRef.toLowerCase().startsWith("bmgh-") ? rawRef : `bmgh-${rawRef}`;
+      // Always normalize order reference to start with lowercase "bmgh-" as required by DataMart gateway
+      const cleanRefSuffix = rawRef.replace(/^bmgh-/i, "").replace(/^bmgh/i, "");
+      const orderRef = `bmgh-${cleanRefSuffix}`;
 
-      // Deterministic UUID v4 mapped to this exact order reference
-      const idempotencySeed = (params.idempotency_key || rawRef).toLowerCase().trim();
-      const hash = crypto.createHash("sha256").update(idempotencySeed).digest("hex");
-      const idempotencyKey = [
-        hash.substring(0, 8),
-        hash.substring(8, 12),
-        "4" + hash.substring(13, 16),
-        (((parseInt(hash.substring(16, 18), 16) & 0x3f) | 0x80).toString(16).padStart(2, "0") + hash.substring(18, 20)),
-        hash.substring(20, 32),
-      ].join("-");
+      // Standards-compliant UUID v4 for DataMart idempotency
+      const idempotencyKey = crypto.randomUUID();
+
+      const numCap = Number(capacityGb);
+      const validCapacity = !isNaN(numCap) && numCap > 0 ? numCap : capacityGb;
 
       const requestBody: Record<string, any> = {
         phoneNumber: formattedPhone,
         network: datamartNetwork,
-        capacity: capacityGb,
+        capacity: validCapacity,
         gateway: "wallet",
         ref: orderRef,
         reference: orderRef,
@@ -336,17 +341,12 @@ export async function sendDataMartDelivery(params: DataMartDeliveryParams): Prom
       for (const apiKey of keys) {
         console.log(`[DataMart API] Attempting dispatch with key (${apiKey.substring(0, 5)}... length ${apiKey.length}) and idempotency ${idempotencyKey}${apiSecret ? " [Secret active]" : ""}`);
 
+        const authHeaders = getDatamartAuthHeaders(apiKey, apiSecret);
         const baseHeaders: Record<string, string> = {
+          ...authHeaders,
           "Content-Type": "application/json",
-          "X-API-Key": apiKey,
           "X-Idempotency-Key": idempotencyKey,
-          "User-Agent": "BundleMartGh/1.0",
-          "Accept": "application/json",
         };
-
-        if (apiSecret) {
-          baseHeaders["X-API-Secret"] = apiSecret;
-        }
 
         try {
           // Live HTTP Call to DataMart official purchase endpoint
