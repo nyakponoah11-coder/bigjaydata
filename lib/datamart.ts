@@ -455,7 +455,7 @@ export async function sendDataMartDelivery(params: DataMartDeliveryParams): Prom
                   method: "POST",
                   headers: baseHeaders,
                   body: JSON.stringify(variation.body),
-                  signal: AbortSignal.timeout(9000),
+                  signal: AbortSignal.timeout(25000),
                 });
 
                 const responseText = await response.text();

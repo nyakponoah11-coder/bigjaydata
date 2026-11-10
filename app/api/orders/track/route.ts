@@ -50,7 +50,7 @@ export async function GET(request: Request) {
       const isTerminal = ["cancelled", "refunded", "delivered", "completed"].includes((order.delivery_status || "").toLowerCase().trim());
       if (!isTerminal || forceSync) {
         try {
-          order = await syncOrderWithDataMart(order);
+          order = await syncOrderWithDataMart(order, forceSync);
         } catch (syncErr) {
           console.warn("[Track API] DataMart live sync error:", syncErr);
         }
@@ -67,7 +67,7 @@ export async function GET(request: Request) {
         const isTerminal = ["cancelled", "refunded", "delivered", "completed"].includes((ord.delivery_status || "").toLowerCase().trim());
         if (!isTerminal || forceSync) {
           try {
-            return await syncOrderWithDataMart(ord);
+            return await syncOrderWithDataMart(ord, forceSync);
           } catch {
             return ord;
           }
