@@ -339,7 +339,7 @@ export async function sendDataMartDelivery(params: DataMartDeliveryParams): Prom
       const numCap = Number(capacityGb);
       const validNumCap = !isNaN(numCap) && numCap > 0 ? numCap : 1;
 
-      // Always normalize order reference to start with lowercase "bmgh-" as required by DataMart gateway
+      // Mandatory DataMart Rule #1: Every purchase reference sent to DataMart MUST start with "bmgh-"
       const cleanRefSuffix = rawRef.replace(/^bmgh-/i, "").replace(/^bmgh/i, "");
       const orderRef = `bmgh-${cleanRefSuffix}`;
 
@@ -347,7 +347,7 @@ export async function sendDataMartDelivery(params: DataMartDeliveryParams): Prom
       const candidateUrls = getCandidatePurchaseUrls(settings.datamart_api_url || process.env.DATAMART_API_URL);
       const networkCandidates = getNetworkCandidates(params.network);
 
-      console.log(`[DataMart API] Dispatching order ${rawRef} -> Phone: ${formattedPhone}, Networks: [${networkCandidates.join(", ")}], Size: ${validNumCap}GB`);
+      console.log(`[DataMart API] Dispatching order with mandatory bmgh- reference: ${orderRef} -> Phone: ${formattedPhone}, Networks: [${networkCandidates.join(", ")}], Size: ${validNumCap}GB`);
 
       let lastErrorResponse: any = null;
       let lastErrorMessage = "";
@@ -356,11 +356,12 @@ export async function sendDataMartDelivery(params: DataMartDeliveryParams): Prom
       for (const currentKey of keys) {
         for (const purchaseUrl of candidateUrls) {
           for (const net of networkCandidates) {
-            // Build progressive payload variations for this URL and network
+            // Build progressive payload variations for this URL and network.
+            // RULE: EVERY payload sent to DataMart strictly includes the reference starting with "bmgh-"
             const payloadVariations: Array<{ name: string; body: Record<string, any> }> = [
-              // 1. Standard Developer Payload (Numeric capacity, phone & phoneNumber & recipient, with ref)
+              // 1. Standard Developer Payload (Numeric capacity, phone & phoneNumber & recipient, bmgh- ref)
               {
-                name: "numeric_cap_with_ref",
+                name: "numeric_cap_with_bmgh_ref",
                 body: {
                   phoneNumber: formattedPhone,
                   phone: formattedPhone,
@@ -370,34 +371,39 @@ export async function sendDataMartDelivery(params: DataMartDeliveryParams): Prom
                   gateway: "wallet",
                   ref: orderRef,
                   reference: orderRef,
+                  orderReference: orderRef,
                 },
               },
-              // 2. String capacity
+              // 2. String capacity (bmgh- ref)
               {
-                name: "string_cap_with_ref",
+                name: "string_cap_with_bmgh_ref",
                 body: {
                   phoneNumber: formattedPhone,
                   phone: formattedPhone,
+                  recipient: formattedPhone,
                   network: net,
                   capacity: String(capacityGb),
                   gateway: "wallet",
                   ref: orderRef,
                   reference: orderRef,
+                  orderReference: orderRef,
                 },
               },
-              // 3. Clean format without ref (in case DataMart auto-generates references)
+              // 3. Compact standard format (bmgh- ref)
               {
-                name: "clean_without_ref",
+                name: "compact_with_bmgh_ref",
                 body: {
                   phoneNumber: formattedPhone,
                   network: net,
                   capacity: validNumCap,
                   gateway: "wallet",
+                  ref: orderRef,
+                  reference: orderRef,
                 },
               },
-              // 4. Ghana telco package size format (e.g. "1GB", "2GB")
+              // 4. Ghana telco package size format (e.g. "1GB", "2GB") with bmgh- ref
               {
-                name: "package_size_format",
+                name: "package_size_with_bmgh_ref",
                 body: {
                   phoneNumber: formattedPhone,
                   phone: formattedPhone,
@@ -407,6 +413,7 @@ export async function sendDataMartDelivery(params: DataMartDeliveryParams): Prom
                   capacity: validNumCap,
                   gateway: "wallet",
                   ref: orderRef,
+                  reference: orderRef,
                 },
               },
             ];
