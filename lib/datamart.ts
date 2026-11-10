@@ -91,18 +91,12 @@ export async function resolveDatamartKeys(): Promise<string[]> {
 export function getDatamartAuthHeaders(apiKey: string, apiSecret?: string): Record<string, string> {
   const headers: Record<string, string> = {
     "X-API-Key": apiKey,
-    "Authorization": `Bearer ${apiKey}`,
-    "x-access-token": apiKey,
-    "token": apiKey,
     "User-Agent": "BundleMartGh/1.0",
     "Accept": "application/json",
   };
   const secret = (apiSecret || process.env.DATAMART_API_SECRET || "").trim();
   if (secret) {
     headers["X-API-Secret"] = secret;
-    headers["x-api-secret"] = secret;
-    headers["Secret"] = secret;
-    headers["x-secret"] = secret;
   }
   return headers;
 }
@@ -401,25 +395,26 @@ export async function sendDataMartDelivery(params: DataMartDeliveryParams): Prom
             }
           }
 
-          // If rejected due to string capacity, attempt with numeric capacity
-          if (!response.ok && (responseData?.message?.toLowerCase().includes("capacity") || response.status === 400)) {
-            const numCapacity = Number(capacityGb);
-            if (!isNaN(numCapacity)) {
-              console.log(`[DataMart API] Retrying with numeric capacity ${numCapacity}...`);
+          // If rejected, attempt with alternate capacity representation (string <-> number)
+          if (!response.ok) {
+            const currentCap = requestBody.capacity;
+            const altCapacity = typeof currentCap === "number" ? String(capacityGb) : Number(capacityGb);
+            if (altCapacity !== currentCap && (typeof altCapacity === "string" || !isNaN(altCapacity))) {
+              console.log(`[DataMart API] Retrying with alternate capacity representation (${typeof altCapacity}):`, altCapacity);
               try {
-                const numResponse = await fetch(purchaseUrl, {
+                const altResponse = await fetch(purchaseUrl, {
                   method: "POST",
                   headers: baseHeaders,
-                  body: JSON.stringify({ ...requestBody, capacity: numCapacity }),
+                  body: JSON.stringify({ ...requestBody, capacity: altCapacity }),
                   signal: AbortSignal.timeout(10000),
                 });
-                const numText = await numResponse.text();
+                const altText = await altResponse.text();
                 try {
-                  const numData = JSON.parse(numText);
-                  if (numResponse.ok && (numData?.status === "success" || numData?.data?.purchaseId)) {
-                    response = numResponse;
-                    responseText = numText;
-                    responseData = numData;
+                  const altData = JSON.parse(altText);
+                  if (altResponse.ok && (altData?.status === "success" || altData?.data?.purchaseId)) {
+                    response = altResponse;
+                    responseText = altText;
+                    responseData = altData;
                   }
                 } catch {}
               } catch {}

@@ -25,6 +25,23 @@ export default function DirectPurchaseModal({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successResult, setSuccessResult] = useState<any | null>(null);
+  const [liveBalance, setLiveBalance] = useState<number | null>(currentBalance ?? null);
+  const [fetchingBalance, setFetchingBalance] = useState(false);
+
+  React.useEffect(() => {
+    if (isOpen) {
+      setFetchingBalance(true);
+      fetch("/api/admin/stats")
+        .then((r) => r.json())
+        .then((d) => {
+          if (d?.datamartBalance?.balance !== undefined && d.datamartBalance.balance !== null) {
+            setLiveBalance(Number(d.datamartBalance.balance));
+          }
+        })
+        .catch(() => {})
+        .finally(() => setFetchingBalance(false));
+    }
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -60,7 +77,12 @@ export default function DirectPurchaseModal({
       const data = await res.json();
 
       if (!res.ok || !data.success) {
-        throw new Error(data.error || data.message || "Failed to dispatch direct order.");
+        const rawMsg = data.error || data.message || "Failed to dispatch direct order.";
+        let helpfulMsg = rawMsg;
+        if (rawMsg.toLowerCase().includes("could not complete your purchase")) {
+          helpfulMsg = "DataMart gateway returned: 'Could not complete your purchase'. Please verify that your DataMart wallet has sufficient funds for this package and that the recipient number is active.";
+        }
+        throw new Error(helpfulMsg);
       }
 
       setSuccessResult(data);
@@ -107,17 +129,21 @@ export default function DirectPurchaseModal({
         </div>
 
         {/* Balance Reminder Banner */}
-        {currentBalance !== undefined && currentBalance !== null && (
-          <div className="bg-slate-950/80 px-6 py-2.5 border-b border-slate-800 flex items-center justify-between text-xs">
-            <span className="text-slate-400 flex items-center gap-1.5 font-medium">
-              <Wallet className="w-3.5 h-3.5 text-emerald-400" />
-              Available DataMart Balance:
-            </span>
-            <span className="font-mono font-black text-emerald-400">
-              GHS {currentBalance.toFixed(2)}
-            </span>
-          </div>
-        )}
+        <div className="bg-slate-950/80 px-6 py-2.5 border-b border-slate-800 flex items-center justify-between text-xs">
+          <span className="text-slate-400 flex items-center gap-1.5 font-medium">
+            <Wallet className="w-3.5 h-3.5 text-emerald-400" />
+            Available DataMart Balance:
+          </span>
+          <span className="font-mono font-black text-emerald-400">
+            {fetchingBalance ? (
+              <span className="text-slate-400 animate-pulse text-[11px]">Checking...</span>
+            ) : liveBalance !== null ? (
+              `GHS ${liveBalance.toFixed(2)}`
+            ) : (
+              <span className="text-slate-400 text-[11px]">Active</span>
+            )}
+          </span>
+        </div>
 
         {/* Content Body */}
         <div className="p-6">
