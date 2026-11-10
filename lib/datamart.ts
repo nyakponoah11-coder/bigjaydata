@@ -104,6 +104,8 @@ export function getDatamartAuthHeaders(apiKey: string, apiSecret?: string): Reco
 /**
  * Maps raw DataMart telecom statuses to standardized delivery status:
  * delivered | processing | pending | failed | refunded
+ * Note: Never map top-level API envelope "success" to "delivered".
+ * Only explicit telecom delivery states ("delivered", "completed", "fulfilled", "done") indicate delivery.
  */
 export function mapDatamartStatus(s: string | undefined | null): string {
   const v = (s || "").toLowerCase().trim();
@@ -125,10 +127,7 @@ export function mapDatamartStatus(s: string | undefined | null): string {
     v === "delivered" ||
     v === "completed" ||
     v === "fulfilled" ||
-    v === "done" ||
-    v === "success" ||
-    v === "successful" ||
-    v === "ok"
+    v === "done"
   ) {
     return "delivered";
   }
@@ -143,6 +142,8 @@ export function mapDatamartStatus(s: string | undefined | null): string {
   ) {
     return "processing";
   }
+  // Generic API envelope wrappers (e.g. "success", "ok") indicate the request succeeded,
+  // NOT that telecom SIM delivery has finished. Always keep in "processing" until DataMart explicitly marks delivered!
   return "processing";
 }
 
@@ -889,12 +890,12 @@ export async function checkDataMartOrderStatus(orderReference: string): Promise<
  * Matches all official DataMart status values:
  * pending, waiting, processing, completed, delivered, failed, refunded, cancelled
  */
-export async function syncOrderWithDataMart(order: Order): Promise<Order> {
+export async function syncOrderWithDataMart(order: Order, forceSync = false): Promise<Order> {
   if (!order) return order;
 
   const currentStatus = ((order.delivery_status || order.status || "") as string).toLowerCase().trim();
-  // If order is already confirmed delivered or completed, never let automated sync revert it
-  if (currentStatus === "delivered" || currentStatus === "completed") {
+  // If order is already confirmed delivered and not an explicit admin sync, skip
+  if (!forceSync && (currentStatus === "delivered" || currentStatus === "completed")) {
     return order;
   }
 
@@ -999,27 +1000,35 @@ export async function syncOrderWithDataMart(order: Order): Promise<Order> {
             );
 
             if (isRefMatch || isPhoneMatch) {
-              const candidateStatus =
+              const explicitStatus =
+                extractDataMartOrderStatus(rp) ||
+                extractDataMartOrderStatus(item) ||
                 rp.orderStatus ||
                 rp.deliveryStatus ||
                 rp.delivery_status ||
-                rp.status ||
                 item.orderStatus ||
                 item.deliveryStatus ||
-                item.delivery_status ||
-                item.status;
+                item.delivery_status;
 
-              const rawStatus = String(candidateStatus || "completed").toLowerCase().trim();
-              const deliveryStatus = mapDatamartStatus(rawStatus);
+              let rawStatus = "";
+              if (explicitStatus) {
+                rawStatus = String(explicitStatus).toLowerCase().trim();
+              } else if (rp.status && !["success", "ok", "true"].includes(String(rp.status).toLowerCase())) {
+                rawStatus = String(rp.status).toLowerCase().trim();
+              }
 
-              console.log(`[DataMart Sync] Match found for ${order.reference}: raw="${rawStatus}" mapped="${deliveryStatus}"`);
+              // Never prematurely mark delivered if DataMart is still processing or waiting.
+              // Map the explicit status or remain in "processing" if DataMart hasn't fulfilled yet.
+              const deliveryStatus = rawStatus ? mapDatamartStatus(rawStatus) : "processing";
+
+              console.log(`[DataMart Sync] Match found for ${order.reference}: explicit="${rawStatus}" mapped="${deliveryStatus}"`);
 
               const updatedPayload = {
                 ...(order.datamart_response || {}),
                 last_datamart_sync: {
                   timestamp: new Date().toISOString(),
                   matched_ref: tRef || rpRef || tId,
-                  matched_status: rawStatus,
+                  matched_status: rawStatus || "processing",
                   data: item,
                 },
               };

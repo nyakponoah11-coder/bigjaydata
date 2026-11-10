@@ -112,7 +112,7 @@ export async function PATCH(request: Request) {
 
     // If admin requested live sync from DataMart
     if (sync_datamart) {
-      const synced = await syncOrderWithDataMart(order);
+      const synced = await syncOrderWithDataMart(order, true);
       await db.updateAgentOrderStatus(order.reference, synced.delivery_status).catch(() => {});
       return NextResponse.json({
         success: true,
