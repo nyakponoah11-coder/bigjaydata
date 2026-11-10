@@ -38,6 +38,7 @@ export default function AdminOrdersPage() {
   const [smsText, setSmsText] = useState("");
   const [sendingSms, setSendingSms] = useState(false);
   const [actionNotice, setActionNotice] = useState("");
+  const [syncingOrderId, setSyncingOrderId] = useState<string | null>(null);
 
   // Direct Buy Modal
   const [isDirectBuyOpen, setIsDirectBuyOpen] = useState(false);
@@ -174,6 +175,7 @@ export default function AdminOrdersPage() {
   };
 
   const handleSyncDataMart = async (order: Order) => {
+    setSyncingOrderId(order.id);
     try {
       setActionNotice(`Querying live DataMart status for ${order.reference}...`);
       const res = await fetch("/api/admin/orders", {
@@ -197,6 +199,8 @@ export default function AdminOrdersPage() {
       console.error(e);
       setActionNotice("Failed to sync order with DataMart");
       setTimeout(() => setActionNotice(""), 3500);
+    } finally {
+      setSyncingOrderId(null);
     }
   };
 
@@ -542,10 +546,11 @@ export default function AdminOrdersPage() {
                           {/* Sync Live from DataMart */}
                           <button
                             onClick={() => handleSyncDataMart(o)}
-                            className="p-1.5 bg-sky-950/70 hover:bg-sky-900 border border-sky-800 text-sky-300 rounded-lg transition-colors"
+                            disabled={syncingOrderId === o.id}
+                            className="p-1.5 bg-sky-950/70 hover:bg-sky-900 border border-sky-800 text-sky-300 rounded-lg transition-colors disabled:opacity-50"
                             title="Query Live DataMart Status"
                           >
-                            <RefreshCw className="w-3.5 h-3.5" />
+                            <RefreshCw className={`w-3.5 h-3.5 ${syncingOrderId === o.id ? "animate-spin text-sky-400" : ""}`} />
                           </button>
 
                           {/* Quick Manual Delivery Status Selector */}
@@ -778,10 +783,11 @@ export default function AdminOrdersPage() {
                   <div className="pt-2 border-t border-slate-700/60">
                     <button
                       onClick={() => handleSyncDataMart(selectedOrder)}
-                      className="w-full py-2 px-3 bg-sky-950/80 hover:bg-sky-900 border border-sky-800 text-sky-300 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors"
+                      disabled={syncingOrderId === selectedOrder.id}
+                      className="w-full py-2 px-3 bg-sky-950/80 hover:bg-sky-900 border border-sky-800 text-sky-300 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors disabled:opacity-50"
                     >
-                      <RefreshCw className="w-3.5 h-3.5" />
-                      Sync Live with DataMart API
+                      <RefreshCw className={`w-3.5 h-3.5 ${syncingOrderId === selectedOrder.id ? "animate-spin text-sky-400" : ""}`} />
+                      {syncingOrderId === selectedOrder.id ? "Syncing with DataMart..." : "Sync Live with DataMart API"}
                     </button>
                   </div>
                 </div>
