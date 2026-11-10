@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { db, isGhostAgent, cleanAgentName } from "@/lib/db";
 import { sendSuspensionEmail, sendPasswordResetEmail } from "@/lib/email";
 import { requireAdminAuth } from "@/lib/admin-auth";
 
@@ -54,30 +54,34 @@ export async function GET(req: Request) {
       );
     };
 
-    const synchronizedAgents = agents.map((agent) => {
-      const agentOrders = orders.filter(
-        (o) => (o.agent_id === agent.id || o.agent_id === agent.store_slug) && isPaid(o)
-      );
-      const earned = Number(agentOrders.reduce((sum, o) => sum + (Number(o.agent_profit) || 0), 0).toFixed(2));
-      const agentWithdrawals = withdrawals.filter(
-        (w) => (w.agent_id === agent.id || w.agent_id === agent.store_slug) && w.status === "completed"
-      );
-      const withdrawn = Number(agentWithdrawals.reduce((sum, w) => sum + (Number(w.amount) || 0), 0).toFixed(2));
-      const pendingWithdrawals = withdrawals.filter(
-        (w) => (w.agent_id === agent.id || w.agent_id === agent.store_slug) && w.status === "pending" && Number(w.amount) <= earned
-      );
-      const pendingWithdrawn = Number(pendingWithdrawals.reduce((sum, w) => sum + (Number(w.amount) || 0), 0).toFixed(2));
-      const storedBalance = Number(agent.wallet_balance || 0);
-      const calculatedBalance = Number(Math.max(0, earned - withdrawn - pendingWithdrawn).toFixed(2));
-      const balance = Math.max(storedBalance, calculatedBalance);
+    const synchronizedAgents = agents
+      .filter((a) => !isGhostAgent(a))
+      .map((agent) => {
+        const friendlyName = cleanAgentName(agent.name, agent.store_name, agent.email);
+        const agentOrders = orders.filter(
+          (o) => (o.agent_id === agent.id || o.agent_id === agent.store_slug) && isPaid(o)
+        );
+        const earned = Number(agentOrders.reduce((sum, o) => sum + (Number(o.agent_profit) || 0), 0).toFixed(2));
+        const agentWithdrawals = withdrawals.filter(
+          (w) => (w.agent_id === agent.id || w.agent_id === agent.store_slug) && w.status === "completed"
+        );
+        const withdrawn = Number(agentWithdrawals.reduce((sum, w) => sum + (Number(w.amount) || 0), 0).toFixed(2));
+        const pendingWithdrawals = withdrawals.filter(
+          (w) => (w.agent_id === agent.id || w.agent_id === agent.store_slug) && w.status === "pending" && Number(w.amount) <= earned
+        );
+        const pendingWithdrawn = Number(pendingWithdrawals.reduce((sum, w) => sum + (Number(w.amount) || 0), 0).toFixed(2));
+        const storedBalance = Number(agent.wallet_balance || 0);
+        const calculatedBalance = Number(Math.max(0, earned - withdrawn - pendingWithdrawn).toFixed(2));
+        const balance = Math.max(storedBalance, calculatedBalance);
 
-      return {
-        ...agent,
-        total_earned: Math.max(Number(agent.total_earned || 0), earned),
-        total_withdrawn: Math.max(Number(agent.total_withdrawn || 0), withdrawn),
-        wallet_balance: balance,
-      };
-    });
+        return {
+          ...agent,
+          name: friendlyName,
+          total_earned: Math.max(Number(agent.total_earned || 0), earned),
+          total_withdrawn: Math.max(Number(agent.total_withdrawn || 0), withdrawn),
+          wallet_balance: balance,
+        };
+      });
 
     return NextResponse.json(
       {

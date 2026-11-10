@@ -598,22 +598,18 @@ export function isGhostAgent(a: any): boolean {
   // Test demo seeds
   if (id === "agent-mabel-siripi" || storeSlug === "mabel") return true;
 
-  // A genuine agent who has a contact phone or real email is NEVER a ghost
+  // Genuine registered agents MUST have a valid phone number or real email
   const hasContact = phone.length >= 7 || (email.length > 5 && email.includes("@") && !email.includes("example.com"));
-  if (hasContact) {
-    return false;
-  }
-
-  // Without contact info: check if name or slug is a random hex ID like "9aa42742" or "e2ce7cdc"
-  const isHexId = /^[0-9a-f]{6,12}$/i.test(name) || /^[0-9a-f]{6,12}$/i.test(storeSlug) || /^[0-9a-f]{6,12}$/i.test(id.replace(/^agent-/, ""));
-  const isGenericStore = /^[0-9a-f]{6,12}\s+store$/i.test(storeName) || storeName === "Agent Store" || storeName === "Recovered Agent's Store";
-
-  if (isHexId || isGenericStore || name === "Agent" || name === "Recovered Agent") {
+  if (!hasContact) {
+    // Accounts with NO contact info at all (like 9aa42742 or e2ce7cdc) are ALWAYS ghost accounts
     return true;
   }
 
-  // Any account with no contact info at all and 0 wallet balance and 0 earned
-  if (Number(a.wallet_balance || 0) === 0 && Number(a.total_earned || 0) === 0) {
+  // Without contact info: check if name or slug is a random hex ID like "9aa42742" or "e2ce7cdc"
+  const isHexId = /^[0-9a-f]{6,16}$/i.test(name) || /^[0-9a-f]{6,16}$/i.test(storeSlug) || /^[0-9a-f]{6,16}$/i.test(id.replace(/^agent-/, ""));
+  const isGenericStore = /^[0-9a-f]{6,16}\s+store$/i.test(storeName) || storeName === "Agent Store" || storeName === "Recovered Agent's Store";
+
+  if (!hasContact && (isHexId || isGenericStore || name === "Agent" || name === "Recovered Agent")) {
     return true;
   }
 
@@ -622,13 +618,21 @@ export function isGhostAgent(a: any): boolean {
 
 export function cleanAgentName(name: string, storeName: string, email: string): string {
   const trimmed = (name || "").trim();
-  const isHexOrGeneric = /^[0-9a-f]{6,12}$/i.test(trimmed) || trimmed === "Agent" || trimmed === "Recovered Agent" || !trimmed;
+  const isHexOrGeneric =
+    /^[0-9a-f]{6,16}$/i.test(trimmed) ||
+    /^[0-9a-f]{6,16}$/i.test(trimmed.replace(/^agent-/, "")) ||
+    trimmed === "Agent" ||
+    trimmed === "Recovered Agent" ||
+    !trimmed;
   if (!isHexOrGeneric) return trimmed;
 
-  if (storeName && !/^[0-9a-f]{6,12}\s*store/i.test(storeName)) {
+  if (storeName && !/^[0-9a-f]{6,16}\s*store/i.test(storeName)) {
     const cleaned = storeName
       .replace(/['’]s?\s+(cheap\s+and\s+affordable\s+)?data\s*hub/i, "")
+      .replace(/['’]s?\s+(cheap\s+and\s+affordable\s+)?data\s*store/i, "")
       .replace(/['’]s?\s+data\s*hub/i, "")
+      .replace(/['’]s?\s+data\s*store/i, "")
+      .replace(/['’]s?\s+data/i, "")
       .replace(/['’]s?\s+store/i, "")
       .replace(/['’]s?\s+hub/i, "")
       .trim();
@@ -3732,6 +3736,35 @@ export const db = {
       a.name = cleanAgentName(a.name, a.store_name, a.email);
     });
 
+    // Lookup real customer registration records from Supabase to restore original usernames and passwords
+    if (isSupabaseConfigured && supabaseAdmin) {
+      try {
+        const { data: custs } = await supabaseAdmin.from("customers").select("id, name, email, phone, password_hash");
+        if (Array.isArray(custs)) {
+          const custByPhone = new Map<string, any>();
+          const custByEmail = new Map<string, any>();
+          for (const c of custs) {
+            const cp = (c.phone || "").replace(/[^0-9]/g, "");
+            if (cp) custByPhone.set(cp, c);
+            if (c.email) custByEmail.set(c.email.toLowerCase().trim(), c);
+          }
+          for (const ag of finalMerged) {
+            const cleanP = (ag.phone || "").replace(/[^0-9]/g, "");
+            const cleanE = (ag.email || "").toLowerCase().trim();
+            const matchedCust = custByPhone.get(cleanP) || (cleanE ? custByEmail.get(cleanE) : null);
+            if (matchedCust) {
+              if (matchedCust.name && (/^[0-9a-f]{6,16}$/i.test(ag.name) || ag.name === "Agent")) {
+                ag.name = matchedCust.name;
+              }
+              if (matchedCust.password_hash && matchedCust.password_hash !== "123456" && (ag.password_hash === "123456" || !ag.password_hash)) {
+                ag.password_hash = matchedCust.password_hash;
+              }
+            }
+          }
+        }
+      } catch {}
+    }
+
     globalStore.__bmgh_agents = finalMerged;
     markCacheFresh("agents");
     markServerCache("agents");
@@ -3741,15 +3774,21 @@ export const db = {
   async getAgentById(id: string, includeFinances = true): Promise<Agent | null> {
     const cleanId = (id || "").trim();
     if (!cleanId) return null;
+    const cleanNoPrefix = cleanId.replace(/^agent-/, "").toLowerCase();
     const deletedAgents = new Set(
       (globalStore.__bmgh_deleted_agents || []).map((a) => a.toLowerCase().trim())
     );
-    if (deletedAgents.has(cleanId.toLowerCase())) return null;
+    if (deletedAgents.has(cleanId.toLowerCase()) || deletedAgents.has(cleanNoPrefix)) return null;
 
     // Fast in-memory check
     if (globalStore.__bmgh_agents && globalStore.__bmgh_agents.length > 0) {
       const memAgent = globalStore.__bmgh_agents.find(
-        (a) => a.id === cleanId || a.store_slug.toLowerCase() === cleanId.toLowerCase()
+        (a) =>
+          a.id === cleanId ||
+          a.id.toLowerCase() === cleanId.toLowerCase() ||
+          a.id.replace(/^agent-/, "").toLowerCase() === cleanNoPrefix ||
+          a.store_slug.toLowerCase() === cleanId.toLowerCase() ||
+          a.store_slug.toLowerCase() === cleanNoPrefix
       );
       if (memAgent && !includeFinances) {
         if (!memAgent.logo_url) memAgent.logo_url = "/agent-icon.png";
@@ -3758,7 +3797,14 @@ export const db = {
     }
 
     const all = await this.getAgents();
-    let found = all.find((a) => a.id === cleanId || a.store_slug.toLowerCase() === cleanId.toLowerCase()) || null;
+    let found = all.find(
+      (a) =>
+        a.id === cleanId ||
+        a.id.toLowerCase() === cleanId.toLowerCase() ||
+        a.id.replace(/^agent-/, "").toLowerCase() === cleanNoPrefix ||
+        a.store_slug.toLowerCase() === cleanId.toLowerCase() ||
+        a.store_slug.toLowerCase() === cleanNoPrefix
+    ) || null;
     if (found && !includeFinances) {
       if (!found.logo_url) found.logo_url = "/agent-icon.png";
       return found;
@@ -4226,18 +4272,14 @@ export const db = {
         });
       } catch (err) {}
 
+      const rawTargetId = targetId.replace(/^agent-/, "");
+      const prefTargetId = `agent-${rawTargetId}`;
       try {
-        await supabaseAdmin.from("agents").delete().eq("id", targetId);
-      } catch {}
-      try {
-        await supabaseAdmin.from("agents").delete().eq("store_slug", targetSlug);
+        await supabaseAdmin.from("agents").delete().or(`id.eq.${targetId},id.eq.${rawTargetId},id.eq.${prefTargetId},store_slug.eq.${targetSlug},store_slug.eq.${rawTargetId}`);
       } catch {}
 
       try {
-        await supabaseAdmin.from("agent_products").delete().eq("agent_id", targetId);
-      } catch {}
-      try {
-        await supabaseAdmin.from("agent_products").delete().eq("agent_id", targetSlug);
+        await supabaseAdmin.from("agent_products").delete().or(`agent_id.eq.${targetId},agent_id.eq.${rawTargetId},agent_id.eq.${prefTargetId},agent_id.eq.${targetSlug}`);
       } catch {}
     }
 
@@ -4335,10 +4377,11 @@ export const db = {
       } catch (err) {}
 
       for (const gid of ghostList) {
+        const raw = gid.replace(/^agent-/, "");
+        const pref = `agent-${raw}`;
         try {
-          await sb.from("agents").delete().eq("id", gid);
-          await sb.from("agents").delete().eq("store_slug", gid);
-          await sb.from("agent_products").delete().eq("agent_id", gid);
+          await sb.from("agents").delete().or(`id.eq.${gid},id.eq.${raw},id.eq.${pref},store_slug.eq.${gid},store_slug.eq.${raw}`);
+          await sb.from("agent_products").delete().or(`agent_id.eq.${gid},agent_id.eq.${raw},agent_id.eq.${pref}`);
         } catch {}
       }
     }
@@ -4365,11 +4408,13 @@ export const db = {
   },
 
   async recoverAllAgents(): Promise<{ recovered_count: number; recovered: Agent[]; sources: string[] }> {
-    await this.clearDeletedAgents();
+    const deletedAgents = new Set(
+      (globalStore.__bmgh_deleted_agents || []).map((a) => a.toLowerCase().trim())
+    );
     const existing = await this.getAgents();
     const agentMap = new Map<string, Agent>();
     for (const a of existing) {
-      if (a && a.id && !isGhostAgent(a)) {
+      if (a && a.id && !isGhostAgent(a) && !deletedAgents.has(a.id.toLowerCase()) && !deletedAgents.has((a.store_slug || "").toLowerCase())) {
         agentMap.set(a.id, a);
       }
     }
@@ -4385,7 +4430,9 @@ export const db = {
             if (
               a &&
               a.id &&
-              !isGhostAgent(a)
+              !isGhostAgent(a) &&
+              !deletedAgents.has(a.id.toLowerCase()) &&
+              !deletedAgents.has((a.store_slug || "").toLowerCase())
             ) {
               const existingAg = agentMap.get(a.id);
               const friendlyName = cleanAgentName(a.name, a.store_name, a.email);
@@ -4431,6 +4478,8 @@ export const db = {
                     it &&
                     it.id &&
                     !isGhostAgent(it) &&
+                    !deletedAgents.has(String(it.id).toLowerCase()) &&
+                    !deletedAgents.has(String(it.store_slug || "").toLowerCase()) &&
                     it.store_slug
                   ) {
                     if (!agentMap.has(it.id)) {
@@ -4778,16 +4827,32 @@ export const db = {
     const cleanId = (agentId || "").trim();
     let canonicalId = cleanId;
     let canonicalSlug = cleanId.toLowerCase();
+    const cleanNoPrefix = cleanId.replace(/^agent-/, "").toLowerCase();
     const allAgents = await this.getAgents();
     const matchedAgent = allAgents.find(
-      (a) => a.id === cleanId || a.store_slug.toLowerCase() === cleanId.toLowerCase()
+      (a) =>
+        a.id === cleanId ||
+        a.id.toLowerCase() === cleanId.toLowerCase() ||
+        a.id.replace(/^agent-/, "").toLowerCase() === cleanNoPrefix ||
+        a.store_slug.toLowerCase() === cleanId.toLowerCase() ||
+        a.store_slug.toLowerCase() === cleanNoPrefix
     );
     if (matchedAgent) {
       canonicalId = matchedAgent.id;
       canonicalSlug = matchedAgent.store_slug.toLowerCase();
     }
-    const isTargetAgent = (pAgentId: string) =>
-      pAgentId === canonicalId || pAgentId?.toLowerCase() === canonicalSlug || pAgentId === cleanId;
+    const isTargetAgent = (pAgentId: string) => {
+      if (!pAgentId) return false;
+      const p = pAgentId.toLowerCase().trim();
+      const pNoPref = p.replace(/^agent-/, "");
+      return (
+        p === canonicalId.toLowerCase() ||
+        p === canonicalSlug ||
+        p === cleanId.toLowerCase() ||
+        pNoPref === cleanNoPrefix ||
+        pNoPref === canonicalId.replace(/^agent-/, "").toLowerCase()
+      );
+    };
 
     const cacheKey = `agent_products:${canonicalId}`;
     if (isCacheFresh(cacheKey, CACHE_TTLS.agent_products) && globalStore.__bmgh_agent_products) {
@@ -5053,16 +5118,32 @@ export const db = {
     const cleanId = (agentId || "").trim();
     let canonicalId = cleanId;
     let canonicalSlug = cleanId.toLowerCase();
+    const cleanNoPrefix = cleanId.replace(/^agent-/, "").toLowerCase();
     const allAgents = await this.getAgents();
     const matchedAgent = allAgents.find(
-      (a) => a.id === cleanId || a.store_slug.toLowerCase() === cleanId.toLowerCase()
+      (a) =>
+        a.id === cleanId ||
+        a.id.toLowerCase() === cleanId.toLowerCase() ||
+        a.id.replace(/^agent-/, "").toLowerCase() === cleanNoPrefix ||
+        a.store_slug.toLowerCase() === cleanId.toLowerCase() ||
+        a.store_slug.toLowerCase() === cleanNoPrefix
     );
     if (matchedAgent) {
       canonicalId = matchedAgent.id;
       canonicalSlug = matchedAgent.store_slug.toLowerCase();
     }
-    const isTargetAgent = (pAgentId: string) =>
-      pAgentId === canonicalId || pAgentId?.toLowerCase() === canonicalSlug || pAgentId === cleanId;
+    const isTargetAgent = (pAgentId: string) => {
+      if (!pAgentId) return false;
+      const p = pAgentId.toLowerCase().trim();
+      const pNoPref = p.replace(/^agent-/, "");
+      return (
+        p === canonicalId.toLowerCase() ||
+        p === canonicalSlug ||
+        p === cleanId.toLowerCase() ||
+        pNoPref === cleanNoPrefix ||
+        pNoPref === canonicalId.replace(/^agent-/, "").toLowerCase()
+      );
+    };
 
     invalidateDbCache(`agent_products:${canonicalId}`);
     invalidateDbCache(`agent_products:${canonicalSlug}`);
@@ -5258,16 +5339,32 @@ export const db = {
     const cleanId = (agentId || "").trim();
     let canonicalId = cleanId;
     let canonicalSlug = cleanId.toLowerCase();
+    const cleanNoPrefix = cleanId.replace(/^agent-/, "").toLowerCase();
     const allAgents = await this.getAgents();
     const matchedAgent = allAgents.find(
-      (a) => a.id === cleanId || a.store_slug.toLowerCase() === cleanId.toLowerCase()
+      (a) =>
+        a.id === cleanId ||
+        a.id.toLowerCase() === cleanId.toLowerCase() ||
+        a.id.replace(/^agent-/, "").toLowerCase() === cleanNoPrefix ||
+        a.store_slug.toLowerCase() === cleanId.toLowerCase() ||
+        a.store_slug.toLowerCase() === cleanNoPrefix
     );
     if (matchedAgent) {
       canonicalId = matchedAgent.id;
       canonicalSlug = matchedAgent.store_slug.toLowerCase();
     }
-    const isTargetAgent = (pAgentId: string) =>
-      pAgentId === canonicalId || pAgentId?.toLowerCase() === canonicalSlug || pAgentId === cleanId;
+    const isTargetAgent = (pAgentId: string) => {
+      if (!pAgentId) return false;
+      const p = pAgentId.toLowerCase().trim();
+      const pNoPref = p.replace(/^agent-/, "");
+      return (
+        p === canonicalId.toLowerCase() ||
+        p === canonicalSlug ||
+        p === cleanId.toLowerCase() ||
+        pNoPref === cleanNoPrefix ||
+        pNoPref === canonicalId.replace(/^agent-/, "").toLowerCase()
+      );
+    };
 
     invalidateDbCache(`agent_products:${canonicalId}`);
     invalidateDbCache(`agent_products:${canonicalSlug}`);

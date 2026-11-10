@@ -49,26 +49,34 @@ export async function getDatamartCredentials(): Promise<{ apiKey: string; apiSec
     dbUrl = (settings?.datamart_api_url || "").trim();
   } catch {}
 
-  // Active key selection: Prioritize non-revoked environment variable if present, else database setting
+  // Active key selection: Prioritize database setting (configured in admin settings), else environment variable
   let apiKey = "";
-  if (envKey && !isRevokedDatamartKey(envKey)) {
-    apiKey = envKey;
-  } else if (dbKey && !isRevokedDatamartKey(dbKey)) {
+  if (dbKey && !isRevokedDatamartKey(dbKey)) {
     apiKey = dbKey;
+  } else if (envKey && !isRevokedDatamartKey(envKey)) {
+    apiKey = envKey;
   }
 
-  // Active secret selection: Prioritize environment variable if present, else database setting
-  const apiSecret = envSecret || dbSecret || "";
+  // Active secret selection: Prioritize database setting, else environment variable
+  const apiSecret = dbSecret || envSecret || "";
 
   // Base URL
-  const apiUrl = resolveDeveloperBaseUrl(envUrl || dbUrl || "https://api.datamartgh.shop/api/developer");
+  const apiUrl = resolveDeveloperBaseUrl(dbUrl || envUrl || "https://api.datamartgh.shop/api/developer");
 
   return { apiKey, apiSecret, apiUrl };
 }
 
 export async function resolveDatamartKeys(): Promise<string[]> {
   const { apiKey } = await getDatamartCredentials();
-  return apiKey ? [apiKey] : [];
+  const envKey = (process.env.DATAMART_API_KEY || "").trim();
+  const keys: string[] = [];
+  if (apiKey && !isRevokedDatamartKey(apiKey)) {
+    keys.push(apiKey);
+  }
+  if (envKey && !isRevokedDatamartKey(envKey) && !keys.includes(envKey)) {
+    keys.push(envKey);
+  }
+  return keys;
 }
 
 export function getDatamartAuthHeaders(apiKey: string, apiSecret?: string): Record<string, string> {
@@ -282,26 +290,6 @@ export async function sendDataMartDelivery(params: DataMartDeliveryParams): Prom
       // Case-insensitive prefix normalization
       const orderRef = rawRef.toLowerCase().startsWith("bmgh-") ? rawRef : `bmgh-${rawRef}`;
 
-      // 3. Pre-flight check with DataMart: Check if DataMart ALREADY recorded this order reference
-      try {
-        const existingStatus = await checkDataMartOrderStatus(orderRef);
-        if (existingStatus.success && existingStatus.orderStatus) {
-          console.log(`[DataMart Anti-Duplicate] Order ${orderRef} ALREADY exists on DataMart with status "${existingStatus.orderStatus}". Reusing existing order without duplicate charge.`);
-          const existingResult: DataMartResult = {
-            success: true,
-            message: `Order already exists on DataMart: ${existingStatus.orderStatus}`,
-            datamart_id: existingStatus.data?.purchaseId || existingStatus.data?.orderReference || `DM-${orderRef}`,
-            order_reference: existingStatus.data?.orderReference || existingStatus.data?.reference || orderRef,
-            status: mapDatamartStatus(existingStatus.orderStatus),
-            raw_response: existingStatus.raw || existingStatus.data,
-          };
-          completedDispatches.set(cleanKey, { timestamp: Date.now(), result: existingResult });
-          return existingResult;
-        }
-      } catch (checkErr) {
-        console.warn("[DataMart Anti-Duplicate] Pre-flight order check warning:", checkErr);
-      }
-
       // Deterministic UUID v4 mapped to this exact order reference
       const idempotencySeed = (params.idempotency_key || rawRef).toLowerCase().trim();
       const hash = crypto.createHash("sha256").update(idempotencySeed).digest("hex");
@@ -326,7 +314,7 @@ export async function sendDataMartDelivery(params: DataMartDeliveryParams): Prom
       console.log(`[DataMart API] Payload:`, JSON.stringify(requestBody));
 
       // If API key is completely missing, return clear actionable error
-      if (!apiKey) {
+      if (!keys.length) {
         const msg = "DataMart API Key is missing. Please configure your DataMart API Key in /admin/settings or DATAMART_API_KEY env var.";
         console.error(`[DataMart API] ${msg}`);
         return {
@@ -336,131 +324,142 @@ export async function sendDataMartDelivery(params: DataMartDeliveryParams): Prom
         };
       }
 
-      const apiSecret = process.env.DATAMART_API_SECRET?.trim() || (settings as any).datamart_api_secret?.trim();
-      console.log(`[DataMart API] Sending with key (${apiKey.substring(0, 5)}... length ${apiKey.length}) and idempotency ${idempotencyKey}${apiSecret ? " [Second Secret X-API-Secret active]" : ""}`);
+      const apiSecret = ((settings as any)?.datamart_api_secret || process.env.DATAMART_API_SECRET || "").trim();
 
-      const baseHeaders: Record<string, string> = {
-        "Content-Type": "application/json",
-        "X-API-Key": apiKey,
-        "X-Idempotency-Key": idempotencyKey,
-        "User-Agent": "BundleMartGh/1.0",
-        "Accept": "application/json",
-      };
+      let lastErrorResponse: any = null;
+      let lastErrorMessage = "";
 
-      if (apiSecret) {
-        baseHeaders["X-API-Secret"] = apiSecret;
-      }
+      for (const apiKey of keys) {
+        console.log(`[DataMart API] Attempting dispatch with key (${apiKey.substring(0, 5)}... length ${apiKey.length}) and idempotency ${idempotencyKey}${apiSecret ? " [Secret active]" : ""}`);
 
-      // Live HTTP Call to DataMart official purchase endpoint
-      let response = await fetch(purchaseUrl, {
-        method: "POST",
-        headers: baseHeaders,
-        body: JSON.stringify(requestBody),
-      });
-
-      let responseText = await response.text();
-      let responseData: any = null;
-      try {
-        responseData = JSON.parse(responseText);
-      } catch {
-        responseData = { text: responseText };
-      }
-
-      console.log(`[DataMart API] URL ${purchaseUrl} -> Status ${response.status}:`, responseText);
-
-      // If 404 Route not found, attempt alternate endpoint path (/api/purchase <-> /purchase)
-      if (response.status === 404 || responseData?.message === "Route not found") {
-        const altUrl = purchaseUrl.includes("/api/purchase")
-          ? purchaseUrl.replace("/api/purchase", "/purchase")
-          : purchaseUrl.replace("/purchase", "/api/purchase");
-
-        if (altUrl !== purchaseUrl) {
-          console.log(`[DataMart API] 404 on ${purchaseUrl}, retrying with alternate URL: ${altUrl}`);
-          try {
-            const altResponse = await fetch(altUrl, {
-              method: "POST",
-              headers: baseHeaders,
-              body: JSON.stringify(requestBody),
-            });
-            const altText = await altResponse.text();
-            try {
-              const altData = JSON.parse(altText);
-              response = altResponse;
-              responseText = altText;
-              responseData = altData;
-              console.log(`[DataMart API] Alternate URL ${altUrl} -> Status ${response.status}:`, altText);
-            } catch {}
-          } catch (altErr) {
-            console.warn("[DataMart API] Alternate URL attempt failed:", altErr);
-          }
-        }
-      }
-
-      // If rejected due to string capacity, attempt with numeric capacity
-      if (!response.ok && (responseData?.message?.toLowerCase().includes("capacity") || response.status === 400)) {
-        const numCapacity = Number(capacityGb);
-        if (!isNaN(numCapacity)) {
-          console.log(`[DataMart API] Retrying with numeric capacity ${numCapacity}...`);
-          try {
-            const numResponse = await fetch(purchaseUrl, {
-              method: "POST",
-              headers: baseHeaders,
-              body: JSON.stringify({ ...requestBody, capacity: numCapacity }),
-            });
-            const numText = await numResponse.text();
-            try {
-              const numData = JSON.parse(numText);
-              if (numResponse.ok && (numData?.status === "success" || numData?.data?.purchaseId)) {
-                response = numResponse;
-                responseText = numText;
-                responseData = numData;
-              }
-            } catch {}
-          } catch {}
-        }
-      }
-
-      if (response.ok && (responseData?.status === "success" || responseData?.data?.purchaseId)) {
-        const dataPayload = responseData.data || {};
-        const explicitStatus = extractDataMartOrderStatus(responseData);
-        let returnedStatus = "processing";
-        if (explicitStatus) {
-          const mapped = mapDatamartStatus(explicitStatus);
-          if (mapped === "delivered") {
-            returnedStatus = "delivered";
-          } else if (mapped === "failed") {
-            returnedStatus = "failed";
-          } else if (mapped === "refunded") {
-            returnedStatus = "refunded";
-          } else {
-            returnedStatus = "processing";
-          }
-        }
-
-        const successResult: DataMartResult = {
-          success: true,
-          message: responseData.message || "Data bundle purchase initiated",
-          datamart_id: dataPayload.purchaseId || dataPayload.orderReference || `DM-${Date.now()}`,
-          order_reference: dataPayload.orderReference || dataPayload.reference,
-          status: returnedStatus,
-          raw_response: responseData,
+        const baseHeaders: Record<string, string> = {
+          "Content-Type": "application/json",
+          "X-API-Key": apiKey,
+          "X-Idempotency-Key": idempotencyKey,
+          "User-Agent": "BundleMartGh/1.0",
+          "Accept": "application/json",
         };
 
-        completedDispatches.set(cleanKey, { timestamp: Date.now(), result: successResult });
-        return successResult;
+        if (apiSecret) {
+          baseHeaders["X-API-Secret"] = apiSecret;
+        }
+
+        try {
+          // Live HTTP Call to DataMart official purchase endpoint
+          let response = await fetch(purchaseUrl, {
+            method: "POST",
+            headers: baseHeaders,
+            body: JSON.stringify(requestBody),
+            signal: AbortSignal.timeout(12000),
+          });
+
+          let responseText = await response.text();
+          let responseData: any = null;
+          try {
+            responseData = JSON.parse(responseText);
+          } catch {
+            responseData = { text: responseText };
+          }
+
+          console.log(`[DataMart API] URL ${purchaseUrl} -> Status ${response.status}:`, responseText);
+
+          // If 404 Route not found, attempt alternate endpoint path (/api/purchase <-> /purchase)
+          if (response.status === 404 || responseData?.message === "Route not found") {
+            const altUrl = purchaseUrl.includes("/api/purchase")
+              ? purchaseUrl.replace("/api/purchase", "/purchase")
+              : purchaseUrl.replace("/purchase", "/api/purchase");
+
+            if (altUrl !== purchaseUrl) {
+              console.log(`[DataMart API] 404 on ${purchaseUrl}, retrying with alternate URL: ${altUrl}`);
+              try {
+                const altResponse = await fetch(altUrl, {
+                  method: "POST",
+                  headers: baseHeaders,
+                  body: JSON.stringify(requestBody),
+                  signal: AbortSignal.timeout(10000),
+                });
+                const altText = await altResponse.text();
+                try {
+                  const altData = JSON.parse(altText);
+                  response = altResponse;
+                  responseText = altText;
+                  responseData = altData;
+                  console.log(`[DataMart API] Alternate URL ${altUrl} -> Status ${response.status}:`, altText);
+                } catch {}
+              } catch (altErr) {
+                console.warn("[DataMart API] Alternate URL attempt failed:", altErr);
+              }
+            }
+          }
+
+          // If rejected due to string capacity, attempt with numeric capacity
+          if (!response.ok && (responseData?.message?.toLowerCase().includes("capacity") || response.status === 400)) {
+            const numCapacity = Number(capacityGb);
+            if (!isNaN(numCapacity)) {
+              console.log(`[DataMart API] Retrying with numeric capacity ${numCapacity}...`);
+              try {
+                const numResponse = await fetch(purchaseUrl, {
+                  method: "POST",
+                  headers: baseHeaders,
+                  body: JSON.stringify({ ...requestBody, capacity: numCapacity }),
+                  signal: AbortSignal.timeout(10000),
+                });
+                const numText = await numResponse.text();
+                try {
+                  const numData = JSON.parse(numText);
+                  if (numResponse.ok && (numData?.status === "success" || numData?.data?.purchaseId)) {
+                    response = numResponse;
+                    responseText = numText;
+                    responseData = numData;
+                  }
+                } catch {}
+              } catch {}
+            }
+          }
+
+          if (response.ok && (responseData?.status === "success" || responseData?.data?.purchaseId)) {
+            const dataPayload = responseData.data || {};
+            const explicitStatus = extractDataMartOrderStatus(responseData);
+            let returnedStatus = "processing";
+            if (explicitStatus) {
+              const mapped = mapDatamartStatus(explicitStatus);
+              if (mapped === "delivered") returnedStatus = "delivered";
+              else if (mapped === "failed") returnedStatus = "failed";
+              else if (mapped === "refunded") returnedStatus = "refunded";
+              else returnedStatus = "processing";
+            }
+
+            const successResult: DataMartResult = {
+              success: true,
+              message: responseData.message || "Data bundle purchase initiated",
+              datamart_id: dataPayload.purchaseId || dataPayload.orderReference || `DM-${Date.now()}`,
+              order_reference: dataPayload.orderReference || dataPayload.reference,
+              status: returnedStatus,
+              raw_response: responseData,
+            };
+
+            completedDispatches.set(cleanKey, { timestamp: Date.now(), result: successResult });
+            return successResult;
+          }
+
+          lastErrorResponse = responseData;
+          lastErrorMessage = responseData?.message || `DataMart HTTP Error ${response.status}: ${responseText.slice(0, 150)}`;
+
+          // If rejected with 401/403 and another key is available, try the next key
+          if (response.status !== 401 && response.status !== 403) {
+            break;
+          }
+        } catch (fetchErr: any) {
+          console.error("[DataMart API] Fetch attempt error:", fetchErr);
+          lastErrorMessage = fetchErr?.message || "Failed to reach DataMart server";
+        }
       }
 
-      // Capture exact error from DataMart
-      const errorMessage =
-        responseData?.message ||
-        (responseData?.status === "error" ? "DataMart purchase rejected" : `DataMart HTTP Error ${response.status}: ${responseText.slice(0, 150)}`);
-
-      console.error("[DataMart API] Delivery failed:", errorMessage, responseData);
-
+      console.error("[DataMart API] Delivery failed:", lastErrorMessage, lastErrorResponse);
       return {
         success: false,
-        message: errorMessage,
-        raw_response: responseData,
+        message: lastErrorMessage || "DataMart purchase rejected",
+        raw_response: lastErrorResponse || { error: lastErrorMessage },
       };
     } catch (error: any) {
       console.error("[DataMart API] Network/Execution error:", error);

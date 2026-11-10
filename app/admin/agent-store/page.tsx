@@ -31,6 +31,37 @@ import {
   RotateCcw,
 } from "lucide-react";
 
+function getCleanAgentName(name?: string, storeName?: string, email?: string): string {
+  const trimmed = (name || "").trim();
+  const isHexOrGeneric =
+    /^[0-9a-f]{6,16}$/i.test(trimmed) ||
+    /^[0-9a-f]{6,16}$/i.test(trimmed.replace(/^agent-/, "")) ||
+    trimmed === "Agent" ||
+    trimmed === "Recovered Agent" ||
+    !trimmed;
+  if (!isHexOrGeneric) return trimmed;
+
+  if (storeName && !/^[0-9a-f]{6,16}\s*store/i.test(storeName)) {
+    const cleaned = storeName
+      .replace(/['’]s?\s+(cheap\s+and\s+affordable\s+)?data\s*hub/i, "")
+      .replace(/['’]s?\s+(cheap\s+and\s+affordable\s+)?data\s*store/i, "")
+      .replace(/['’]s?\s+data\s*hub/i, "")
+      .replace(/['’]s?\s+data\s*store/i, "")
+      .replace(/['’]s?\s+data/i, "")
+      .replace(/['’]s?\s+store/i, "")
+      .replace(/['’]s?\s+hub/i, "")
+      .trim();
+    if (cleaned.length >= 2) return cleaned;
+  }
+  if (email && email.includes("@")) {
+    const local = email.split("@")[0].replace(/[0-9]/g, "");
+    if (local.length >= 3) {
+      return local.charAt(0).toUpperCase() + local.slice(1);
+    }
+  }
+  return trimmed || "Agent";
+}
+
 export default function AdminAgentStorePage() {
   const [loading, setLoading] = useState(true);
   const [config, setConfig] = useState<{
@@ -1226,7 +1257,7 @@ export default function AdminAgentStorePage() {
                   ) : (
                     agents.map((a) => (
                       <tr key={a.id} className="hover:bg-slate-800/40 transition-colors">
-                        <td className="py-3 px-4 font-bold text-white">{a.name}</td>
+                        <td className="py-3 px-4 font-bold text-white">{getCleanAgentName(a.name, a.store_name, a.email)}</td>
                         <td className="py-3 px-4">
                           <div className="font-bold text-slate-200">{a.store_name}</div>
                           <a
@@ -1271,7 +1302,7 @@ export default function AdminAgentStorePage() {
                                 setEditAgentModal({
                                   open: true,
                                   agentId: a.id,
-                                  name: a.name,
+                                  name: getCleanAgentName(a.name, a.store_name, a.email),
                                   store_name: a.store_name,
                                   store_slug: a.store_slug,
                                   email: a.email || "",
@@ -1307,7 +1338,7 @@ export default function AdminAgentStorePage() {
                                 setResetModal({
                                   open: true,
                                   agentId: a.id,
-                                  agentName: a.name,
+                                  agentName: getCleanAgentName(a.name, a.store_name, a.email),
                                   agentEmail: a.email,
                                   newPass: "",
                                   loading: false,
@@ -1371,7 +1402,7 @@ export default function AdminAgentStorePage() {
                                 setDeleteModal({
                                   open: true,
                                   agentId: a.id,
-                                  agentName: a.name,
+                                  agentName: getCleanAgentName(a.name, a.store_name, a.email),
                                   loading: false,
                                 })
                               }

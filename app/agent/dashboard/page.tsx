@@ -308,22 +308,7 @@ export default function AgentDashboardPage() {
       }
 
       if (prodData?.success && Array.isArray(prodData.products)) {
-        // Read any cached local custom prices as safety fallback
-        let localCustomPrices: Record<string, string> = {};
-        try {
-          localCustomPrices = JSON.parse(localStorage.getItem(`bmgh_agent_custom_prices_${agentId}`) || "{}");
-        } catch {}
-
-        const mergedProducts = prodData.products.map((p: any) => {
-          const key = p.base_product_id || p.id;
-          const cachedPrice = localCustomPrices[key] ?? (p.base_product_id ? localCustomPrices[p.base_product_id] : undefined);
-          if (cachedPrice !== undefined && Number(cachedPrice) >= p.base_price && p.selling_price < Number(cachedPrice)) {
-            return { ...p, selling_price: Number(cachedPrice) };
-          }
-          return p;
-        });
-
-        const sorted = sortProductList(mergedProducts);
+        const sorted = sortProductList(prodData.products);
         setProducts(sorted);
         try {
           localStorage.setItem(`bmgh_agent_prods_${agentId}`, JSON.stringify(sorted));
@@ -335,7 +320,7 @@ export default function AgentDashboardPage() {
           if (p.base_product_id) pricesMap[p.base_product_id] = String(p.selling_price);
           if (p.id) pricesMap[p.id] = String(p.selling_price);
         });
-        setEditPrices((prev) => ({ ...pricesMap, ...localCustomPrices, ...prev }));
+        setEditPrices(pricesMap);
       }
     } catch (err: any) {
       console.warn("Dashboard refresh warning:", err);
