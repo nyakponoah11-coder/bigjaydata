@@ -341,12 +341,17 @@ export async function sendDataMartDelivery(params: DataMartDeliveryParams): Prom
       for (const apiKey of keys) {
         console.log(`[DataMart API] Attempting dispatch with key (${apiKey.substring(0, 5)}... length ${apiKey.length}) and idempotency ${idempotencyKey}${apiSecret ? " [Secret active]" : ""}`);
 
-        const authHeaders = getDatamartAuthHeaders(apiKey, apiSecret);
         const baseHeaders: Record<string, string> = {
-          ...authHeaders,
           "Content-Type": "application/json",
+          "X-API-Key": apiKey,
           "X-Idempotency-Key": idempotencyKey,
+          "User-Agent": "BundleMartGh/1.0",
+          "Accept": "application/json",
         };
+
+        if (apiSecret) {
+          baseHeaders["X-API-Secret"] = apiSecret;
+        }
 
         try {
           // Live HTTP Call to DataMart official purchase endpoint
