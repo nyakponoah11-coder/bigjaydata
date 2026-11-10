@@ -36,7 +36,18 @@ export async function POST(req: Request) {
     });
 
     // Record order in database
-    const deliveryStatus = dmResult.status || (dmResult.success ? "delivered" : "failed");
+    const deliveryStatus = dmResult.status || (dmResult.success ? "delivered" : "processing");
+    const mergedDatamartResponse = {
+      ...(typeof dmResult.raw_response === "object" ? dmResult.raw_response : {}),
+      datamart_id: dmResult.datamart_id,
+      purchaseId: dmResult.datamart_id,
+      order_reference: dmResult.order_reference || reference,
+      status: deliveryStatus,
+      message: dmResult.message,
+      note,
+      source: "admin_direct",
+    };
+
     const order = await db.createOrder({
       reference,
       network: network.toLowerCase(),
@@ -44,10 +55,12 @@ export async function POST(req: Request) {
       phone: formattedPhone,
       amount: 0,
       paystack_ref: null,
-      payment_status: "admin_direct",
+      payment_status: "paid",
+      payment_method: "wallet",
       delivery_status: deliveryStatus,
       status: deliveryStatus,
-      datamart_response: dmResult.raw_response || { message: dmResult.message, note },
+      source: "admin_direct",
+      datamart_response: mergedDatamartResponse,
     });
 
     if (!dmResult.success) {

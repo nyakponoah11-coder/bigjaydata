@@ -62,6 +62,7 @@ export function normalizeOrder(order: any): Order {
   const isPaid =
     order.payment_status === "paid" ||
     order.payment_status === "completed" ||
+    order.payment_status === "admin_direct" ||
     !!order.paystack_ref ||
     (Number(order.amount) > 0 && order.status !== "failed" && order.status !== "cancelled");
 
