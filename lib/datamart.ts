@@ -154,22 +154,37 @@ export function mapDatamartStatus(s: string | undefined | null): string {
 export function extractDataMartOrderStatus(json: any): string | null {
   if (!json) return null;
   const d = json.data && typeof json.data === "object" ? json.data : json;
-  const rp = d.relatedPurchase || d.item || d.purchase;
+  const rp =
+    d.relatedPurchase && typeof d.relatedPurchase === "object"
+      ? d.relatedPurchase
+      : d.item && typeof d.item === "object"
+      ? d.item
+      : d.purchase && typeof d.purchase === "object"
+      ? d.purchase
+      : {};
 
   const candidate =
     d.orderStatus ??
     d.order_status ??
     d.deliveryStatus ??
     d.delivery_status ??
+    d.fulfillmentStatus ??
+    d.telecomStatus ??
     json.orderStatus ??
     json.order_status ??
     json.deliveryStatus ??
     json.delivery_status ??
+    json.fulfillmentStatus ??
+    json.telecomStatus ??
     rp?.orderStatus ??
     rp?.order_status ??
     rp?.deliveryStatus ??
     rp?.delivery_status ??
-    (d.status && !["success", "ok", "true", "false", "error"].includes(String(d.status).toLowerCase()) ? d.status : null);
+    rp?.fulfillmentStatus ??
+    rp?.telecomStatus ??
+    (rp?.status && !["success", "ok", "true", "false", "error"].includes(String(rp.status).toLowerCase()) ? rp.status : null) ??
+    (d.status && !["success", "ok", "true", "false", "error"].includes(String(d.status).toLowerCase()) ? d.status : null) ??
+    (json.status && !["success", "ok", "true", "false", "error"].includes(String(json.status).toLowerCase()) ? json.status : null);
 
   if (candidate === undefined || candidate === null) return null;
   const str = String(candidate).toLowerCase().trim();
@@ -829,6 +844,7 @@ export async function checkDataMartOrderStatus(orderReference: string): Promise<
     const keys = await resolveDatamartKeys();
     const configuredUrl = (settings.datamart_api_url || process.env.DATAMART_API_URL || "https://api.datamartgh.shop/api/developer").trim();
     const devBase = resolveDeveloperBaseUrl(configuredUrl);
+    const apiBase = devBase.replace(/\/developer\/?$/, "");
 
     if (!keys.length) {
       return { success: false, message: "Missing DataMart API Key" };
@@ -838,6 +854,11 @@ export async function checkDataMartOrderStatus(orderReference: string): Promise<
       `${devBase}/order-status/${encodeURIComponent(cleanRef)}`,
       `${devBase}/order-status?reference=${encodeURIComponent(cleanRef)}`,
       `${devBase}/orders/${encodeURIComponent(cleanRef)}`,
+      `${apiBase}/order-status/${encodeURIComponent(cleanRef)}`,
+      `${apiBase}/order-status?reference=${encodeURIComponent(cleanRef)}`,
+      `${apiBase}/orders/${encodeURIComponent(cleanRef)}`,
+      `https://api.datamartgh.shop/api/order-status/${encodeURIComponent(cleanRef)}`,
+      `https://api.datamartgh.shop/api/developer/order-status/${encodeURIComponent(cleanRef)}`,
     ];
     const apiSecret = ((settings as any)?.datamart_api_secret || process.env.DATAMART_API_SECRET || "").trim();
 
@@ -941,9 +962,14 @@ export async function syncOrderWithDataMart(order: Order, forceSync = false): Pr
   // 1. PRIMARY FAST QUERY: /developer/transactions
   // In DataMart, /transactions contains the authoritative log of all recent bundle dispatches with their live delivery status
   try {
+    const apiBase = apiUrl.replace(/\/developer\/?$/, "");
     const urlsToTry = [
       `${apiUrl}/transactions?limit=50&search=${encodeURIComponent(ordRefNorm || last9)}`,
       `${apiUrl}/transactions?limit=50`,
+      `${apiBase}/transactions?limit=50&search=${encodeURIComponent(ordRefNorm || last9)}`,
+      `${apiBase}/transactions?limit=50`,
+      `https://api.datamartgh.shop/api/transactions?limit=50&search=${encodeURIComponent(ordRefNorm || last9)}`,
+      `https://api.datamartgh.shop/api/transactions?limit=50`,
     ];
 
     for (const url of urlsToTry) {
@@ -963,11 +989,18 @@ export async function syncOrderWithDataMart(order: Order, forceSync = false): Pr
             [];
 
           for (const item of items) {
-            const rp = item.relatedPurchase || item.purchase || item.item || {};
+            const rp =
+              item.relatedPurchase && typeof item.relatedPurchase === "object"
+                ? item.relatedPurchase
+                : item.purchase && typeof item.purchase === "object"
+                ? item.purchase
+                : item.item && typeof item.item === "object"
+                ? item.item
+                : {};
             const tRef = String(item.reference || item.ref || "").trim();
             const rpRef = String(rp.orderReference || rp.reference || "").trim();
             const tId = String(item._id || item.id || "").trim();
-            const rpId = String(rp._id || rp.id || "").trim();
+            const rpId = String(rp._id || rp.id || (typeof item.relatedPurchase === "string" ? item.relatedPurchase : "")).trim();
 
             const isRefMatch = Boolean(
               (ordRef && (matchesDatamartReference(tRef, ordRef) || matchesDatamartReference(rpRef, ordRef))) ||
@@ -1006,15 +1039,20 @@ export async function syncOrderWithDataMart(order: Order, forceSync = false): Pr
                 rp.orderStatus ||
                 rp.deliveryStatus ||
                 rp.delivery_status ||
+                rp.fulfillmentStatus ||
+                rp.telecomStatus ||
+                rp.status ||
                 item.orderStatus ||
                 item.deliveryStatus ||
-                item.delivery_status;
+                item.delivery_status ||
+                item.status;
 
               let rawStatus = "";
               if (explicitStatus) {
-                rawStatus = String(explicitStatus).toLowerCase().trim();
-              } else if (rp.status && !["success", "ok", "true"].includes(String(rp.status).toLowerCase())) {
-                rawStatus = String(rp.status).toLowerCase().trim();
+                const s = String(explicitStatus).toLowerCase().trim();
+                if (!["ok", "true", "false", "error", "success", "successful"].includes(s)) {
+                  rawStatus = s;
+                }
               }
 
               // Never prematurely mark delivered if DataMart is still processing or waiting.
@@ -1055,8 +1093,19 @@ export async function syncOrderWithDataMart(order: Order, forceSync = false): Pr
 
   // 2. SECONDARY CHECK: direct order-status endpoint (Fast 2.5s check)
   try {
-    const candidateRefs = [ordRef, `bmgh-${ordRef}`];
+    const cleanSuffix = ordRef.replace(/^bmgh-/i, "").replace(/^bmgh/i, "");
+    const normalizedNoPrefix = normDmRef(ordRef);
+    const candidateRefs: string[] = [];
+    if (ordRef) candidateRefs.push(ordRef);
+    if (cleanSuffix && !candidateRefs.includes(cleanSuffix)) candidateRefs.push(cleanSuffix);
+    if (cleanSuffix && !candidateRefs.includes(`bmgh-${cleanSuffix}`)) candidateRefs.push(`bmgh-${cleanSuffix}`);
+    if (cleanSuffix && !candidateRefs.includes(`bmgh-${cleanSuffix.toLowerCase()}`)) candidateRefs.push(`bmgh-${cleanSuffix.toLowerCase()}`);
+    if (normalizedNoPrefix) {
+      if (!candidateRefs.includes(normalizedNoPrefix)) candidateRefs.push(normalizedNoPrefix);
+      if (!candidateRefs.includes(`bmgh-${normalizedNoPrefix}`)) candidateRefs.push(`bmgh-${normalizedNoPrefix}`);
+    }
     if (dmOrderRef && !candidateRefs.includes(dmOrderRef)) candidateRefs.push(dmOrderRef);
+    if (dmPurchaseId && !candidateRefs.includes(dmPurchaseId)) candidateRefs.push(dmPurchaseId);
 
     for (const ref of candidateRefs) {
       const statusRes = await checkDataMartOrderStatus(ref);
