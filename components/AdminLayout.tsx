@@ -36,6 +36,7 @@ import {
   isBiometricsSupported,
   loginWithBiometrics,
   registerBiometricPasskey,
+  disableBiometricsOnThisDevice,
 } from "@/lib/webauthn-client";
 
 interface Props {
@@ -57,6 +58,8 @@ export default function AdminLayout({ children }: Props) {
   // Biometric Authentication States
   const [biometricSupported, setBiometricSupported] = useState(false);
   const [biometricLoading, setBiometricLoading] = useState(false);
+  const [biometricDisabled, setBiometricDisabled] = useState(false);
+  const [deviceRegistered, setDeviceRegistered] = useState(false);
   const [showEnrollBanner, setShowEnrollBanner] = useState(false);
   const [enrollingBiometric, setEnrollingBiometric] = useState(false);
   const [enrollSuccessNotice, setEnrollSuccessNotice] = useState("");
@@ -70,12 +73,21 @@ export default function AdminLayout({ children }: Props) {
       }
     }, 2500);
 
+    if (typeof window !== "undefined") {
+      setBiometricDisabled(localStorage.getItem("bmgh_biometric_disabled") === "true");
+      setDeviceRegistered(localStorage.getItem("bmgh_biometric_device_registered") === "true");
+    }
+
     // Check whether device supports WebAuthn / Face ID / Touch ID
     isBiometricsSupported()
       .then((supported) => {
         if (!isMounted) return;
         setBiometricSupported(supported);
-        if (supported && !localStorage.getItem("bmgh_biometric_device_registered")) {
+        if (
+          supported &&
+          !localStorage.getItem("bmgh_biometric_device_registered") &&
+          localStorage.getItem("bmgh_biometric_disabled") !== "true"
+        ) {
           setShowEnrollBanner(true);
         }
       })
@@ -199,8 +211,10 @@ export default function AdminLayout({ children }: Props) {
     try {
       const res = await registerBiometricPasskey(activeAdminEmail || "admin@bundlemartgh.com");
       if (res.success) {
-        setEnrollSuccessNotice("Face ID / Fingerprint enrolled successfully on this device!");
+        setEnrollSuccessNotice("Physical Fingerprint / Face ID enrolled successfully on this device!");
         localStorage.setItem("bmgh_biometric_device_registered", "true");
+        setDeviceRegistered(true);
+        setBiometricDisabled(false);
         setTimeout(() => {
           setShowEnrollBanner(false);
           setEnrollSuccessNotice("");
@@ -259,7 +273,7 @@ export default function AdminLayout({ children }: Props) {
             </div>
           )}
 
-          {biometricSupported && (
+          {biometricSupported && deviceRegistered && !biometricDisabled && (
             <div className="mb-5">
               <button
                 type="button"
@@ -274,6 +288,20 @@ export default function AdminLayout({ children }: Props) {
                 )}
                 <span>Sign in with Face ID / Fingerprint</span>
               </button>
+
+              <div className="mt-2 text-center">
+                <button
+                  type="button"
+                  onClick={() => {
+                    disableBiometricsOnThisDevice();
+                    setBiometricDisabled(true);
+                    setError("");
+                  }}
+                  className="text-[11px] text-slate-400 hover:text-slate-200 underline transition-colors"
+                >
+                  Don&apos;t want biometrics? Use password only
+                </button>
+              </div>
 
               <div className="flex items-center gap-3 my-4">
                 <div className="h-px bg-slate-800 flex-1" />
@@ -339,10 +367,26 @@ export default function AdminLayout({ children }: Props) {
             </button>
           </form>
 
-          <div className="mt-6 text-center">
-            <Link href="/" className="text-xs text-slate-500 hover:text-slate-300 transition-colors">
-              ← Return to Customer Store
-            </Link>
+          <div className="mt-6 text-center space-y-2">
+            <div>
+              <Link href="/" className="text-xs text-slate-500 hover:text-slate-300 transition-colors">
+                ← Return to Customer Store
+              </Link>
+            </div>
+            {biometricSupported && biometricDisabled && (
+              <div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    localStorage.removeItem("bmgh_biometric_disabled");
+                    setBiometricDisabled(false);
+                  }}
+                  className="text-[11px] text-slate-500 hover:text-emerald-400 underline transition-colors"
+                >
+                  Turn Face ID / Fingerprint button back on
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -452,9 +496,13 @@ export default function AdminLayout({ children }: Props) {
               </button>
               <button
                 type="button"
-                onClick={() => setShowEnrollBanner(false)}
+                onClick={() => {
+                  disableBiometricsOnThisDevice();
+                  setBiometricDisabled(true);
+                  setShowEnrollBanner(false);
+                }}
                 className="p-2 text-slate-400 hover:text-white"
-                title="Dismiss"
+                title="Don't ask again"
               >
                 <X className="w-4 h-4" />
               </button>

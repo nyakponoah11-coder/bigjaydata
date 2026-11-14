@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createBiometricChallenge } from "@/lib/biometrics";
+import { createBiometricChallenge, getEnrolledBiometricCredentials } from "@/lib/biometrics";
 
 export const dynamic = "force-dynamic";
 
@@ -9,9 +9,20 @@ export async function GET(req: Request) {
     const type = searchParams.get("type") === "register" ? "register" : "auth";
     const challenge = createBiometricChallenge(type);
 
+    let allowCredentials: Array<{ id: string; type: "public-key"; transports: string[] }> = [];
+    if (type === "auth") {
+      const credentials = await getEnrolledBiometricCredentials();
+      allowCredentials = credentials.map((c) => ({
+        id: c.id,
+        type: "public-key" as const,
+        transports: ["internal"],
+      }));
+    }
+
     return NextResponse.json({
       success: true,
       challenge,
+      allowCredentials,
       rp: {
         name: "BundleMartGh Admin Portal",
       },
@@ -23,3 +34,4 @@ export async function GET(req: Request) {
     );
   }
 }
+

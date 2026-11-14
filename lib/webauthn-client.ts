@@ -91,11 +91,12 @@ export async function registerBiometricPasskey(
         { alg: -257, type: "public-key" }, // RS256
       ],
       authenticatorSelection: {
-        authenticatorAttachment: "platform", // Enforces built-in Fingerprint/Face ID
-        userVerification: "required",
-        residentKey: "preferred",
+        authenticatorAttachment: "platform", // Strictly lock to built-in physical Fingerprint/Face ID
+        userVerification: "required", // Force physical biometric touch/scan
+        residentKey: "discouraged", // Discourages external passkey manager interception
       },
       timeout: 60000,
+      attestation: "none",
     },
   })) as PublicKeyCredential | null;
 
@@ -124,6 +125,7 @@ export async function registerBiometricPasskey(
 
   localStorage.setItem("bmgh_biometric_device_registered", "true");
   localStorage.setItem("bmgh_biometric_last_id", credentialId);
+  localStorage.removeItem("bmgh_biometric_disabled");
 
   return {
     success: true,
@@ -145,7 +147,7 @@ export async function loginWithBiometrics(): Promise<{
     throw new Error("Biometrics are not supported on this browser or device.");
   }
 
-  // 1. Get authentication challenge
+  // 1. Get authentication challenge and allowCredentials for this host
   const res = await fetch("/api/admin/biometrics/challenge?type=auth");
   const data = await res.json();
   if (!res.ok || !data.challenge) {
@@ -154,12 +156,28 @@ export async function loginWithBiometrics(): Promise<{
 
   const challengeBuffer = base64urlToBuffer(data.challenge);
 
-  // 2. Prompt Face ID / Touch ID / Fingerprint
+  // 2. Build allowCredentials with transports: ["internal"]
+  // If no enrolled credentials exist on server, DO NOT call navigator.credentials.get
+  // because Chrome/Windows would open the third-party Passkey picker dialog ("Save to Google Password Manager").
+  const allowCredentials = Array.isArray(data.allowCredentials) && data.allowCredentials.length > 0
+    ? data.allowCredentials.map((c: any) => ({
+        id: base64urlToBuffer(c.id),
+        type: "public-key" as const,
+        transports: ["internal" as AuthenticatorTransport],
+      }))
+    : [];
+
+  if (allowCredentials.length === 0) {
+    throw new Error("No physical fingerprint or Face ID enrolled on this device yet. Please sign in with your master password.");
+  }
+
+  // 3. Prompt physical Fingerprint / Face ID sensor directly (Windows Hello / Apple Touch ID)
   const credential = (await navigator.credentials.get({
     publicKey: {
       challenge: challengeBuffer,
       rpId: window.location.hostname,
-      userVerification: "required",
+      allowCredentials,
+      userVerification: "required", // Forces physical biometric scan
       timeout: 60000,
     },
   })) as PublicKeyCredential | null;
@@ -170,7 +188,7 @@ export async function loginWithBiometrics(): Promise<{
 
   const credentialId = bufferToBase64url(credential.rawId);
 
-  // 3. Verify on server
+  // 4. Verify on server
   const verifyRes = await fetch("/api/admin/biometrics/verify", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -188,6 +206,7 @@ export async function loginWithBiometrics(): Promise<{
   localStorage.setItem("bundlemart_admin_auth", verifyData.token || "authenticated");
   localStorage.setItem("bmgh_biometric_device_registered", "true");
   localStorage.setItem("bmgh_biometric_last_id", credentialId);
+  localStorage.removeItem("bmgh_biometric_disabled");
 
   return {
     success: true,
@@ -197,3 +216,15 @@ export async function loginWithBiometrics(): Promise<{
     message: verifyData.message,
   };
 }
+
+/**
+ * Disables biometric prompt on this device (reverts to password-only)
+ */
+export function disableBiometricsOnThisDevice(): void {
+  if (typeof window !== "undefined") {
+    localStorage.removeItem("bmgh_biometric_device_registered");
+    localStorage.removeItem("bmgh_biometric_last_id");
+    localStorage.setItem("bmgh_biometric_disabled", "true");
+  }
+}
+
