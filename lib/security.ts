@@ -504,6 +504,11 @@ export async function sendAdminSecurityEmail(
 // In-memory counter for failed login attempts (tracked within 15-minute sliding windows)
 const failedLoginAttempts = new Map<string, { count: number; lastAttempt: number }>();
 
+export function clearAdminLoginFailures(ip: string): void {
+  const cleanIp = (ip || "127.0.0.1").trim();
+  failedLoginAttempts.delete(cleanIp);
+}
+
 /**
  * Handles failed admin login attempts: records incident, alerts admin via WhatsApp & Email,
  * and auto-blocks malicious IPs after 3 failed attempts.

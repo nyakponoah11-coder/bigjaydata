@@ -261,6 +261,12 @@ export async function verifyAdminRequest(req?: Request): Promise<boolean> {
         if (clean.startsWith("bundlemart_admin_token_")) {
           return true;
         }
+
+        const envPass = process.env.ADMIN_PASSWORD?.trim();
+        const envSecret = process.env.ADMIN_SECRET_KEY?.trim();
+        if ((envPass && clean === envPass) || (envSecret && clean === envSecret)) {
+          return true;
+        }
       }
     } catch {}
   }

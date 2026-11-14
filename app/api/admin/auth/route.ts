@@ -5,11 +5,14 @@ import {
   getDatabaseAdminUser,
   saveDatabaseAdminUser,
   verifyAdminPassword,
+  hashAdminPassword,
   requireAdminAuth,
 } from "@/lib/admin-auth";
 import {
   getClientIp,
   isEntityBlocked,
+  unblockEntity,
+  clearAdminLoginFailures,
   recordAdminLoginFailure,
 } from "@/lib/security";
 
@@ -19,10 +22,13 @@ export async function GET(req: Request) {
   try {
     const isAuth = await verifyAdminRequest(req);
     const existingAdmin = await getDatabaseAdminUser();
+    const hasEnvPass = Boolean(
+      process.env.ADMIN_PASSWORD?.trim() || process.env.ADMIN_SECRET_KEY?.trim()
+    );
 
     return NextResponse.json({
       authenticated: isAuth,
-      isConfigured: Boolean(existingAdmin),
+      isConfigured: Boolean(existingAdmin || hasEnvPass),
       email: isAuth && existingAdmin ? existingAdmin.email : undefined,
     });
   } catch (error: any) {
@@ -36,14 +42,37 @@ export async function GET(req: Request) {
 export async function POST(request: Request) {
   try {
     const clientIp = getClientIp(request);
+    const body = await request.json().catch(() => ({}));
+    const { action, email, password, newPassword, tokenSync } = body;
+
+    const inputEmail = email ? String(email).trim().toLowerCase() : "";
+    const inputPassword = password ? String(password).trim() : (newPassword ? String(newPassword).trim() : "");
+
+    // Vercel Environment Master Passwords
+    const envAdminPass = (process.env.ADMIN_PASSWORD || "").trim();
+    const envAdminSecret = (process.env.ADMIN_SECRET_KEY || "").trim();
+
+    const isEnvPasswordValid = Boolean(
+      inputPassword &&
+      ((envAdminPass && inputPassword === envAdminPass) ||
+       (envAdminSecret && inputPassword === envAdminSecret))
+    );
 
     // Blocked IP pre-check
     const blockedStatus = await isEntityBlocked(clientIp);
     if (blockedStatus.blocked) {
-      return NextResponse.json(
-        { success: false, message: "Access forbidden: Your IP has been blacklisted by the security firewall." },
-        { status: 403 }
-      );
+      // If the request contains the valid Vercel environment password, auto-unblock and allow login!
+      if (isEnvPasswordValid) {
+        try {
+          await unblockEntity(clientIp, "ip");
+          clearAdminLoginFailures(clientIp);
+        } catch (_) {}
+      } else {
+        return NextResponse.json(
+          { success: false, message: "Access forbidden: Your IP has been blacklisted by the security firewall." },
+          { status: 403 }
+        );
+      }
     }
 
     const { searchParams } = new URL(request.url);
@@ -60,9 +89,6 @@ export async function POST(request: Request) {
       });
       return res;
     }
-
-    const body = await request.json().catch(() => ({}));
-    const { action, email, password, newPassword, tokenSync } = body;
 
     // 2. Update credentials action (requires authenticated session)
     if (action === "update_credentials") {
@@ -100,10 +126,50 @@ export async function POST(request: Request) {
       return res;
     }
 
-    // 3. Check for existing database admin account
+    // 3. MASTER OVERRIDE: If password matches Vercel environment variable (ADMIN_PASSWORD or ADMIN_SECRET_KEY)
+    if (isEnvPasswordValid) {
+      const existingAdmin = await getDatabaseAdminUser();
+      const adminEmail = inputEmail || existingAdmin?.email || "admin@bundlemartgh.com";
+
+      // Auto-sync database admin user to match Vercel environment password
+      try {
+        await saveDatabaseAdminUser(adminEmail, inputPassword);
+      } catch (err) {
+        console.warn("[AdminAuth] Auto-sync env password to database error:", err);
+      }
+
+      // Unblock IP and reset any failure counter
+      try {
+        await unblockEntity(clientIp, "ip");
+        clearAdminLoginFailures(clientIp);
+      } catch (_) {}
+
+      const userRecord = (await getDatabaseAdminUser(adminEmail)) || existingAdmin;
+      const userHash = userRecord?.password_hash || hashAdminPassword(inputPassword).hash;
+      const sessionToken = generateAdminSessionToken(adminEmail, userHash);
+
+      const response = NextResponse.json({
+        success: true,
+        token: sessionToken,
+        email: adminEmail,
+        message: "Authenticated successfully with Vercel master password.",
+      });
+
+      response.cookies.set("bmgh_admin_session", sessionToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        path: "/",
+        maxAge: 60 * 60 * 24 * 7, // 7 days
+      });
+
+      return response;
+    }
+
+    // 4. Check for existing database admin account
     const existingAdmin = await getDatabaseAdminUser();
 
-    // 4. First-time setup wizard: if no admin account exists in Supabase yet, initialize it!
+    // 5. First-time setup wizard: if no admin account exists in Supabase yet, initialize it!
     if (!existingAdmin) {
       const cleanEmail = email ? String(email).trim().toLowerCase() : "";
       const cleanPassword = password ? String(password).trim() : "";
@@ -141,10 +207,7 @@ export async function POST(request: Request) {
       return res;
     }
 
-    // 5. Existing admin authentication
-    const inputEmail = email ? String(email).trim().toLowerCase() : "";
-    const inputPassword = password ? String(password).trim() : "";
-
+    // 6. Existing admin authentication via database
     // Allow token sync if already authenticated session exists or valid token is presented
     if (tokenSync) {
       const isReqAuth = await verifyAdminRequest(request);
@@ -154,7 +217,8 @@ export async function POST(request: Request) {
 
       if (isReqAuth || tokenCheck.valid || isLegacyValid) {
         const adminEmail = tokenCheck.email || existingAdmin.email || "admin@bundlemartgh.com";
-        const sessionToken = generateAdminSessionToken(adminEmail, existingAdmin.password_hash);
+        const passwordHash = existingAdmin.password_hash || "default_hash";
+        const sessionToken = generateAdminSessionToken(adminEmail, passwordHash);
         const res = NextResponse.json({ success: true, email: adminEmail });
         res.cookies.set("bmgh_admin_session", sessionToken, {
           httpOnly: true,
@@ -167,19 +231,22 @@ export async function POST(request: Request) {
       }
     }
 
-    if (!inputEmail || !inputPassword) {
+    if (!inputPassword) {
       return NextResponse.json(
-        { success: false, message: "Please enter both admin email and password." },
+        { success: false, message: "Please enter your admin password." },
         { status: 400 }
       );
     }
 
     // Look up target admin by email or match existing
-    const adminUser = (await getDatabaseAdminUser(inputEmail)) || existingAdmin;
-    const isEmailMatch = adminUser.email.toLowerCase() === inputEmail;
+    const adminUser = (inputEmail ? await getDatabaseAdminUser(inputEmail) : null) || existingAdmin;
+    const isEmailMatch = !inputEmail || adminUser.email.toLowerCase() === inputEmail;
     const isPasswordValid = verifyAdminPassword(inputPassword, adminUser.password_hash, adminUser.salt);
 
     if (isEmailMatch && isPasswordValid) {
+      // Clear any failed attempts
+      clearAdminLoginFailures(clientIp);
+
       const sessionToken = generateAdminSessionToken(adminUser.email, adminUser.password_hash);
 
       const response = NextResponse.json({
@@ -203,7 +270,7 @@ export async function POST(request: Request) {
     const userAgent = request.headers.get("user-agent") || "Unknown Device";
     const failureResult = await recordAdminLoginFailure(
       clientIp,
-      inputEmail,
+      inputEmail || "admin",
       userAgent,
       existingAdmin?.email
     );

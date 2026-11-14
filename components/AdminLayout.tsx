@@ -170,7 +170,7 @@ export default function AdminLayout({ children }: Props) {
             <p className="text-xs text-slate-400 mt-1">
               {isConfigured === false
                 ? "First-time setup: Create your Master Administrator credentials stored in Supabase"
-                : "Sign in with your database-authenticated administrator credentials"}
+                : "Sign in with your Vercel environment password or admin credentials"}
             </p>
           </div>
 
@@ -184,16 +184,15 @@ export default function AdminLayout({ children }: Props) {
           <form onSubmit={handleLogin} className="space-y-4">
             <div>
               <label className="block text-xs font-semibold text-slate-300 mb-1.5 uppercase tracking-wide">
-                Admin Email
+                Admin Email / Username
               </label>
               <div className="relative">
                 <input
-                  type="email"
-                  required
+                  type="text"
                   autoFocus
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="admin@bundlemartgh.com"
+                  placeholder="admin@bundlemartgh.com (optional if using Vercel password)"
                   className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 placeholder:text-slate-500"
                 />
               </div>
@@ -209,7 +208,7 @@ export default function AdminLayout({ children }: Props) {
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Enter admin password"
+                  placeholder="Enter ADMIN_PASSWORD or master password"
                   className="w-full pl-4 pr-11 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 placeholder:text-slate-500"
                 />
                 <button
