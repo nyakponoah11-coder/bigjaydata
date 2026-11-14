@@ -230,6 +230,36 @@ export default function AdminLayout({ children }: Props) {
     }
   };
 
+  const handleDirectActivateBiometrics = async () => {
+    if (!password) {
+      setError("Please enter your Admin Password above first, then tap Activate Face ID.");
+      return;
+    }
+    setEnrollingBiometric(true);
+    setError("");
+    try {
+      const res = await registerBiometricPasskey(
+        email.trim() || activeAdminEmail || "admin@bundlemartgh.com",
+        password
+      );
+      if (res.success) {
+        if (res.token) {
+          localStorage.setItem("bundlemart_admin_auth", res.token);
+        }
+        localStorage.setItem("bmgh_biometric_device_registered", "true");
+        setDeviceRegistered(true);
+        setIsAuthenticated(true);
+      }
+    } catch (err: any) {
+      const msg = err?.message || "Could not activate Face ID / Fingerprint on this device.";
+      if (!msg.toLowerCase().includes("cancel") && !msg.toLowerCase().includes("abort")) {
+        setError(msg);
+      }
+    } finally {
+      setEnrollingBiometric(false);
+    }
+  };
+
   const handleLogout = async () => {
     localStorage.removeItem("bundlemart_admin_auth");
     localStorage.removeItem("bigj_admin_auth");
@@ -365,6 +395,22 @@ export default function AdminLayout({ children }: Props) {
                 "Unlock Dashboard"
               )}
             </button>
+
+            {biometricSupported && !deviceRegistered && !biometricDisabled && (
+              <button
+                type="button"
+                onClick={handleDirectActivateBiometrics}
+                disabled={enrollingBiometric || loading}
+                className="w-full py-2.5 px-3 bg-slate-800/80 hover:bg-slate-700/80 border border-emerald-500/30 hover:border-emerald-500/50 text-emerald-300 font-semibold rounded-xl text-xs flex items-center justify-center gap-2 transition-all disabled:opacity-50 mt-2"
+              >
+                {enrollingBiometric ? (
+                  <Loader2 className="w-4 h-4 animate-spin text-emerald-400" />
+                ) : (
+                  <Fingerprint className="w-4 h-4 text-emerald-400" />
+                )}
+                <span>Activate Face ID / Fingerprint on this device</span>
+              </button>
+            )}
           </form>
 
           <div className="mt-6 text-center space-y-2">

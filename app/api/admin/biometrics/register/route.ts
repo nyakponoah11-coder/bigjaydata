@@ -5,17 +5,45 @@ import {
   getEnrolledBiometricCredentials,
   consumeBiometricChallenge,
 } from "@/lib/biometrics";
-import { requireAdminAuth, getDatabaseAdminUser } from "@/lib/admin-auth";
+import {
+  requireAdminAuth,
+  getDatabaseAdminUser,
+  verifyAdminPassword,
+  generateAdminSessionToken,
+} from "@/lib/admin-auth";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(req: Request) {
   try {
-    const authError = await requireAdminAuth(req);
-    if (authError) return authError;
-
     const body = await req.json().catch(() => ({}));
-    const { credentialId, deviceName, challenge, email, publicKey } = body;
+    const { credentialId, deviceName, challenge, email, publicKey, password } = body;
+
+    // Check authorization: Valid session OR valid admin master password
+    let authorized = false;
+    const authError = await requireAdminAuth(req);
+    if (!authError) {
+      authorized = true;
+    } else if (password) {
+      const cleanPass = String(password).trim();
+      const envPass = process.env.ADMIN_PASSWORD?.trim();
+      const envSecret = process.env.ADMIN_SECRET_KEY?.trim();
+      if ((envPass && cleanPass === envPass) || (envSecret && cleanPass === envSecret)) {
+        authorized = true;
+      } else {
+        const dbAdmin = await getDatabaseAdminUser();
+        if (dbAdmin && verifyAdminPassword(cleanPass, dbAdmin.password_hash, dbAdmin.salt)) {
+          authorized = true;
+        }
+      }
+    }
+
+    if (!authorized) {
+      return NextResponse.json(
+        { success: false, message: "Unauthorized: Invalid admin password or expired session." },
+        { status: 401 }
+      );
+    }
 
     if (!credentialId) {
       return NextResponse.json(
@@ -50,10 +78,25 @@ export async function POST(req: Request) {
       );
     }
 
-    return NextResponse.json({
+    const userHash = existingAdmin?.password_hash || process.env.ADMIN_PASSWORD || "bmgh_admin";
+    const sessionToken = generateAdminSessionToken(adminEmail, userHash);
+
+    const response = NextResponse.json({
       success: true,
+      token: sessionToken,
+      email: adminEmail,
       message: `Biometric passkey for "${devName}" enrolled successfully! You can now use Face ID / Fingerprint to log in.`,
     });
+
+    response.cookies.set("bmgh_admin_session", sessionToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      maxAge: 60 * 60 * 24 * 30, // 30 days
+      path: "/",
+    });
+
+    return response;
   } catch (error: any) {
     console.error("[Biometrics Register Error]:", error);
     return NextResponse.json(

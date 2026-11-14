@@ -56,8 +56,15 @@ export async function isBiometricsSupported(): Promise<boolean> {
  */
 export async function registerBiometricPasskey(
   adminEmail = "admin@bundlemartgh.com",
+  adminPassword?: string,
   customDeviceName?: string
-): Promise<{ success: boolean; message: string }> {
+): Promise<{
+  success: boolean;
+  token?: string;
+  email?: string;
+  credentialId?: string;
+  message: string;
+}> {
   if (!(await isBiometricsSupported())) {
     throw new Error("Your current browser or device does not support biometric authentication.");
   }
@@ -73,7 +80,7 @@ export async function registerBiometricPasskey(
   const userIdBuffer = new TextEncoder().encode(adminEmail);
   const deviceName = customDeviceName || detectDeviceName();
 
-  // 2. Request platform authenticator creation (Face ID / Fingerprint)
+  // 2. Request native platform authenticator creation (Apple Face ID / Android Fingerprint / Windows Hello)
   const credential = (await navigator.credentials.create({
     publicKey: {
       challenge: challengeBuffer,
@@ -87,13 +94,13 @@ export async function registerBiometricPasskey(
         displayName: `BundleMartGh Admin (${adminEmail})`,
       },
       pubKeyCredParams: [
-        { alg: -7, type: "public-key" }, // ES256
-        { alg: -257, type: "public-key" }, // RS256
+        { alg: -7, type: "public-key" }, // ES256 (required for Apple Face ID & Android)
+        { alg: -257, type: "public-key" }, // RS256 (Windows Hello)
       ],
       authenticatorSelection: {
-        authenticatorAttachment: "platform", // Strictly lock to built-in physical Fingerprint/Face ID
-        userVerification: "required", // Force physical biometric touch/scan
-        residentKey: "discouraged", // Discourages external passkey manager interception
+        authenticatorAttachment: "platform", // Native built-in sensor (Face ID / Fingerprint)
+        userVerification: "required", // Forces Face ID / Fingerprint scan
+        residentKey: "preferred", // Required by Apple Face ID and Android
       },
       timeout: 60000,
       attestation: "none",
@@ -106,7 +113,7 @@ export async function registerBiometricPasskey(
 
   const credentialId = bufferToBase64url(credential.rawId);
 
-  // 3. Send enrolled credential to server
+  // 3. Send enrolled credential to server (authenticated via session or password)
   const regRes = await fetch("/api/admin/biometrics/register", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -115,6 +122,7 @@ export async function registerBiometricPasskey(
       deviceName,
       challenge: data.challenge,
       email: adminEmail,
+      password: adminPassword || undefined,
     }),
   });
 
@@ -123,12 +131,18 @@ export async function registerBiometricPasskey(
     throw new Error(regData.message || "Failed to save biometric key.");
   }
 
+  if (regData.token) {
+    localStorage.setItem("bundlemart_admin_auth", regData.token);
+  }
   localStorage.setItem("bmgh_biometric_device_registered", "true");
   localStorage.setItem("bmgh_biometric_last_id", credentialId);
   localStorage.removeItem("bmgh_biometric_disabled");
 
   return {
     success: true,
+    token: regData.token,
+    email: regData.email,
+    credentialId,
     message: regData.message || `Biometrics (${deviceName}) enrolled successfully!`,
   };
 }
@@ -156,28 +170,24 @@ export async function loginWithBiometrics(): Promise<{
 
   const challengeBuffer = base64urlToBuffer(data.challenge);
 
-  // 2. Build allowCredentials with transports: ["internal"]
-  // If no enrolled credentials exist on server, DO NOT call navigator.credentials.get
-  // because Chrome/Windows would open the third-party Passkey picker dialog ("Save to Google Password Manager").
+  // 2. Build allowCredentials with transports: internal & hybrid
+  // When specific credentials exist, supply them to match directly.
+  // If undefined, native Apple Face ID sheet triggers on iOS.
   const allowCredentials = Array.isArray(data.allowCredentials) && data.allowCredentials.length > 0
     ? data.allowCredentials.map((c: any) => ({
         id: base64urlToBuffer(c.id),
         type: "public-key" as const,
-        transports: ["internal" as AuthenticatorTransport],
+        transports: ["internal" as AuthenticatorTransport, "hybrid" as AuthenticatorTransport],
       }))
-    : [];
+    : undefined;
 
-  if (allowCredentials.length === 0) {
-    throw new Error("No physical fingerprint or Face ID enrolled on this device yet. Please sign in with your master password.");
-  }
-
-  // 3. Prompt physical Fingerprint / Face ID sensor directly (Windows Hello / Apple Touch ID)
+  // 3. Prompt native Apple Face ID / Android Fingerprint / Windows Hello
   const credential = (await navigator.credentials.get({
     publicKey: {
       challenge: challengeBuffer,
       rpId: window.location.hostname,
       allowCredentials,
-      userVerification: "required", // Forces physical biometric scan
+      userVerification: "required", // Forces native Face ID / Fingerprint scan
       timeout: 60000,
     },
   })) as PublicKeyCredential | null;
