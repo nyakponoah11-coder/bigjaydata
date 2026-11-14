@@ -168,6 +168,15 @@ export default function AdminLayout({ children }: Props) {
     setError("");
     setBiometricLoading(true);
     try {
+      // Pre-check if any biometric passkey is registered
+      const statusRes = await fetch("/api/admin/biometrics/status").catch(() => null);
+      const statusData = statusRes ? await statusRes.json().catch(() => null) : null;
+      if (statusData && statusData.hasEnrolled === false) {
+        setError("No biometric passkey registered yet. Please sign in with your password first, then click 'Enroll Now' to activate Face ID / Fingerprint on this device.");
+        setBiometricLoading(false);
+        return;
+      }
+
       const res = await loginWithBiometrics();
       if (res.success) {
         if (res.email) setActiveAdminEmail(res.email);

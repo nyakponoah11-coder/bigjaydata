@@ -46,91 +46,96 @@ export function consumeBiometricChallenge(challenge: string): boolean {
   return true;
 }
 
+// In-memory credential fallback
+const globalBiometrics = globalThis as unknown as {
+  __bmgh_biometrics?: BiometricCredential[];
+};
+if (!globalBiometrics.__bmgh_biometrics) {
+  globalBiometrics.__bmgh_biometrics = [];
+}
+
 /**
  * Retrieves all registered biometric credentials from Supabase settings
  */
 export async function getEnrolledBiometricCredentials(): Promise<BiometricCredential[]> {
-  if (!isSupabaseConfigured || !supabaseAdmin) {
-    return [];
-  }
+  if (isSupabaseConfigured && supabaseAdmin) {
+    try {
+      const { data, error } = await supabaseAdmin
+        .from("settings")
+        .select("store_name")
+        .eq("id", "admin_biometric_credentials")
+        .maybeSingle();
 
-  try {
-    const { data, error } = await supabaseAdmin
-      .from("settings")
-      .select("store_name")
-      .eq("id", "admin_biometric_credentials")
-      .maybeSingle();
-
-    if (!error && data?.store_name) {
-      const parsed = JSON.parse(data.store_name);
-      if (Array.isArray(parsed)) {
-        return parsed;
+      if (!error && data?.store_name) {
+        const parsed = JSON.parse(data.store_name);
+        if (Array.isArray(parsed)) {
+          globalBiometrics.__bmgh_biometrics = parsed;
+          return parsed;
+        }
       }
+    } catch (err) {
+      console.warn("[Biometrics] Error fetching biometric credentials:", err);
     }
-  } catch (err) {
-    console.warn("[Biometrics] Error fetching biometric credentials:", err);
   }
 
-  return [];
+  return globalBiometrics.__bmgh_biometrics || [];
 }
 
 /**
  * Enrolls a new biometric credential into Supabase settings
  */
 export async function saveBiometricCredential(cred: BiometricCredential): Promise<boolean> {
-  if (!isSupabaseConfigured || !supabaseAdmin) {
-    throw new Error("Supabase is not configured to store biometric credentials.");
-  }
+  const existing = await getEnrolledBiometricCredentials();
+  const filtered = existing.filter((c) => c.id !== cred.id);
+  filtered.push(cred);
+  globalBiometrics.__bmgh_biometrics = filtered;
 
-  try {
-    const existing = await getEnrolledBiometricCredentials();
-    const filtered = existing.filter((c) => c.id !== cred.id);
-    filtered.push(cred);
+  if (isSupabaseConfigured && supabaseAdmin) {
+    try {
+      const { error } = await supabaseAdmin.from("settings").upsert({
+        id: "admin_biometric_credentials",
+        store_name: JSON.stringify(filtered),
+      });
 
-    const { error } = await supabaseAdmin.from("settings").upsert({
-      id: "admin_biometric_credentials",
-      store_name: JSON.stringify(filtered),
-    });
-
-    if (error) {
-      console.error("[Biometrics] Failed to save credential to Supabase:", error);
-      return false;
+      if (error) {
+        console.error("[Biometrics] Failed to save credential to Supabase:", error);
+      }
+    } catch (err) {
+      console.error("[Biometrics] Error persisting biometric credential:", err);
     }
-
-    return true;
-  } catch (err) {
-    console.error("[Biometrics] Error persisting biometric credential:", err);
-    return false;
   }
+
+  return true;
 }
 
 /**
  * Removes a specific biometric credential or deletes all if none specified
  */
 export async function deleteBiometricCredential(credId?: string): Promise<boolean> {
-  if (!isSupabaseConfigured || !supabaseAdmin) {
-    return false;
-  }
-
-  try {
-    if (!credId) {
-      await supabaseAdmin.from("settings").delete().eq("id", "admin_biometric_credentials");
-      return true;
+  if (!credId) {
+    globalBiometrics.__bmgh_biometrics = [];
+    if (isSupabaseConfigured && supabaseAdmin) {
+      try {
+        await supabaseAdmin.from("settings").delete().eq("id", "admin_biometric_credentials");
+      } catch (_) {}
     }
-
-    const existing = await getEnrolledBiometricCredentials();
-    const updated = existing.filter((c) => c.id !== credId);
-
-    const { error } = await supabaseAdmin.from("settings").upsert({
-      id: "admin_biometric_credentials",
-      store_name: JSON.stringify(updated),
-    });
-
-    return !error;
-  } catch (err) {
-    console.error("[Biometrics] Error deleting credential:", err);
-    return false;
+    return true;
   }
+
+  const existing = await getEnrolledBiometricCredentials();
+  const updated = existing.filter((c) => c.id !== credId);
+  globalBiometrics.__bmgh_biometrics = updated;
+
+  if (isSupabaseConfigured && supabaseAdmin) {
+    try {
+      await supabaseAdmin.from("settings").upsert({
+        id: "admin_biometric_credentials",
+        store_name: JSON.stringify(updated),
+      });
+    } catch (_) {}
+  }
+
+  return true;
 }
 
 /**
@@ -149,3 +154,4 @@ export async function recordBiometricUsage(credId: string): Promise<void> {
     }
   } catch (_) {}
 }
+

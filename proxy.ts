@@ -149,8 +149,14 @@ export function proxy(request: NextRequest) {
   }
 
   // 3. Protect all /api/admin/* and /api/datamart/* endpoints
+  const isPublicAdminRoute =
+    pathname.startsWith("/api/admin/auth") ||
+    pathname.startsWith("/api/admin/biometrics/challenge") ||
+    pathname.startsWith("/api/admin/biometrics/verify") ||
+    pathname.startsWith("/api/admin/biometrics/status");
+
   if (
-    (pathname.startsWith("/api/admin/") && !pathname.startsWith("/api/admin/auth")) ||
+    (pathname.startsWith("/api/admin/") && !isPublicAdminRoute) ||
     pathname.startsWith("/api/datamart/")
   ) {
     const sessionCookie = request.cookies.get("bmgh_admin_session")?.value;
