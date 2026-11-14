@@ -28,7 +28,15 @@ import {
   Eye,
   EyeOff,
   Tv,
+  Fingerprint,
+  ScanFace,
+  ShieldCheck,
 } from "lucide-react";
+import {
+  isBiometricsSupported,
+  loginWithBiometrics,
+  registerBiometricPasskey,
+} from "@/lib/webauthn-client";
 
 interface Props {
   children: React.ReactNode;
@@ -46,6 +54,13 @@ export default function AdminLayout({ children }: Props) {
   const [error, setError] = useState("");
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
 
+  // Biometric Authentication States
+  const [biometricSupported, setBiometricSupported] = useState(false);
+  const [biometricLoading, setBiometricLoading] = useState(false);
+  const [showEnrollBanner, setShowEnrollBanner] = useState(false);
+  const [enrollingBiometric, setEnrollingBiometric] = useState(false);
+  const [enrollSuccessNotice, setEnrollSuccessNotice] = useState("");
+
   useEffect(() => {
     let isMounted = true;
     const controller = new AbortController();
@@ -54,6 +69,17 @@ export default function AdminLayout({ children }: Props) {
         setIsAuthenticated((prev) => (prev === null ? false : prev));
       }
     }, 2500);
+
+    // Check whether device supports WebAuthn / Face ID / Touch ID
+    isBiometricsSupported()
+      .then((supported) => {
+        if (!isMounted) return;
+        setBiometricSupported(supported);
+        if (supported && !localStorage.getItem("bmgh_biometric_device_registered")) {
+          setShowEnrollBanner(true);
+        }
+      })
+      .catch(() => {});
 
     // Check initial auth state & whether an admin account exists in Supabase
     fetch("/api/admin/auth", { signal: controller.signal })
@@ -138,6 +164,49 @@ export default function AdminLayout({ children }: Props) {
     }
   };
 
+  const handleBiometricLogin = async () => {
+    setError("");
+    setBiometricLoading(true);
+    try {
+      const res = await loginWithBiometrics();
+      if (res.success) {
+        if (res.email) setActiveAdminEmail(res.email);
+        setIsAuthenticated(true);
+      }
+    } catch (err: any) {
+      const msg = err?.message || "Biometric authentication failed";
+      // Ignore user cancellations
+      if (!msg.toLowerCase().includes("cancel") && !msg.toLowerCase().includes("timed out") && !msg.toLowerCase().includes("abort")) {
+        setError(msg);
+      }
+    } finally {
+      setBiometricLoading(false);
+    }
+  };
+
+  const handleEnrollDeviceBiometrics = async () => {
+    setEnrollingBiometric(true);
+    setError("");
+    try {
+      const res = await registerBiometricPasskey(activeAdminEmail || "admin@bundlemartgh.com");
+      if (res.success) {
+        setEnrollSuccessNotice("Face ID / Fingerprint enrolled successfully on this device!");
+        localStorage.setItem("bmgh_biometric_device_registered", "true");
+        setTimeout(() => {
+          setShowEnrollBanner(false);
+          setEnrollSuccessNotice("");
+        }, 4000);
+      }
+    } catch (err: any) {
+      const msg = err?.message || "Could not register biometrics on this device.";
+      if (!msg.toLowerCase().includes("cancel")) {
+        alert(msg);
+      }
+    } finally {
+      setEnrollingBiometric(false);
+    }
+  };
+
   const handleLogout = async () => {
     localStorage.removeItem("bundlemart_admin_auth");
     localStorage.removeItem("bigj_admin_auth");
@@ -178,6 +247,30 @@ export default function AdminLayout({ children }: Props) {
             <div className="mb-4 p-3 bg-red-950/50 border border-red-800 text-red-300 text-xs rounded-xl flex items-center gap-2">
               <ShieldAlert className="w-4 h-4 shrink-0 text-red-400" />
               <span>{error}</span>
+            </div>
+          )}
+
+          {biometricSupported && (
+            <div className="mb-5">
+              <button
+                type="button"
+                onClick={handleBiometricLogin}
+                disabled={biometricLoading || loading}
+                className="w-full py-3.5 px-4 bg-gradient-to-r from-emerald-500/15 via-teal-500/25 to-emerald-500/15 hover:from-emerald-500/25 hover:to-teal-500/35 border border-emerald-500/40 hover:border-emerald-400 text-emerald-300 font-bold rounded-2xl text-sm shadow-xl shadow-emerald-950/40 flex items-center justify-center gap-2.5 transition-all hover:scale-[1.01] active:scale-[0.99] disabled:opacity-50"
+              >
+                {biometricLoading ? (
+                  <Loader2 className="w-5 h-5 animate-spin text-emerald-400" />
+                ) : (
+                  <Fingerprint className="w-5 h-5 text-emerald-400" />
+                )}
+                <span>Sign in with Face ID / Fingerprint</span>
+              </button>
+
+              <div className="flex items-center gap-3 my-4">
+                <div className="h-px bg-slate-800 flex-1" />
+                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">or use password</span>
+                <div className="h-px bg-slate-800 flex-1" />
+              </div>
             </div>
           )}
 
@@ -320,6 +413,46 @@ export default function AdminLayout({ children }: Props) {
 
       {/* Main Content Area (Full Width) */}
       <main className="flex-1 min-w-0 bg-slate-950 p-4 sm:p-6 lg:p-8">
+        {enrollSuccessNotice && (
+          <div className="max-w-7xl mx-auto mb-6 p-4 bg-emerald-950/80 border border-emerald-500 text-emerald-200 text-xs rounded-2xl flex items-center gap-2.5 shadow-xl animate-in fade-in">
+            <ShieldCheck className="w-5 h-5 text-emerald-400 shrink-0" />
+            <span className="font-bold">{enrollSuccessNotice}</span>
+          </div>
+        )}
+
+        {showEnrollBanner && biometricSupported && (
+          <div className="max-w-7xl mx-auto mb-6 bg-gradient-to-r from-emerald-950/70 via-slate-900 to-teal-950/70 border border-emerald-500/30 rounded-2xl p-4 shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs animate-in fade-in">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center shrink-0">
+                <Fingerprint className="w-5 h-5 text-emerald-400" />
+              </div>
+              <div>
+                <p className="font-bold text-white text-sm">Enable Biometric Login on this device</p>
+                <p className="text-slate-400 text-xs">Unlock your admin dashboard instantly with Face ID / Touch ID next time.</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={handleEnrollDeviceBiometrics}
+                disabled={enrollingBiometric}
+                className="py-2 px-3.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl shadow-md flex items-center gap-1.5 transition-all disabled:opacity-50 text-xs"
+              >
+                {enrollingBiometric ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ShieldCheck className="w-3.5 h-3.5" />}
+                <span>Enroll Now</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowEnrollBanner(false)}
+                className="p-2 text-slate-400 hover:text-white"
+                title="Dismiss"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        )}
+
         {children}
       </main>
 

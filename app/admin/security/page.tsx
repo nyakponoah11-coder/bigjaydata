@@ -26,7 +26,15 @@ import {
   Key,
   Eye,
   EyeOff,
+  Fingerprint,
+  ScanFace,
+  Smartphone,
 } from "lucide-react";
+import {
+  isBiometricsSupported,
+  registerBiometricPasskey,
+  detectDeviceName,
+} from "@/lib/webauthn-client";
 
 interface BlockedItem {
   id: string;
@@ -80,6 +88,12 @@ export default function AdminSecurityPage() {
   const [showNewAdminPassword, setShowNewAdminPassword] = useState(false);
   const [savingAdminCreds, setSavingAdminCreds] = useState(false);
   const [adminCredsNotice, setAdminCredsNotice] = useState<{ type: "success" | "error"; message: string } | null>(null);
+
+  // Biometric Authentication State
+  const [biometricSupported, setBiometricSupported] = useState(false);
+  const [enrolledKeys, setEnrolledKeys] = useState<any[]>([]);
+  const [enrollingDevice, setEnrollingDevice] = useState(false);
+  const [biometricNotice, setBiometricNotice] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
   // Manual Block State
   const [newTarget, setNewTarget] = useState("");
@@ -145,13 +159,26 @@ export default function AdminSecurityPage() {
     }
   };
 
+  const fetchBiometrics = async () => {
+    try {
+      const res = await fetch("/api/admin/biometrics/status");
+      const data = await res.json();
+      if (data.success && Array.isArray(data.credentials)) {
+        setEnrolledKeys(data.credentials);
+      }
+    } catch (_) {}
+  };
+
   useEffect(() => {
     fetchData();
     fetchBaileys();
+    fetchBiometrics();
+    isBiometricsSupported().then((sup) => setBiometricSupported(sup)).catch(() => {});
     const interval = setInterval(() => {
       if (typeof document !== "undefined" && document.visibilityState === "visible") {
         fetchData();
         fetchBaileys();
+        fetchBiometrics();
       }
     }, 30000); // Poll every 30s only when active
     return () => clearInterval(interval);
@@ -308,6 +335,41 @@ export default function AdminSecurityPage() {
       setAdminCredsNotice({ type: "error", message: err?.message || "Failed to update credentials" });
     } finally {
       setSavingAdminCreds(false);
+    }
+  };
+
+  const handleRegisterBiometricDevice = async () => {
+    setEnrollingDevice(true);
+    setBiometricNotice(null);
+    try {
+      const res = await registerBiometricPasskey(adminEmail || "admin@bundlemartgh.com");
+      if (res.success) {
+        setBiometricNotice({ type: "success", message: res.message });
+        fetchBiometrics();
+      }
+    } catch (err: any) {
+      const msg = err?.message || "Could not register biometric device.";
+      if (!msg.toLowerCase().includes("cancel")) {
+        setBiometricNotice({ type: "error", message: msg });
+      }
+    } finally {
+      setEnrollingDevice(false);
+    }
+  };
+
+  const handleDeleteBiometricKey = async (id: string) => {
+    if (!window.confirm("Are you sure you want to remove this biometric passkey?")) return;
+    try {
+      const res = await fetch(`/api/admin/biometrics/register?id=${encodeURIComponent(id)}`, {
+        method: "DELETE",
+      });
+      const data = await res.json();
+      if (data.success) {
+        setBiometricNotice({ type: "success", message: "Biometric passkey removed successfully." });
+        fetchBiometrics();
+      }
+    } catch (e: any) {
+      setBiometricNotice({ type: "error", message: e?.message || "Failed to delete key" });
     }
   };
 
@@ -722,6 +784,133 @@ export default function AdminSecurityPage() {
               </button>
             </div>
           </form>
+        </div>
+
+        {/* Biometric Passkeys & Fast Login Configuration Card */}
+        <div className="bg-gradient-to-br from-slate-900 via-slate-900 to-emerald-950/30 border border-slate-800 rounded-3xl p-6 sm:p-8 relative shadow-xl">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800/80 pb-6 mb-6">
+            <div>
+              <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                <Fingerprint className="w-5 h-5 text-emerald-400" />
+                Biometric Authentication & Passkeys (Touch ID / Face ID)
+              </h2>
+              <p className="text-xs text-slate-400 mt-1">
+                Authenticate using device biometrics (Apple Face ID, Touch ID, Windows Hello, Android Fingerprint).
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 ${
+                  biometricSupported
+                    ? "bg-emerald-500/10 border border-emerald-500/30 text-emerald-300"
+                    : "bg-amber-500/10 border border-amber-500/30 text-amber-300"
+                }`}
+              >
+                {biometricSupported ? (
+                  <>
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Device Supported</span>
+                  </>
+                ) : (
+                  <>
+                    <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Not Supported in this Browser</span>
+                  </>
+                )}
+              </span>
+            </div>
+          </div>
+
+          {biometricNotice && (
+            <div
+              className={`mb-6 p-4 rounded-xl border text-xs flex items-center gap-2.5 ${
+                biometricNotice.type === "success"
+                  ? "bg-emerald-950/40 border-emerald-800 text-emerald-300"
+                  : "bg-red-950/40 border-red-800 text-red-300"
+              }`}
+            >
+              {biometricNotice.type === "success" ? (
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+              ) : (
+                <AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />
+              )}
+              <span>{biometricNotice.message}</span>
+            </div>
+          )}
+
+          <div className="space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-2xl bg-slate-800/40 border border-slate-800">
+              <div className="flex items-center gap-3.5">
+                <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0">
+                  <Smartphone className="w-5 h-5" />
+                </div>
+                <div>
+                  <h4 className="text-sm font-bold text-white">Enroll Current Device</h4>
+                  <p className="text-xs text-slate-400">
+                    Register this device&apos;s sensor ({detectDeviceName()}) for instant 1-tap admin login.
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleRegisterBiometricDevice}
+                disabled={enrollingDevice || !biometricSupported}
+                className="py-2.5 px-5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-emerald-900/30 flex items-center justify-center gap-2 transition-all disabled:opacity-40"
+              >
+                {enrollingDevice ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Fingerprint className="w-4 h-4" />
+                )}
+                <span>Register This Device</span>
+              </button>
+            </div>
+
+            {/* List of Registered Biometric Devices */}
+            <div>
+              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">
+                Enrolled Devices ({enrolledKeys.length})
+              </h4>
+
+              {enrolledKeys.length === 0 ? (
+                <div className="p-6 rounded-2xl bg-slate-800/20 border border-slate-800/60 text-center text-xs text-slate-500">
+                  No biometric passkeys registered yet. Click &quot;Register This Device&quot; to enroll your device.
+                </div>
+              ) : (
+                <div className="space-y-2.5">
+                  {enrolledKeys.map((k) => (
+                    <div
+                      key={k.id}
+                      className="p-3.5 rounded-xl bg-slate-800/50 border border-slate-800 flex items-center justify-between gap-3 text-xs"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 shrink-0">
+                          <Fingerprint className="w-4 h-4" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="font-bold text-white truncate">{k.deviceName || "Biometric Authenticator"}</p>
+                          <p className="text-[11px] text-slate-400">
+                            Enrolled: {new Date(k.createdAt).toLocaleDateString()}
+                            {k.lastUsedAt && ` • Last used: ${new Date(k.lastUsedAt).toLocaleDateString()}`}
+                          </p>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteBiometricKey(k.id)}
+                        className="py-1.5 px-3 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 font-semibold text-[11px] transition-colors"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
         </div>
 
         {/* Live Attack Feed & Blocked Entities Section */}
