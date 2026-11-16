@@ -116,8 +116,8 @@ export function normalizeStatus(raw: any): "delivered" | "failed" | "processing"
   if (!raw) return "processing";
   const s = String(raw).toLowerCase().trim();
 
-  // Success
-  if (["delivered", "successful", "success", "fulfilled", "done"].includes(s)) {
+  // Success / Delivered
+  if (["delivered", "completed", "successful", "success", "fulfilled", "done"].includes(s)) {
     return "delivered";
   }
 
@@ -142,24 +142,36 @@ export function extractCarrierStatus(payload: any): "delivered" | "failed" | "pr
   // 1. Check inside relatedPurchase first (Most accurate location in DataMart)
   if (data.relatedPurchase && typeof data.relatedPurchase === "object") {
     const rp = data.relatedPurchase;
-    const st = rp.orderStatus || rp.deliveryStatus || rp.status;
-    if (st && String(st).toLowerCase().trim() !== "completed") {
+    const st = rp.orderStatus || rp.deliveryStatus || rp.delivery_status || rp.status || rp.fulfillmentStatus || rp.telecomStatus;
+    if (st) {
       return normalizeStatus(st);
     }
   }
 
   // 2. Check explicit order status fields on the object
-  const explicit = data.orderStatus || data.deliveryStatus || data.carrierStatus || data.telecomStatus || data.fulfillmentStatus;
-  if (explicit && String(explicit).toLowerCase().trim() !== "completed") {
+  const explicit =
+    data.orderStatus ||
+    data.order_status ||
+    data.deliveryStatus ||
+    data.delivery_status ||
+    data.carrierStatus ||
+    data.telecomStatus ||
+    data.fulfillmentStatus;
+
+  if (explicit) {
     return normalizeStatus(explicit);
   }
 
-  // 3. If DataMart only shows wallet debit 'completed', telecom is still processing
-  if (data.status === "completed") {
-    return "processing";
+  // 3. Top-level status fallback
+  if (data.status) {
+    // If it's explicitly a wallet debit transaction without relatedPurchase, it is still processing on telecom
+    if (data.status === "completed" && (data.type === "wallet_debit" || data.type === "debit" || data.gateway === "wallet")) {
+      return "processing";
+    }
+    return normalizeStatus(data.status);
   }
 
-  return normalizeStatus(data.status);
+  return "processing";
 }
 
 export function mapDatamartStatus(s: string | undefined | null): "delivered" | "failed" | "processing" | "refunded" {
