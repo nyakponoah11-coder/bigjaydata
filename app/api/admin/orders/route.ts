@@ -60,29 +60,51 @@ export async function PATCH(request: Request) {
       resend_datamart,
       sync_datamart,
       sync_all_active,
+      full_sync,
     } = body;
 
-    // Batch sync all non-terminal orders with DataMart
-    if (sync_all_active) {
+    // Batch / Full sync: Re-verify all orders live against DataMart telecom carrier delivery status
+    if (full_sync || sync_all_active) {
       const allOrders = await db.getOrders();
-      const active = allOrders.filter(
-        (o) => !["cancelled", "refunded", "delivered", "completed"].includes((o.delivery_status || "").toLowerCase().trim())
-      );
+      // If full_sync, check all orders from the past 30 days plus any active/pending orders
+      const targetOrders = full_sync
+        ? allOrders.filter((o) => {
+            const ageDays = (Date.now() - new Date(o.created_at || Date.now()).getTime()) / (1000 * 60 * 60 * 24);
+            const st = (o.delivery_status || o.status || "").toLowerCase().trim();
+            return ageDays <= 30 || st === "processing" || st === "pending";
+          })
+        : allOrders.filter(
+            (o) => !["cancelled", "refunded", "delivered", "completed"].includes((o.delivery_status || "").toLowerCase().trim())
+          );
+
       let updatedCount = 0;
-      for (const ord of active) {
-        try {
-          const synced = await syncOrderWithDataMart(ord);
-          if (synced.delivery_status !== ord.delivery_status) {
-            updatedCount++;
-            await db.updateAgentOrderStatus(ord.reference, synced.delivery_status).catch(() => {});
-          }
-        } catch {}
+      // Concurrency control: 5 simultaneous checks for speed and reliability
+      const CHUNK_SIZE = 5;
+      for (let i = 0; i < targetOrders.length; i += CHUNK_SIZE) {
+        const chunk = targetOrders.slice(i, i + CHUNK_SIZE);
+        await Promise.all(
+          chunk.map(async (ord) => {
+            try {
+              const prevStatus = ord.delivery_status;
+              const synced = await syncOrderWithDataMart(ord, true);
+              if (synced && synced.delivery_status !== prevStatus) {
+                updatedCount++;
+                await db.updateAgentOrderStatus(ord.reference, synced.delivery_status).catch(() => {});
+              }
+            } catch (err) {
+              console.warn(`[DataMart Full Sync Error] Order ${ord.reference}:`, err);
+            }
+          })
+        );
       }
+
       const refreshed = await db.getOrders();
       return NextResponse.json({
         success: true,
-        message: `Synced ${active.length} active orders (${updatedCount} updated)`,
+        message: `Full Sync complete! Re-verified ${targetOrders.length} orders with DataMart (${updatedCount} updated to real carrier delivery status).`,
         orders: refreshed,
+        updatedCount,
+        totalChecked: targetOrders.length,
       });
     }
 

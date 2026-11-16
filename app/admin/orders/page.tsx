@@ -39,6 +39,7 @@ export default function AdminOrdersPage() {
   const [sendingSms, setSendingSms] = useState(false);
   const [actionNotice, setActionNotice] = useState("");
   const [syncingOrderId, setSyncingOrderId] = useState<string | null>(null);
+  const [fullSyncing, setFullSyncing] = useState(false);
 
   // Direct Buy Modal
   const [isDirectBuyOpen, setIsDirectBuyOpen] = useState(false);
@@ -204,29 +205,34 @@ export default function AdminOrdersPage() {
     }
   };
 
-  const handleSyncAllActive = async () => {
+  const handleFullSync = async () => {
+    setFullSyncing(true);
+    setActionNotice("⚡ Running 1-Click Full Sync: Checking real telecom carrier status on DataMart for all orders...");
     try {
-      setActionNotice("Checking DataMart gateway for all active orders...");
       const res = await fetch("/api/admin/orders", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sync_all_active: true }),
+        body: JSON.stringify({ full_sync: true }),
       });
       const data = await res.json();
       if (data.success) {
-        setActionNotice(data.message || "All active orders synchronized with DataMart!");
+        setActionNotice(data.message || `Full Sync complete! Updated to real carrier delivery status.`);
         if (data.orders) setOrders(data.orders);
-        setTimeout(() => setActionNotice(""), 4000);
+        setTimeout(() => setActionNotice(""), 6000);
       } else {
         setActionNotice(data.message || "Failed to sync with DataMart");
-        setTimeout(() => setActionNotice(""), 3500);
+        setTimeout(() => setActionNotice(""), 4000);
       }
     } catch (e) {
       console.error(e);
       setActionNotice("Network error syncing with DataMart");
-      setTimeout(() => setActionNotice(""), 3500);
+      setTimeout(() => setActionNotice(""), 4000);
+    } finally {
+      setFullSyncing(false);
     }
   };
+
+  const handleSyncAllActive = handleFullSync;
 
   const handleUpdatePaymentStatus = async (orderId: string, payment_status: string) => {
     try {
@@ -319,12 +325,13 @@ export default function AdminOrdersPage() {
 
           <div className="flex flex-wrap items-center gap-2">
             <button
-              onClick={handleSyncAllActive}
-              className="py-2 px-3 bg-sky-950/80 hover:bg-sky-900 border border-sky-800 rounded-xl text-xs font-semibold text-sky-300 flex items-center gap-1.5 transition-colors shadow-sm"
-              title="Sync all active orders live with DataMart"
+              onClick={handleFullSync}
+              disabled={fullSyncing || loading}
+              className="py-2 px-3.5 bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 hover:from-emerald-500 hover:to-cyan-500 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 transition-all shadow-md shadow-emerald-950/40 disabled:opacity-50 hover:scale-105 active:scale-95 cursor-pointer"
+              title="1-Click Full Sync: Verify all orders live against DataMart real telecom carrier delivery status"
             >
-              <RefreshCw className="w-3.5 h-3.5" />
-              <span>Sync DataMart Live</span>
+              <RefreshCw className={`w-3.5 h-3.5 ${fullSyncing ? "animate-spin" : ""}`} />
+              <span>{fullSyncing ? "Syncing Carrier Status..." : "⚡ 1-Click Full Sync (DataMart)"}</span>
             </button>
 
             <button
