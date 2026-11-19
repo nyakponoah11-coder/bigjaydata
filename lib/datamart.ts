@@ -90,12 +90,14 @@ export async function resolveDatamartKeys(): Promise<string[]> {
 
 export function getDatamartAuthHeaders(apiKey: string, apiSecret?: string): Record<string, string> {
   const headers: Record<string, string> = {
+    "x-api-key": apiKey,
     "X-API-Key": apiKey,
     "User-Agent": "BundleMartGh/1.0",
     "Accept": "application/json",
   };
   const secret = (apiSecret || process.env.DATAMART_API_SECRET || "").trim();
   if (secret) {
+    headers["x-api-secret"] = secret;
     headers["X-API-Secret"] = secret;
   }
   return headers;
@@ -197,36 +199,21 @@ export function mapNetworkToDataMart(network: string): string {
 }
 
 /**
- * Returns all recognized network representations for a given operator to guarantee
- * successful matching regardless of whether the DataMart endpoint expects YELLO or MTN.
+ * Returns the exact network code required by DataMart Developer API:
+ * "YELLO" (MTN), "TELECEL", or "AT_PREMIUM" (AirtelTigo)
  */
 export function getNetworkCandidates(network: string): string[] {
-  const net = (network || "").toLowerCase().trim();
-  if (net === "mtn" || net === "yello") {
-    return ["YELLO", "MTN", "mtn"];
-  }
-  if (net === "telecel" || net === "vodafone") {
-    return ["TELECEL", "telecel", "VODAFONE", "vodafone"];
-  }
-  if (net === "at" || net === "airteltigo" || net === "at_premium") {
-    return ["AT_PREMIUM", "AT", "at", "AIRTELTIGO", "airteltigo"];
-  }
-  return [net.toUpperCase(), net.toLowerCase()];
+  const primary = mapNetworkToDataMart(network);
+  return [primary];
 }
 
 /**
- * Returns candidate purchase URLs to handle both /api/developer/purchase and /api/purchase.
+ * Resolves the single official DataMart developer purchase endpoint.
+ * Note: DataMart Developer API only accepts POST at /api/developer/purchase.
  */
 export function getCandidatePurchaseUrls(configuredUrl?: string): string[] {
   const primary = resolvePurchaseUrl(configuredUrl);
-  const candidates: string[] = [primary];
-  if (primary.includes("/api/developer/purchase")) {
-    candidates.push(primary.replace("/api/developer/purchase", "/api/purchase"));
-    candidates.push(primary.replace("/api/developer/purchase", "/developer/purchase"));
-  } else if (primary.includes("/api/purchase")) {
-    candidates.push(primary.replace("/api/purchase", "/api/developer/purchase"));
-  }
-  return Array.from(new Set(candidates));
+  return [primary];
 }
 
 /**
@@ -358,43 +345,23 @@ export async function sendDataMartDelivery(params: DataMartDeliveryParams): Prom
         for (const purchaseUrl of candidateUrls) {
           for (const net of networkCandidates) {
             // Build progressive payload variations for this URL and network.
-            // RULE: EVERY payload sent to DataMart strictly includes the reference starting with "bmgh-"
+            // RULE: Standard DataMart developer payload has 6 clean fields with string capacity & bmgh- reference.
             const payloadVariations: Array<{ name: string; body: Record<string, any> }> = [
-              // 1. Standard Developer Payload (Numeric capacity, phone & phoneNumber & recipient, bmgh- ref)
+              // 1. Standard Developer Payload (String capacity, exact 6 fields matching DataMart spec)
               {
-                name: "numeric_cap_with_bmgh_ref",
+                name: "standard_spec_payload",
                 body: {
                   phoneNumber: formattedPhone,
-                  phone: formattedPhone,
-                  recipient: formattedPhone,
                   network: net,
-                  capacity: validNumCap,
+                  capacity: String(capacityGb).replace(/[^\d.]/g, "") || "1",
                   gateway: "wallet",
                   delivery: "fast",
                   ref: orderRef,
-                  reference: orderRef,
-                  orderReference: orderRef,
                 },
               },
-              // 2. String capacity (bmgh- ref)
+              // 2. Numeric capacity fallback
               {
-                name: "string_cap_with_bmgh_ref",
-                body: {
-                  phoneNumber: formattedPhone,
-                  phone: formattedPhone,
-                  recipient: formattedPhone,
-                  network: net,
-                  capacity: String(capacityGb),
-                  gateway: "wallet",
-                  delivery: "fast",
-                  ref: orderRef,
-                  reference: orderRef,
-                  orderReference: orderRef,
-                },
-              },
-              // 3. Compact standard format (bmgh- ref)
-              {
-                name: "compact_with_bmgh_ref",
+                name: "numeric_cap_fallback",
                 body: {
                   phoneNumber: formattedPhone,
                   network: net,
@@ -402,22 +369,6 @@ export async function sendDataMartDelivery(params: DataMartDeliveryParams): Prom
                   gateway: "wallet",
                   delivery: "fast",
                   ref: orderRef,
-                  reference: orderRef,
-                },
-              },
-              // 4. Ghana telco package size format (e.g. "1GB", "2GB") with bmgh- ref
-              {
-                name: "package_size_with_bmgh_ref",
-                body: {
-                  phoneNumber: formattedPhone,
-                  phone: formattedPhone,
-                  network: net,
-                  package_size: `${validNumCap}GB`,
-                  package: `${validNumCap}GB`,
-                  capacity: validNumCap,
-                  gateway: "wallet",
-                  ref: orderRef,
-                  reference: orderRef,
                 },
               },
             ];
@@ -425,13 +376,15 @@ export async function sendDataMartDelivery(params: DataMartDeliveryParams): Prom
             for (const variation of payloadVariations) {
               const baseHeaders: Record<string, string> = {
                 "Content-Type": "application/json",
+                "Accept": "application/json",
+                "x-api-key": currentKey,
                 "X-API-Key": currentKey,
                 "X-Idempotency-Key": orderRef,
                 "User-Agent": "BundleMartGh/1.0",
-                "Accept": "application/json",
               };
 
               if (apiSecret) {
+                baseHeaders["x-api-secret"] = apiSecret;
                 baseHeaders["X-API-Secret"] = apiSecret;
               }
 
@@ -509,17 +462,13 @@ export async function sendDataMartDelivery(params: DataMartDeliveryParams): Prom
                 }
 
                 lastErrorResponse = responseData;
-                lastErrorMessage = responseData?.message || `DataMart HTTP Error ${response.status}: ${responseText.slice(0, 150)}`;
 
-                // If route not found (404), break variation loop to try next URL immediately
-                if (response.status === 404 || responseData?.message === "Route not found") {
-                  break;
-                }
-
-                // If authentication error (401/403), break to try next API key
                 if (response.status === 401 || response.status === 403) {
+                  lastErrorMessage = "DataMart API Key or Secret rejected (HTTP " + response.status + ": Invalid or inactive API key). Please update your DataMart Key & Secret in Admin Settings.";
                   break;
                 }
+
+                lastErrorMessage = responseData?.message || responseData?.error || `DataMart HTTP Error ${response.status}: ${responseText.slice(0, 150)}`;
 
                 // If definitive non-retryable account or number error (e.g. insufficient funds, invalid number format)
                 const lowerMsg = (lastErrorMessage || "").toLowerCase();
@@ -740,12 +689,14 @@ export async function testDataMartConnection(
 
     const testHeaders: Record<string, string> = {
       "Content-Type": "application/json",
+      "x-api-key": apiKey,
       "X-API-Key": apiKey,
       "X-Idempotency-Key": crypto.randomUUID(),
       "User-Agent": "BundleMartGh/1.0",
       "Accept": "application/json",
     };
     if (apiSecret) {
+      testHeaders["x-api-secret"] = apiSecret;
       testHeaders["X-API-Secret"] = apiSecret;
     }
 
