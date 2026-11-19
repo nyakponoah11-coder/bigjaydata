@@ -1032,12 +1032,28 @@ export const db = {
             merged.datamart_api_key = (process.env.DATAMART_API_KEY || "").trim();
           }
 
-          // Fallback to active environment variables from Vercel only if not set in database settings
-          if (!merged.datamart_api_key && process.env.DATAMART_API_KEY && !process.env.DATAMART_API_KEY.includes("jollof")) {
-            merged.datamart_api_key = process.env.DATAMART_API_KEY.trim();
+          // Priority for active environment variables from Vercel
+          const envDmKey = (
+            process.env.DATAMART_API_KEY ||
+            process.env.DATAMART_KEY ||
+            process.env.DATAMART_TOKEN ||
+            process.env.X_API_KEY ||
+            ""
+          ).trim();
+          const envDmSecret = (
+            process.env.DATAMART_API_SECRET ||
+            process.env.DATAMART_SECRET ||
+            process.env.DATAMART_SECRET_KEY ||
+            process.env.DATAMART_SECOND_SECRET ||
+            process.env.X_API_SECRET ||
+            ""
+          ).trim();
+
+          if (envDmKey && !envDmKey.includes("jollof")) {
+            merged.datamart_api_key = envDmKey;
           }
-          if (!merged.datamart_api_secret && process.env.DATAMART_API_SECRET) {
-            merged.datamart_api_secret = process.env.DATAMART_API_SECRET.trim();
+          if (envDmSecret) {
+            merged.datamart_api_secret = envDmSecret;
           }
 
           // Netflix Configuration

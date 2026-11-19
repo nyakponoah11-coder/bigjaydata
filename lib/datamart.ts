@@ -34,9 +34,28 @@ export function isRevokedDatamartKey(key?: string | null): boolean {
 }
 
 export async function getDatamartCredentials(): Promise<{ apiKey: string; apiSecret: string; apiUrl: string }> {
-  const envKey = (process.env.DATAMART_API_KEY || "").trim();
-  const envSecret = (process.env.DATAMART_API_SECRET || "").trim();
-  const envUrl = (process.env.DATAMART_API_URL || "").trim();
+  // Read all common Vercel environment variable aliases
+  const envKey = (
+    process.env.DATAMART_API_KEY ||
+    process.env.DATAMART_KEY ||
+    process.env.DATAMART_TOKEN ||
+    process.env.X_API_KEY ||
+    ""
+  ).trim();
+  const envSecret = (
+    process.env.DATAMART_API_SECRET ||
+    process.env.DATAMART_SECRET ||
+    process.env.DATAMART_SECRET_KEY ||
+    process.env.DATAMART_SECOND_SECRET ||
+    process.env.X_API_SECRET ||
+    ""
+  ).trim();
+  const envUrl = (
+    process.env.DATAMART_API_URL ||
+    process.env.DATAMART_URL ||
+    process.env.DATAMART_BASE_URL ||
+    ""
+  ).trim();
 
   let dbKey = "";
   let dbSecret = "";
@@ -49,26 +68,31 @@ export async function getDatamartCredentials(): Promise<{ apiKey: string; apiSec
     dbUrl = (settings?.datamart_api_url || "").trim();
   } catch {}
 
-  // Active key selection: Prioritize database setting (configured in admin settings), else environment variable
+  // Active key selection: Prioritize Vercel environment variables, else DB settings
   let apiKey = "";
-  if (dbKey && !isRevokedDatamartKey(dbKey)) {
-    apiKey = dbKey;
-  } else if (envKey && !isRevokedDatamartKey(envKey)) {
+  if (envKey && !isRevokedDatamartKey(envKey)) {
     apiKey = envKey;
+  } else if (dbKey && !isRevokedDatamartKey(dbKey)) {
+    apiKey = dbKey;
   }
 
-  // Active secret selection: Prioritize database setting, else environment variable
-  const apiSecret = dbSecret || envSecret || "";
+  // Active secret selection: Prioritize Vercel environment variables, else DB settings
+  const apiSecret = envSecret || dbSecret || "";
 
-  // Base URL
-  const apiUrl = resolveDeveloperBaseUrl(dbUrl || envUrl || "https://api.datamartgh.shop/api/developer");
+  // Base URL: Strictly DataMart developer API
+  const apiUrl = resolveDeveloperBaseUrl(envUrl || dbUrl || "https://api.datamartgh.shop/api/developer");
 
   return { apiKey, apiSecret, apiUrl };
 }
 
 export async function resolveDatamartKeys(): Promise<string[]> {
-  const { apiKey } = await getDatamartCredentials();
-  const envKey = (process.env.DATAMART_API_KEY || "").trim();
+  const envKey = (
+    process.env.DATAMART_API_KEY ||
+    process.env.DATAMART_KEY ||
+    process.env.DATAMART_TOKEN ||
+    process.env.X_API_KEY ||
+    ""
+  ).trim();
   let dbKey = "";
   try {
     const settings = await db.getSettings();
@@ -76,14 +100,11 @@ export async function resolveDatamartKeys(): Promise<string[]> {
   } catch {}
 
   const keys: string[] = [];
-  if (dbKey && !isRevokedDatamartKey(dbKey) && !keys.includes(dbKey)) {
-    keys.push(dbKey);
-  }
-  if (apiKey && !isRevokedDatamartKey(apiKey) && !keys.includes(apiKey)) {
-    keys.push(apiKey);
-  }
   if (envKey && !isRevokedDatamartKey(envKey) && !keys.includes(envKey)) {
     keys.push(envKey);
+  }
+  if (dbKey && !isRevokedDatamartKey(dbKey) && !keys.includes(dbKey)) {
+    keys.push(dbKey);
   }
   return keys;
 }
