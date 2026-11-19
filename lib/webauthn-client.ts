@@ -71,9 +71,10 @@ export async function registerBiometricPasskey(
 
   // 1. Get server registration challenge
   const res = await fetch("/api/admin/biometrics/challenge?type=register");
-  const data = await res.json();
+  const data = await res.json().catch(() => ({}));
   if (!res.ok || !data.challenge) {
-    throw new Error(data.message || "Failed to initiate biometric registration.");
+    const errorMsg = data.message || data.error || `Failed to initiate biometric registration (HTTP ${res.status}).`;
+    throw new Error(errorMsg);
   }
 
   const challengeBuffer = base64urlToBuffer(data.challenge);
@@ -163,21 +164,46 @@ export async function loginWithBiometrics(): Promise<{
 
   // 1. Get authentication challenge and allowCredentials for this host
   const res = await fetch("/api/admin/biometrics/challenge?type=auth");
-  const data = await res.json();
+  const data = await res.json().catch(() => ({}));
   if (!res.ok || !data.challenge) {
-    throw new Error(data.message || "Failed to initiate biometric sign-in challenge.");
+    const errorMsg = data.message || data.error || (res.status === 401 ? "Unauthorized. Please sign in with your password first." : `Failed to initiate biometric sign-in challenge (HTTP ${res.status}).`);
+    throw new Error(errorMsg);
   }
 
   const challengeBuffer = base64urlToBuffer(data.challenge);
 
-  // 2. Build allowCredentials with transports: internal & hybrid
-  // When specific credentials exist, supply them to match directly.
-  // If undefined, native Apple Face ID sheet triggers on iOS.
-  const allowCredentials = Array.isArray(data.allowCredentials) && data.allowCredentials.length > 0
-    ? data.allowCredentials.map((c: any) => ({
+  // 2. Build allowCredentials with transports: internal
+  // Check if we have this device's registered credential ID in localStorage
+  const localCredId = typeof window !== "undefined" ? localStorage.getItem("bmgh_biometric_last_id") : null;
+  const credMap = new Map<string, { id: string; type: "public-key"; transports: AuthenticatorTransport[] }>();
+
+  if (localCredId) {
+    credMap.set(localCredId, {
+      id: localCredId,
+      type: "public-key",
+      transports: ["internal"],
+    });
+  }
+
+  if (Array.isArray(data.allowCredentials)) {
+    for (const c of data.allowCredentials) {
+      if (c?.id && !credMap.has(c.id)) {
+        credMap.set(c.id, {
+          id: c.id,
+          type: "public-key",
+          transports: ["internal"],
+        });
+      }
+    }
+  }
+
+  // Supplying explicit internal transport forces the device's native built-in sensor
+  // (Apple Face ID / Touch ID / Android Fingerprint) instead of prompting for generic external passkeys
+  const allowCredentials = credMap.size > 0
+    ? Array.from(credMap.values()).map((c) => ({
         id: base64urlToBuffer(c.id),
         type: "public-key" as const,
-        transports: ["internal" as AuthenticatorTransport, "hybrid" as AuthenticatorTransport],
+        transports: ["internal" as AuthenticatorTransport],
       }))
     : undefined;
 

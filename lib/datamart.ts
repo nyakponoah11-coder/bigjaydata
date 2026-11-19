@@ -466,13 +466,20 @@ export async function sendDataMartDelivery(params: DataMartDeliveryParams): Prom
                 // SUCCESS CRITERIA:
                 const isExplicitSuccess =
                   (response.ok || response.status === 200 || response.status === 201) &&
+                  responseData?.success !== false &&
+                  !responseData?.error &&
                   (
+                    responseData?.success === true ||
+                    responseData?.status === "completed" ||
                     responseData?.status === "success" ||
                     responseData?.status === "ok" ||
+                    Boolean(responseData?.data?.reference) ||
                     Boolean(responseData?.data?.purchaseId) ||
-                    Boolean(responseData?.purchaseId) ||
                     Boolean(responseData?.data?.orderReference) ||
-                    (typeof responseData?.message === "string" && responseData.message.toLowerCase().includes("success"))
+                    Boolean(responseData?.reference) ||
+                    Boolean(responseData?.purchaseId) ||
+                    (typeof responseData?.message === "string" && responseData.message.toLowerCase().includes("success")) ||
+                    (response.status === 200 && responseData && !responseData.message?.toLowerCase().includes("fail"))
                   );
 
                 if (isExplicitSuccess) {
@@ -845,7 +852,7 @@ export async function checkDataMartDeliveryStatus({
   capacity?: string | number;
   apiKey?: string;
   apiSecret?: string;
-}): Promise<"delivered" | "failed" | "processing" | "refunded"> {
+}): Promise<"delivered" | "failed" | "processing" | "refunded" | "not_found"> {
   const creds = await getDatamartCredentials();
   const activeKey = apiKey || creds.apiKey;
   const activeSecret = apiSecret || creds.apiSecret;
@@ -967,8 +974,8 @@ export async function checkDataMartDeliveryStatus({
     }
   } catch (_) {}
 
-  // Default to processing if carrier has not reported final state yet
-  return "processing";
+  // Return "not_found" when no candidate record matched across any tier
+  return "not_found";
 }
 
 /**
@@ -981,11 +988,12 @@ export async function checkDataMartOrderStatus(orderReference: string): Promise<
   }
 
   const carrierStatus = await checkDataMartDeliveryStatus({ reference: cleanRef });
+  const finalStatus = carrierStatus === "not_found" ? "processing" : carrierStatus;
   return {
     success: true,
-    orderStatus: carrierStatus,
-    data: { status: carrierStatus },
-    message: `Carrier status: ${carrierStatus}`,
+    orderStatus: finalStatus,
+    data: { status: finalStatus },
+    message: `Carrier status: ${finalStatus}`,
   };
 }
 
@@ -996,6 +1004,12 @@ export async function checkDataMartOrderStatus(orderReference: string): Promise<
  */
 export async function syncOrderWithDataMart(order: Order, forceSync = false): Promise<Order> {
   if (!order) return order;
+
+  // 1. If admin manually set this order's status, NEVER overwrite it with an automated sync
+  if (order.datamart_response?.is_manual_override) {
+    console.log(`[DataMart Sync] Order ${order.reference} has admin manual override. Preserving status.`);
+    return order;
+  }
 
   const currentStatus = ((order.delivery_status || order.status || "") as string).toLowerCase().trim();
   // If order is already confirmed terminal and not an explicit admin sync, skip
@@ -1028,6 +1042,18 @@ export async function syncOrderWithDataMart(order: Order, forceSync = false): Pr
   });
 
   console.log(`[DataMart 3-Tier Delivery Sync] Order ${order.reference}: Carrier status is "${deliveryStatus}"`);
+
+  // 2. If order was not found on DataMart, DO NOT touch or downgrade existing status!
+  if (deliveryStatus === "not_found") {
+    console.log(`[DataMart Sync] Order ${order.reference} not found on DataMart yet. Keeping current status "${currentStatus}".`);
+    return order;
+  }
+
+  // 3. Never downgrade an already delivered order to processing
+  if (currentStatus === "delivered" && deliveryStatus !== "delivered") {
+    console.log(`[DataMart Sync] Order ${order.reference} is already delivered. Refusing to downgrade to processing.`);
+    return order;
+  }
 
   const updatedPayload = {
     ...(order.datamart_response || {}),

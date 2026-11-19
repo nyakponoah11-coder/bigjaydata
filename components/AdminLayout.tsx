@@ -182,9 +182,11 @@ export default function AdminLayout({ children }: Props) {
     try {
       // Pre-check if any biometric passkey is registered
       const statusRes = await fetch("/api/admin/biometrics/status").catch(() => null);
-      const statusData = statusRes ? await statusRes.json().catch(() => null) : null;
+      const statusData = statusRes && statusRes.ok ? await statusRes.json().catch(() => null) : null;
       if (statusData && statusData.hasEnrolled === false) {
-        setError("No biometric passkey registered yet. Please sign in with your password first, then click 'Enroll Now' to activate Face ID / Fingerprint on this device.");
+        localStorage.removeItem("bmgh_biometric_device_registered");
+        setDeviceRegistered(false);
+        setError("Face ID / Fingerprint is not yet enrolled on this device. Enter your Admin Password below, then tap 'Activate Face ID / Fingerprint on this device' to scan your face/fingerprint.");
         setBiometricLoading(false);
         return;
       }
@@ -232,7 +234,7 @@ export default function AdminLayout({ children }: Props) {
 
   const handleDirectActivateBiometrics = async () => {
     if (!password) {
-      setError("Please enter your Admin Password above first, then tap Activate Face ID.");
+      setError("Please enter your Admin Password above first, then tap Activate Face ID / Fingerprint.");
       return;
     }
     setEnrollingBiometric(true);
@@ -248,6 +250,7 @@ export default function AdminLayout({ children }: Props) {
         }
         localStorage.setItem("bmgh_biometric_device_registered", "true");
         setDeviceRegistered(true);
+        setBiometricDisabled(false);
         setIsAuthenticated(true);
       }
     } catch (err: any) {
@@ -396,7 +399,7 @@ export default function AdminLayout({ children }: Props) {
               )}
             </button>
 
-            {biometricSupported && !deviceRegistered && !biometricDisabled && (
+            {biometricSupported && !biometricDisabled && (
               <button
                 type="button"
                 onClick={handleDirectActivateBiometrics}
@@ -408,7 +411,11 @@ export default function AdminLayout({ children }: Props) {
                 ) : (
                   <Fingerprint className="w-4 h-4 text-emerald-400" />
                 )}
-                <span>Activate Face ID / Fingerprint on this device</span>
+                <span>
+                  {deviceRegistered
+                    ? "Re-enroll / Update Face ID & Fingerprint"
+                    : "Activate Face ID / Fingerprint on this device"}
+                </span>
               </button>
             )}
           </form>

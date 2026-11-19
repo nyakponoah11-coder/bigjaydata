@@ -175,11 +175,19 @@ export async function PATCH(request: Request) {
     const newDeliveryStatus = delivery_status || status || order.delivery_status;
     const newPaymentStatus = payment_status || order.payment_status || "paid";
 
+    // Mark as manual admin override so background or automated carrier syncs never revert it
+    const manualDatamartResponse = {
+      ...(order.datamart_response || {}),
+      is_manual_override: true,
+      manual_status: newDeliveryStatus,
+      manual_override_at: new Date().toISOString(),
+    };
+
     const updatedOrder =
       (await db.updateOrderStatus(
         order.id,
         newDeliveryStatus,
-        undefined,
+        manualDatamartResponse,
         {
           delivery_status: newDeliveryStatus,
           payment_status: newPaymentStatus,
