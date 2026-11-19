@@ -1,8 +1,7 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import {
   Store,
   LayoutDashboard,
@@ -28,6 +27,8 @@ import {
   Send,
   Share2,
   Camera,
+  QrCode,
+  Clock,
   Upload,
   MessageCircle,
   Mail,
@@ -698,9 +699,13 @@ export default function AgentDashboardPage() {
     }
   };
 
+  const isSubmittingWdRef = useRef(false);
+
   // Withdrawals: Submit Payout
   const handleSubmitWithdrawal = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmittingWdRef.current) return;
+    isSubmittingWdRef.current = true;
     try {
       setSubmittingWithdrawal(true);
       setError("");
@@ -732,6 +737,7 @@ export default function AgentDashboardPage() {
       setError(err.message);
     } finally {
       setSubmittingWithdrawal(false);
+      isSubmittingWdRef.current = false;
     }
   };
 
@@ -1522,7 +1528,7 @@ export default function AgentDashboardPage() {
                     <button
                       type="button"
                       onClick={handleRequestOtp}
-                      disabled={requestingOtp || !withdrawAmount || parseFloat(withdrawAmount) < 5}
+                      disabled={requestingOtp || !withdrawAmount || parseFloat(withdrawAmount) < 5 || Boolean(withdrawals.find((w) => w.status === "pending"))}
                       className="text-[11px] font-bold text-emerald-400 hover:text-emerald-300 disabled:opacity-40"
                     >
                       {requestingOtp ? "Sending Code..." : otpSent ? "Resend Code" : "Send OTP to Email"}
@@ -1542,17 +1548,34 @@ export default function AgentDashboardPage() {
                     placeholder="Enter 6-digit code"
                     value={otpCode}
                     onChange={(e) => setOtpCode(e.target.value)}
-                    className="w-full px-3 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white text-sm font-mono tracking-widest text-center focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    disabled={Boolean(withdrawals.find((w) => w.status === "pending"))}
+                    className="w-full px-3 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white text-sm font-mono tracking-widest text-center focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-50"
                   />
                 </div>
 
+                {withdrawals.some((w) => w.status === "pending") && (
+                  <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl text-amber-300 text-xs flex items-start gap-2.5">
+                    <Clock className="w-4 h-4 shrink-0 text-amber-400 mt-0.5" />
+                    <div>
+                      <p className="font-bold text-amber-200">
+                        Active Payout Pending: GHS {Number(withdrawals.find((w) => w.status === "pending")?.amount || 0).toFixed(2)}
+                      </p>
+                      <p className="text-[11px] text-amber-300/80 mt-0.5">
+                        Your payout request is currently undergoing admin review. You can submit another payout as soon as this is completed.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
                 <button
                   type="submit"
-                  disabled={submittingWithdrawal || !otpCode}
+                  disabled={submittingWithdrawal || !otpCode || withdrawals.some((w) => w.status === "pending")}
                   className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow-lg transition-all disabled:opacity-50 flex items-center justify-center gap-2"
                 >
                   {submittingWithdrawal ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : withdrawals.some((w) => w.status === "pending") ? (
+                    <span>Payout Request Under Review</span>
                   ) : (
                     <>
                       <span>Submit Payout Request</span>

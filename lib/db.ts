@@ -3609,7 +3609,7 @@ export const db = {
             ...(existing || {}),
             ...a,
             name: cleanAgentName(a.name, a.store_name, a.email),
-            wallet_balance: Math.max(Number(existing?.wallet_balance || 0), Number(a.wallet_balance || 0)),
+            wallet_balance: a.wallet_balance !== undefined ? Number(a.wallet_balance) : Number(existing?.wallet_balance || 0),
           });
         }
       }
@@ -3633,7 +3633,7 @@ export const db = {
               email: a.email || existing?.email || "",
               phone: a.phone || existing?.phone || "",
               password_hash: a.password_hash || existing?.password_hash || "123456",
-              wallet_balance: Math.max(Number(existing?.wallet_balance || 0), Number(a.wallet_balance || 0)),
+              wallet_balance: a.wallet_balance !== undefined ? Number(a.wallet_balance) : Number(existing?.wallet_balance || 0),
               total_earned: Math.max(Number(existing?.total_earned || 0), Number(a.total_earned || 0)),
               total_withdrawn: Math.max(Number(existing?.total_withdrawn || 0), Number(a.total_withdrawn || 0)),
             } as Agent);
@@ -3677,7 +3677,7 @@ export const db = {
                 logo_url: a.logo_url || existing?.logo_url || "/agent-icon.png",
                 password_hash: (a as any).password_hash || existing?.password_hash || "123456",
                 theme: a.theme || existing?.theme || "emerald",
-                wallet_balance: Math.max(Number(existing?.wallet_balance || 0), Number(a.wallet_balance || 0)),
+                wallet_balance: a.wallet_balance !== undefined ? Number(a.wallet_balance) : Number(existing?.wallet_balance || 0),
                 total_earned: Math.max(Number(existing?.total_earned || 0), Number(a.total_earned || 0)),
                 total_withdrawn: Math.max(Number(existing?.total_withdrawn || 0), Number(a.total_withdrawn || 0)),
                 is_active: a.is_active !== false,
@@ -3872,11 +3872,15 @@ export const db = {
           .filter((w) => w.status === "pending" && Number(w.amount) <= totalEarned)
           .reduce((sum, w) => sum + (Number(w.amount) || 0), 0);
         const calculatedBalance = Number(Math.max(0, totalEarned - totalWithdrawn - pendingWithdrawn).toFixed(2));
-        const currentBalance = Math.max(Number(found.wallet_balance || 0), calculatedBalance);
+        // Available wallet balance is strictly derived from verified earnings minus payouts & pending reserves
+        const realBalance =
+          totalEarned > 0 || withdrawals.length > 0
+            ? calculatedBalance
+            : Number(found.wallet_balance || 0);
 
         found.total_earned = totalEarned;
         found.total_withdrawn = totalWithdrawn;
-        found.wallet_balance = currentBalance;
+        found.wallet_balance = realBalance;
 
         // Keep in-memory store in sync
         if (globalStore.__bmgh_agents) {
@@ -3884,10 +3888,20 @@ export const db = {
             (a) => a.id === found!.id || a.store_slug.toLowerCase() === found!.store_slug.toLowerCase()
           );
           if (match) {
-            match.wallet_balance = currentBalance;
+            match.wallet_balance = realBalance;
             match.total_earned = totalEarned;
             match.total_withdrawn = totalWithdrawn;
           }
+        }
+        bigjdb.upsert("agents", found);
+        if (isSupabaseConfigured && supabaseAdmin) {
+          try {
+            await supabaseAdmin.from("agents").update({
+              wallet_balance: realBalance,
+              total_earned: totalEarned,
+              total_withdrawn: totalWithdrawn,
+            }).eq("id", found.id);
+          } catch {}
         }
       } catch {}
     }
@@ -4466,7 +4480,7 @@ export const db = {
                 logo_url: a.logo_url || existingAg?.logo_url || "/agent-icon.png",
                 password_hash: a.password_hash || existingAg?.password_hash || "123456",
                 theme: a.theme || existingAg?.theme || "emerald",
-                wallet_balance: Math.max(Number(existingAg?.wallet_balance || 0), Number(a.wallet_balance || 0)),
+                wallet_balance: a.wallet_balance !== undefined ? Number(a.wallet_balance) : Number(existingAg?.wallet_balance || 0),
                 total_earned: Math.max(Number(existingAg?.total_earned || 0), Number(a.total_earned || 0)),
                 total_withdrawn: Math.max(Number(existingAg?.total_withdrawn || 0), Number(a.total_withdrawn || 0)),
                 is_active: a.is_active !== false,
@@ -6091,7 +6105,9 @@ export const db = {
     if (agent) {
       newWithdrawal.agent_id = agent.id; // Normalize to canonical agent id
       agent.wallet_balance = Math.max(0, Number(((agent.wallet_balance || 0) - w.amount).toFixed(2)));
-      agent.total_withdrawn = Number(((agent.total_withdrawn || 0) + w.amount).toFixed(2));
+      if (newWithdrawal.status === "completed") {
+        agent.total_withdrawn = Number(((agent.total_withdrawn || 0) + w.amount).toFixed(2));
+      }
     }
 
     if (!globalStore.__bmgh_agent_withdrawals) globalStore.__bmgh_agent_withdrawals = [];
@@ -6169,17 +6185,34 @@ export const db = {
     note?: string,
     extra?: { paystack_transfer_code?: string; paystack_status?: string; fee?: number; net_amount?: number }
   ): Promise<AgentWithdrawal | null> {
-    const list = globalStore.__bmgh_agent_withdrawals || [];
-    const w = list.find((x) => x.id === id);
+    let list = globalStore.__bmgh_agent_withdrawals || [];
+    let w = list.find((x) => x.id === id);
+    if (!w) {
+      const allWds = await this.getAgentWithdrawals();
+      w = allWds.find((x) => x.id === id);
+    }
     if (!w) return null;
 
-    if (status === "rejected" && w.status !== "rejected") {
-      const agent = (globalStore.__bmgh_agents || []).find((a) => a.id === w.agent_id);
+    const previousStatus = w.status;
+    const allAgents = await this.getAgents();
+    const agent = allAgents.find(
+      (a) => a.id === w!.agent_id || a.store_slug.toLowerCase() === w!.agent_id.toLowerCase()
+    );
+
+    if (status === "completed" && previousStatus !== "completed") {
       if (agent) {
-        agent.wallet_balance = Number((agent.wallet_balance + w.amount).toFixed(2));
-        agent.total_withdrawn = Math.max(0, Number((agent.total_withdrawn - w.amount).toFixed(2)));
+        agent.total_withdrawn = Number(((agent.total_withdrawn || 0) + w.amount).toFixed(2));
+      }
+    } else if (status === "rejected" && previousStatus !== "rejected") {
+      if (agent) {
+        // Refund reserved balance back to agent
+        agent.wallet_balance = Number(((agent.wallet_balance || 0) + w.amount).toFixed(2));
+        if (previousStatus === "completed") {
+          agent.total_withdrawn = Math.max(0, Number(((agent.total_withdrawn || 0) - w.amount).toFixed(2)));
+        }
       }
     }
+
     w.status = status;
     if (note) w.note = note;
     if (extra?.paystack_transfer_code) w.paystack_transfer_code = extra.paystack_transfer_code;
@@ -6188,9 +6221,8 @@ export const db = {
     if (extra?.net_amount !== undefined) w.net_amount = extra.net_amount;
 
     bigjdb.upsert("agent_withdrawals", w);
-    const agentMatch = (globalStore.__bmgh_agents || []).find((a) => a.id === w.agent_id);
-    if (agentMatch) {
-      bigjdb.upsert("agents", agentMatch);
+    if (agent) {
+      bigjdb.upsert("agents", agent);
     }
 
     invalidateDbCache("agent_withdrawals");
@@ -6225,17 +6257,21 @@ export const db = {
         console.warn("Direct agent_withdrawals table update error:", err);
       }
 
-      // 2. Direct agent balance update if rejected
-      if (status === "rejected") {
-        const agent = (globalStore.__bmgh_agents || []).find((a) => a.id === w.agent_id);
-        if (agent) {
-          try {
-            await supabaseAdmin.from("agents").update({
-              wallet_balance: agent.wallet_balance,
-              total_withdrawn: agent.total_withdrawn,
-            }).eq("id", agent.id);
-          } catch {}
-        }
+      // 2. Direct agent balance and withdrawn update
+      if (agent) {
+        try {
+          await supabaseAdmin.from("agents").update({
+            wallet_balance: agent.wallet_balance,
+            total_withdrawn: agent.total_withdrawn,
+          }).eq("id", agent.id);
+        } catch {}
+      }
+
+      // Reconcile agent ledger
+      if (agent) {
+        try {
+          await this.getAgentById(agent.id, true);
+        } catch {}
       }
 
       // 3. Sync fallback settings registries

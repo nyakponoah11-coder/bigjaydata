@@ -6,6 +6,9 @@ import { disbursePaystackTransfer } from "@/lib/paystack";
 // In-memory OTP storage fallback
 const withdrawalOtps = new Map<string, { code: string; expires: number }>();
 
+// Global in-flight submission lock to prevent double clicks and duplicate payouts
+const submissionLocks = new Map<string, number>();
+
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
@@ -41,7 +44,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, message: "Agent ID is required" }, { status: 400 });
     }
 
-    const agent = await db.getAgentById(agent_id);
+    const agent = await db.getAgentById(agent_id, true);
     if (!agent) {
       return NextResponse.json({ success: false, message: "Agent account not found" }, { status: 404 });
     }
@@ -65,6 +68,32 @@ export async function POST(req: Request) {
 
     // Step 2: Submit withdrawal with verification code
     if (action === "submit_withdrawal") {
+      // 1. In-flight debounce lock (prevent rapid double clicks within 10 seconds)
+      const lastAttempt = submissionLocks.get(agent_id);
+      if (lastAttempt && Date.now() - lastAttempt < 10000) {
+        return NextResponse.json(
+          {
+            success: false,
+            message: "A payout request is currently processing. Please wait a moment before trying again.",
+          },
+          { status: 429 }
+        );
+      }
+      submissionLocks.set(agent_id, Date.now());
+
+      // 2. Prevent concurrent pending withdrawals (only one pending request allowed at a time)
+      const existingWithdrawals = await db.getAgentWithdrawals(agent.id);
+      const activePending = existingWithdrawals.find((w) => w.status === "pending");
+      if (activePending) {
+        return NextResponse.json(
+          {
+            success: false,
+            message: `You already have an active pending payout of GHS ${activePending.amount.toFixed(2)} undergoing review. Please wait for it to be completed or rejected before requesting another.`,
+          },
+          { status: 400 }
+        );
+      }
+
       const { amount, momo_number, momo_network, verification_code, instant_paystack } = body;
 
       const numAmount = Number(amount);
@@ -121,7 +150,7 @@ export async function POST(req: Request) {
         );
       }
 
-      // Remove OTP once successfully verified
+      // Immediately burn and invalidate the OTP so it cannot be reused
       withdrawalOtps.delete(agent_id);
       await db.updateAgent(agent_id, { withdrawal_otp: null, withdrawal_otp_expires: null });
 
