@@ -79,8 +79,10 @@ export default function DirectPurchaseModal({
       if (!res.ok || !data.success) {
         const rawMsg = data.error || data.message || "Failed to dispatch direct order.";
         let helpfulMsg = rawMsg;
-        if (rawMsg.toLowerCase().includes("could not complete your purchase")) {
-          helpfulMsg = "DataMart gateway returned: 'Could not complete your purchase'. Please verify that your DataMart wallet has sufficient funds for this package and that the recipient number is active.";
+        if (rawMsg.toLowerCase().includes("could not complete your purchase") || rawMsg.toLowerCase().includes("route not found")) {
+          helpfulMsg = "DataMart gateway error: Please verify your DataMart wallet balance and check that your DataMart API Key & Secret are active in Admin Settings.";
+        } else if (rawMsg.toLowerCase().includes("invalid or inactive api key")) {
+          helpfulMsg = "DataMart rejected API Key: Please verify that your active DataMart API key and secret are saved in Admin Settings.";
         }
         throw new Error(helpfulMsg);
       }

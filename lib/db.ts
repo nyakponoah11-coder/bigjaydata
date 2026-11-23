@@ -6221,8 +6221,28 @@ export const db = {
       }
     } else if (status === "rejected" && previousStatus !== "rejected") {
       if (agent) {
-        // Refund reserved balance back to agent
-        agent.wallet_balance = Number(((agent.wallet_balance || 0) + w.amount).toFixed(2));
+        // Calculate legitimate remaining balance from store orders minus completed withdrawals
+        const allAgentOrders = (await this.getAgentOrders(agent.id)).filter((o: any) => {
+          const ps = (o.payment_status || "").toLowerCase();
+          const s = (o.status || "").toLowerCase();
+          const ds = (o.delivery_status || "").toLowerCase();
+          return (
+            ["paid", "completed", "success"].includes(ps) ||
+            ["delivered", "completed", "processing"].includes(s) ||
+            ["delivered", "completed", "processing"].includes(ds)
+          );
+        });
+        const totalEarned = Number(allAgentOrders.reduce((sum: number, o: any) => sum + (Number(o.agent_profit) || 0), 0).toFixed(2));
+        const allWds = await this.getAgentWithdrawals(agent.id);
+        const otherCompleted = allWds
+          .filter((x) => x.id !== id && x.status === "completed")
+          .reduce((sum, x) => sum + (Number(x.amount) || 0), 0);
+        const otherPending = allWds
+          .filter((x) => x.id !== id && x.status === "pending")
+          .reduce((sum, x) => sum + (Number(x.amount) || 0), 0);
+        const legitimateBalance = Math.max(0, Number((totalEarned - otherCompleted - otherPending).toFixed(2)));
+
+        agent.wallet_balance = legitimateBalance;
         if (previousStatus === "completed") {
           agent.total_withdrawn = Math.max(0, Number(((agent.total_withdrawn || 0) - w.amount).toFixed(2)));
         }

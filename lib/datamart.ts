@@ -284,7 +284,7 @@ export function formatGhanaPhone(phone: string): string {
  */
 export function resolveDeveloperBaseUrl(configuredUrl?: string): string {
   let base = (configuredUrl || "").trim();
-  if (!base || base.includes("datamartgh.com")) {
+  if (!base || base.includes("datamartgh.com") || base.includes("datamartgh.shop")) {
     return "https://api.datamartgh.shop/api/developer";
   }
   base = base.replace(/\/$/, "");
@@ -297,7 +297,7 @@ export function resolveDeveloperBaseUrl(configuredUrl?: string): string {
 
 /**
  * Resolves DataMart purchase endpoint URL.
- * Routes to: https://api.datamartgh.shop/api/developer/purchase
+ * Routes strictly to: https://api.datamartgh.shop/api/developer/purchase
  */
 export function resolvePurchaseUrl(configuredUrl?: string): string {
   const base = resolveDeveloperBaseUrl(configuredUrl);
@@ -494,7 +494,12 @@ export async function sendDataMartDelivery(params: DataMartDeliveryParams): Prom
                 lastErrorResponse = responseData;
 
                 if (response.status === 401 || response.status === 403) {
-                  lastErrorMessage = "DataMart API Key or Secret rejected (HTTP " + response.status + ": Invalid or inactive API key). Please update your DataMart Key & Secret in Admin Settings.";
+                  lastErrorMessage = "DataMart API Key or Secret rejected (HTTP " + response.status + ": " + (responseData?.message || "Invalid or inactive API key") + "). Please update your DataMart Key & Secret in Admin Settings or Vercel.";
+                  break;
+                }
+
+                if (response.status === 404 || responseData?.message === "Route not found") {
+                  lastErrorMessage = "DataMart API endpoint error (Route not found). Please ensure your DataMart Developer API Key and Secret are active in Admin Settings.";
                   break;
                 }
 
