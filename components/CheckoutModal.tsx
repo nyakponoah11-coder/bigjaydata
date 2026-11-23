@@ -317,6 +317,23 @@ export default function CheckoutModal({ product, isOpen, onClose, settings }: Pr
     }
 
     try {
+      // Pre-register pending order in DB so webhook can fulfill even if user closes browser
+      fetch("/api/orders/initiate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        keepalive: true,
+        body: JSON.stringify({
+          reference,
+          network: product.network.toLowerCase(),
+          package_size: product.size,
+          phone: cleanPhone,
+          amount: product.price,
+          customer_id: customer?.id || undefined,
+          customer_name: customer?.name || undefined,
+          customer_email: customerEmail,
+        }),
+      }).catch(() => {});
+
       const handler = window.PaystackPop.setup({
         key: publicKey,
         email: customerEmail,

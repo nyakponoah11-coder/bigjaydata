@@ -261,17 +261,15 @@ export async function POST(request: Request) {
       }
 
       if (existingOrder) {
-        // STRICT DEDUPLICATION: Check if order has already been dispatched to DataMart or delivered
+        // STRICT DEDUPLICATION: Only skip if this order has genuinely been dispatched to DataMart already
+        const dm = (existingOrder.datamart_response as any) || {};
         const alreadyDispatched =
           existingOrder.status === "delivered" ||
           existingOrder.delivery_status === "delivered" ||
-          existingOrder.delivery_status === "processing" ||
-          existingOrder.delivery_status === "completed" ||
-          Boolean((existingOrder.datamart_response as any)?.purchaseId) ||
-          Boolean((existingOrder.datamart_response as any)?.dispatched_at);
+          Boolean(dm.purchaseId || dm.orderReference || dm.datamart_id || dm.dispatched_at || dm.data?.purchaseId);
 
         if (alreadyDispatched) {
-          console.log(`[Paystack Webhook] Order ${reference} already dispatched or delivered (status: ${existingOrder.status}, delivery: ${existingOrder.delivery_status}). Skipping duplicate DataMart call.`);
+          console.log(`[Paystack Webhook] Order ${reference} already dispatched to DataMart (purchaseId: ${dm.purchaseId || dm.datamart_id || "delivered"}). Skipping duplicate call.`);
 
           // Ensure agent order exists and has profit credited
           if (resolvedAgent) {
@@ -368,74 +366,116 @@ export async function POST(request: Request) {
             console.error("[Paystack Webhook] Agent order creation on existing order error:", agentErr);
           }
         }
-      } else if (activePhone && activePkg) {
-        // Background creation if checkout closed before client trigger
-        console.log(`[Paystack Webhook] Creating and dispatching new order ${reference} (phone: ${activePhone}, net: ${activeNet}, pkg: ${activePkg})...`);
+      } else {
+        // Fallback: If metadata lacked activePkg or activeNet, deduce them automatically
+        let resolvedNet = activeNet;
+        let resolvedPkg = activePkg;
+        const resolvedPhone = activePhone || (data.customer?.phone ? String(data.customer.phone).replace(/\D/g, "") : "");
 
-        const newOrder = await db.createOrder({
-          reference,
-          network: activeNet.toLowerCase(),
-          package_size: activePkg,
-          phone: activePhone,
-          amount: activeAmt,
-          paystack_ref: paystackRef,
-          payment_status: "paid",
-          delivery_status: "processing",
-          status: "processing",
-          datamart_response: {
-            status: "pending",
-            source: "paystack_webhook",
-            store_slug: storeSlug || (resolvedAgent ? resolvedAgent.store_slug : ""),
-            ...(resolvedAgent ? { agent_id: resolvedAgent.id, agent_profit: webhookAgentProfit } : {}),
-          },
-        });
-
-        // Atomic claim: Strictly prevents duplicate DataMart purchases
-        const claim = await db.claimOrderForDispatch(reference);
-        if (!claim.allowed) {
-          console.log(`[Paystack Webhook] Order ${reference} already claimed or dispatched. Skipping duplicate DataMart call.`);
-          return NextResponse.json({ status: "success", message: "Order already dispatched" });
+        if (!resolvedNet && resolvedPhone) {
+          const p3 = resolvedPhone.slice(0, 3);
+          if (["024", "054", "055", "059", "025"].includes(p3)) resolvedNet = "mtn";
+          else if (["020", "050"].includes(p3)) resolvedNet = "telecel";
+          else if (["027", "057", "026", "056"].includes(p3)) resolvedNet = "at";
         }
 
-        const deliveryResult = await sendDataMartDelivery({
-          network: activeNet,
-          package_size: activePkg,
-          phone: activePhone,
-          reference,
-          idempotency_key: reference,
-        });
-
-        const isDelivered = deliveryResult?.status === "delivered" || deliveryResult?.status === "completed";
-        const finalDelivery = isDelivered ? "delivered" : "processing";
-        await db.updateOrderStatus(
-          newOrder.id,
-          finalDelivery,
-          deliveryResult.raw_response || deliveryResult,
-          {
-            payment_status: "paid",
-            delivery_status: finalDelivery,
-          }
-        );
-
-        if (resolvedAgent) {
+        if (!resolvedPkg && activeAmt > 0) {
           try {
-            await db.createAgentOrder({
-              agent_id: resolvedAgent.id,
-              reference,
-              network: activeNet.toLowerCase(),
-              package_size: activePkg,
-              phone: activePhone,
-              amount: activeAmt,
-              base_price: webhookBaseCost,
-              agent_profit: webhookAgentProfit,
-              paystack_ref: paystackRef,
+            const products = await db.getProducts();
+            const pMatch = products.find(
+              (p) =>
+                (!resolvedNet || (p.network || "").toLowerCase().trim() === resolvedNet.toLowerCase().trim()) &&
+                Math.abs(Number(p.price) - activeAmt) < 0.25
+            );
+            if (pMatch) {
+              resolvedPkg = pMatch.size;
+              if (!resolvedNet) resolvedNet = pMatch.network.toLowerCase();
+            } else {
+              const baseProducts = await db.getAgentBaseProducts();
+              const bpMatch = baseProducts.find(
+                (b) =>
+                  (!resolvedNet || (b.network || "").toLowerCase().trim() === resolvedNet.toLowerCase().trim()) &&
+                  Math.abs(Number(b.base_price) - activeAmt) < 2.0
+              );
+              if (bpMatch) {
+                resolvedPkg = bpMatch.size;
+                if (!resolvedNet) resolvedNet = bpMatch.network.toLowerCase();
+              }
+            }
+          } catch {}
+        }
+
+        if (resolvedPhone && resolvedPkg) {
+          // Background creation if checkout closed before client trigger
+          console.log(`[Paystack Webhook] Creating and dispatching new order ${reference} (phone: ${resolvedPhone}, net: ${resolvedNet || "mtn"}, pkg: ${resolvedPkg})...`);
+
+          const newOrder = await db.createOrder({
+            reference,
+            network: (resolvedNet || "mtn").toLowerCase(),
+            package_size: resolvedPkg,
+            phone: resolvedPhone,
+            amount: activeAmt,
+            paystack_ref: paystackRef,
+            payment_status: "paid",
+            delivery_status: "processing",
+            status: "processing",
+            datamart_response: {
+              status: "pending",
+              source: "paystack_webhook",
+              store_slug: storeSlug || (resolvedAgent ? resolvedAgent.store_slug : ""),
+              ...(resolvedAgent ? { agent_id: resolvedAgent.id, agent_profit: webhookAgentProfit } : {}),
+            },
+          });
+
+          // Atomic claim: Strictly prevents duplicate DataMart purchases
+          const claim = await db.claimOrderForDispatch(reference);
+          if (!claim.allowed) {
+            console.log(`[Paystack Webhook] Order ${reference} already claimed or dispatched. Skipping duplicate DataMart call.`);
+            return NextResponse.json({ status: "success", message: "Order already dispatched" });
+          }
+
+          const deliveryResult = await sendDataMartDelivery({
+            network: resolvedNet || "mtn",
+            package_size: resolvedPkg,
+            phone: resolvedPhone,
+            reference,
+            idempotency_key: reference,
+          });
+
+          const isDelivered = deliveryResult?.status === "delivered" || deliveryResult?.status === "completed";
+          const finalDelivery = isDelivered ? "delivered" : "processing";
+          await db.updateOrderStatus(
+            newOrder.id,
+            finalDelivery,
+            deliveryResult.raw_response || deliveryResult,
+            {
               payment_status: "paid",
               delivery_status: finalDelivery,
-              status: finalDelivery,
-            });
-          } catch (agentErr) {
-            console.error("[Paystack Webhook] Agent order creation error:", agentErr);
+            }
+          );
+
+          if (resolvedAgent) {
+            try {
+              await db.createAgentOrder({
+                agent_id: resolvedAgent.id,
+                reference,
+                network: (resolvedNet || "mtn").toLowerCase(),
+                package_size: resolvedPkg,
+                phone: resolvedPhone,
+                amount: activeAmt,
+                base_price: webhookBaseCost,
+                agent_profit: webhookAgentProfit,
+                paystack_ref: paystackRef,
+                payment_status: "paid",
+                delivery_status: finalDelivery,
+                status: finalDelivery,
+              });
+            } catch (agentErr) {
+              console.error("[Paystack Webhook] Agent order creation error:", agentErr);
+            }
           }
+        } else {
+          console.warn(`[Paystack Webhook] Could not dispatch order ${reference}: Missing phone (${resolvedPhone}) or package (${resolvedPkg}) in payment event.`);
         }
       }
     }

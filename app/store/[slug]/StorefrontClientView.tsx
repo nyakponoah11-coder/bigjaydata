@@ -469,6 +469,24 @@ export default function StorefrontClientView({
 
     try {
       const activeProduct = checkoutProduct;
+      // Pre-register pending order in DB so webhook can fulfill even if user closes browser
+      fetch("/api/orders/initiate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        keepalive: true,
+        body: JSON.stringify({
+          reference,
+          network: activeProduct.network.toLowerCase(),
+          package_size: activeProduct.size,
+          phone: clean,
+          amount: activeProduct.price,
+          store_slug: agent.store_slug,
+          agent_id: agent.id,
+          customer_name: agent.store_name,
+          customer_email: `${clean}@customer.${agent.store_slug}.com`,
+        }),
+      }).catch(() => {});
+
       // Plain synchronous functions required by Paystack Inline v1/v2 validator
       const handler = window.PaystackPop.setup({
         key: paystackPublicKey,
