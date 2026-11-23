@@ -59,6 +59,20 @@ export interface Order {
 
 export function normalizeOrder(order: any): Order {
   if (!order) return order;
+
+  // 1. If this order was manually set by admin, NEVER allow automated or background syncs to override it!
+  if (order.datamart_response?.is_manual_override) {
+    const manual = order.datamart_response.manual_status || order.delivery_status || order.status;
+    if (manual) {
+      return {
+        ...order,
+        status: manual,
+        delivery_status: manual,
+        payment_status: order.payment_status || "paid",
+      };
+    }
+  }
+
   const isPaid =
     order.payment_status === "paid" ||
     order.payment_status === "completed" ||
@@ -68,11 +82,12 @@ export function normalizeOrder(order: any): Order {
 
   const payment_status = order.payment_status || (isPaid ? "paid" : "pending");
 
-  // 1. Inspect datamart_response for authoritative live status
+  // 2. Inspect datamart_response for authoritative live status
   let dmDeliveryStatus: string | null = null;
   if (order.datamart_response && typeof order.datamart_response === "object") {
     const dm = order.datamart_response;
     const rawDm =
+      dm.last_datamart_sync?.matched_status ||
       dm.last_datamart_sync?.order_status ||
       dm.last_datamart_sync?.data?.orderStatus ||
       dm.last_datamart_sync?.data?.deliveryStatus ||
@@ -103,12 +118,13 @@ export function normalizeOrder(order: any): Order {
   const rawDs = (order.delivery_status || "").toLowerCase().trim();
   const rawSt = (order.status || "").toLowerCase().trim();
 
-  // 2. Resolve unified delivery and order status so they NEVER contradict each other
+  // 3. Resolve unified delivery and order status so they NEVER contradict each other
   let unifiedStatus = "processing";
-  if (dmDeliveryStatus) {
-    unifiedStatus = dmDeliveryStatus;
-  } else if (rawDs === "delivered" || rawDs === "completed" || rawSt === "delivered" || rawSt === "completed") {
+  if (rawDs === "delivered" || rawDs === "completed" || rawSt === "delivered" || rawSt === "completed") {
+    // If order is already confirmed delivered, preserve delivered state
     unifiedStatus = "delivered";
+  } else if (dmDeliveryStatus) {
+    unifiedStatus = dmDeliveryStatus;
   } else if (rawDs === "failed" || rawSt === "failed" || rawDs === "rejected" || rawSt === "rejected") {
     unifiedStatus = "failed";
   } else if (rawDs === "refunded" || rawSt === "refunded") {

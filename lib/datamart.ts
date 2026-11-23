@@ -187,9 +187,18 @@ export function extractCarrierStatus(payload: any): "delivered" | "failed" | "pr
 
   // 3. Top-level status fallback
   if (data.status) {
-    // If it's explicitly a wallet debit transaction without relatedPurchase, it is still processing on telecom
-    if (data.status === "completed" && (data.type === "wallet_debit" || data.type === "debit" || data.gateway === "wallet")) {
-      return "processing";
+    const s = String(data.status).toLowerCase().trim();
+    // Confirmed completed or delivered on DataMart
+    if (["delivered", "completed", "successful", "success", "fulfilled", "done"].includes(s)) {
+      const subPending =
+        String(data.fulfillmentStatus || "").toLowerCase() === "pending" ||
+        String(data.deliveryStatus || "").toLowerCase() === "pending" ||
+        String(data.orderStatus || "").toLowerCase() === "pending" ||
+        String(data.carrierStatus || "").toLowerCase() === "pending";
+      if (subPending) {
+        return "processing";
+      }
+      return "delivered";
     }
     return normalizeStatus(data.status);
   }
@@ -818,12 +827,14 @@ export async function checkDataMartDeliveryStatus({
   capacity,
   apiKey,
   apiSecret,
+  extraReferences,
 }: {
   reference: string;
   recipientPhone?: string;
   capacity?: string | number;
   apiKey?: string;
   apiSecret?: string;
+  extraReferences?: string[];
 }): Promise<"delivered" | "failed" | "processing" | "refunded" | "not_found"> {
   const creds = await getDatamartCredentials();
   const activeKey = apiKey || creds.apiKey;
@@ -843,10 +854,13 @@ export async function checkDataMartDeliveryStatus({
     `BMGH-${cleanSuffix}`,
     cleanSuffix,
     cleanRef.toLowerCase(),
+    ...(extraReferences || []),
   ])).filter(Boolean);
 
+  let inFlightStatus: "processing" | null = null;
+
   // --------------------------------------------------------------------------
-  // TIER 1: Direct Single-Order Endpoint (Primary)
+  // TIER 1: Direct Single-Order Endpoint (Primary Developer Route)
   // --------------------------------------------------------------------------
   for (const ref of candidateRefs) {
     try {
@@ -857,13 +871,18 @@ export async function checkDataMartDeliveryStatus({
       });
       if (res.ok) {
         const json = await res.json().catch(() => null);
-        const status = extractCarrierStatus(json);
-        if (status && status !== "processing") {
-          return status;
+        if (json && (json.success !== false || json.status === "success" || json.data)) {
+          const status = extractCarrierStatus(json);
+          if (status === "delivered" || status === "failed" || status === "refunded") {
+            return status;
+          }
+          if (status === "processing") {
+            inFlightStatus = "processing";
+          }
         }
       }
     } catch (err) {
-      // 404 is common if reference is indexing; proceed to Tier 2
+      // 404 or indexing error; proceed to Tier 2
     }
   }
 
@@ -878,9 +897,14 @@ export async function checkDataMartDeliveryStatus({
       });
       if (res.ok) {
         const json = await res.json().catch(() => null);
-        const status = extractCarrierStatus(json);
-        if (status && status !== "processing") {
-          return status;
+        if (json && (json.success !== false || json.status === "success" || json.data)) {
+          const status = extractCarrierStatus(json);
+          if (status === "delivered" || status === "failed" || status === "refunded") {
+            return status;
+          }
+          if (status === "processing") {
+            inFlightStatus = "processing";
+          }
         }
       }
     } catch (_) {
@@ -916,12 +940,12 @@ export async function checkDataMartDeliveryStatus({
           const cleanCap = String(capacity || "").replace(/[^\d.]/g, "");
 
           const matched = transactions.find((t: any) => {
-            const tRef = String(t.reference || t.ref || "");
-            const rpRef = String(t.relatedPurchase?.reference || t.relatedPurchase?.orderReference || "");
-            const tPhone = String(t.recipient || t.phoneNumber || t.relatedPurchase?.phoneNumber || t.relatedPurchase?.recipient || "").replace(/\D/g, "");
-            const tCap = String(t.capacity || t.relatedPurchase?.capacity || "").replace(/[^\d.]/g, "");
+            const tRef = String(t.reference || t.ref || t.id || t.purchaseId || "");
+            const rpRef = String(t.relatedPurchase?.reference || t.relatedPurchase?.orderReference || t.relatedPurchase?.purchaseId || "");
+            const tPhone = String(t.recipient || t.phoneNumber || t.phone || t.relatedPurchase?.phoneNumber || t.relatedPurchase?.recipient || "").replace(/\D/g, "");
+            const tCap = String(t.capacity || t.packageSize || t.relatedPurchase?.capacity || "").replace(/[^\d.]/g, "");
 
-            // Match A: By Reference
+            // Match A: By Reference or internal purchase IDs
             for (const ref of candidateRefs) {
               if (tRef === ref || rpRef === ref || matchesDatamartReference(tRef, ref) || matchesDatamartReference(rpRef, ref)) {
                 return true;
@@ -945,6 +969,11 @@ export async function checkDataMartDeliveryStatus({
       } catch (_) {}
     }
   } catch (_) {}
+
+  // If order was confirmed found on DataMart and reported as in-flight processing, return "processing"
+  if (inFlightStatus) {
+    return inFlightStatus;
+  }
 
   // Return "not_found" when no candidate record matched across any tier
   return "not_found";
@@ -1005,12 +1034,30 @@ export async function syncOrderWithDataMart(order: Order, forceSync = false): Pr
   let orderCapGb = parseFloat(String(order.package_size || "").replace(/[^0-9.]/g, ""));
   if (orderCapGb >= 100) orderCapGb = orderCapGb / 1000;
 
+  const dmResp = order.datamart_response || {};
+  const extraRefs: string[] = [
+    dmResp.datamart_id,
+    dmResp.order_reference,
+    dmResp.purchaseId,
+    dmResp.reference,
+    dmResp.data?.purchaseId,
+    dmResp.data?.orderReference,
+    dmResp.data?.reference,
+    dmResp.raw_response?.data?.purchaseId,
+    dmResp.raw_response?.data?.orderReference,
+    dmResp.raw_response?.data?.reference,
+    dmResp.raw_response?.purchaseId,
+    dmResp.raw_response?.orderReference,
+    dmResp.raw_response?.reference,
+  ].filter(Boolean).map(String);
+
   const deliveryStatus = await checkDataMartDeliveryStatus({
     reference: order.reference,
     recipientPhone: order.phone,
     capacity: orderCapGb,
     apiKey,
     apiSecret,
+    extraReferences: extraRefs,
   });
 
   console.log(`[DataMart 3-Tier Delivery Sync] Order ${order.reference}: Carrier status is "${deliveryStatus}"`);

@@ -72,7 +72,9 @@ export async function GET(req: Request) {
         const pendingWithdrawn = Number(pendingWithdrawals.reduce((sum, w) => sum + (Number(w.amount) || 0), 0).toFixed(2));
         const storedBalance = Number(agent.wallet_balance || 0);
         const calculatedBalance = Number(Math.max(0, earned - withdrawn - pendingWithdrawn).toFixed(2));
-        const balance = Math.max(storedBalance, calculatedBalance);
+        const balance = earned > 0 || agentWithdrawals.length > 0 || pendingWithdrawals.length > 0
+          ? calculatedBalance
+          : storedBalance;
 
         return {
           ...agent,
