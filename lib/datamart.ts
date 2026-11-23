@@ -1086,6 +1086,7 @@ export async function checkDataMartDeliveryStatus({
       try { bJson = JSON.parse(bText); } catch {}
       balanceCheck = {
         keyPreview: key.length > 8 ? `${key.slice(0, 4)}...${key.slice(-4)}` : key,
+        keySource: creds.isFromEnv ? "vercel_environment (process.env.DATAMART_API_KEY)" : "supabase_database (site_settings.datamart_api_key)",
         status: bRes.status,
         data: bJson || bText.slice(0, 100),
       };
