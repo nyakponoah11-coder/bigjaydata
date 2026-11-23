@@ -596,6 +596,7 @@ export default function AdminOrdersPage() {
                           >
                             <option value="completed">✓ Completed</option>
                             <option value="processing">⚡ Processing</option>
+                            <option value="queued">⏳ Queued</option>
                             <option value="waiting">⏳ Waiting</option>
                             <option value="pending">⏳ Pending</option>
                             <option value="failed">✕ Failed</option>
@@ -787,6 +788,7 @@ export default function AdminOrdersPage() {
                       {[
                         { id: "completed", label: "Completed" },
                         { id: "processing", label: "Processing" },
+                        { id: "queued", label: "Queued" },
                         { id: "waiting", label: "Waiting" },
                         { id: "pending", label: "Pending" },
                         { id: "failed", label: "Failed" },

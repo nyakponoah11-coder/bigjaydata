@@ -190,46 +190,79 @@ export function normalizeStatus(raw: any): "delivered" | "failed" | "processing"
 export function extractCarrierStatus(payload: any): "delivered" | "failed" | "processing" | "refunded" | "queued" | "cancelled" {
   if (!payload) return "processing";
   const data = payload.data || payload;
+  const rp = (data.relatedPurchase && typeof data.relatedPurchase === "object") ? data.relatedPurchase : {};
 
-  // 1. Check inside relatedPurchase first (Most accurate location in DataMart)
-  if (data.relatedPurchase && typeof data.relatedPurchase === "object") {
-    const rp = data.relatedPurchase;
-    const st = rp.orderStatus || rp.deliveryStatus || rp.delivery_status || rp.status || rp.fulfillmentStatus || rp.telecomStatus;
-    if (st) {
-      return normalizeStatus(st);
-    }
+  // Collect all possible status strings from every known DataMart field
+  const statusCandidates = [
+    rp.orderStatus,
+    rp.deliveryStatus,
+    rp.delivery_status,
+    rp.status,
+    rp.carrierStatus,
+    rp.fulfillmentStatus,
+    rp.telecomStatus,
+    data.orderStatus,
+    data.order_status,
+    data.deliveryStatus,
+    data.delivery_status,
+    data.carrierStatus,
+    data.telecomStatus,
+    data.fulfillmentStatus,
+    data.status,
+    payload.delivery_status,
+    payload.deliveryStatus,
+    payload.orderStatus,
+    payload.status,
+  ]
+    .filter(Boolean)
+    .map((s) => String(s).toLowerCase().trim());
+
+  // 1. Any definitive completed / delivered signal from DataMart wins immediately
+  const isDelivered = statusCandidates.some((s) =>
+    ["delivered", "completed", "successful", "success", "fulfilled", "done"].includes(s)
+  );
+  if (isDelivered) {
+    return "delivered";
   }
 
-  // 2. Check explicit order status fields on the object
-  const explicit =
-    data.orderStatus ||
-    data.order_status ||
-    data.deliveryStatus ||
-    data.delivery_status ||
-    data.carrierStatus ||
-    data.telecomStatus ||
-    data.fulfillmentStatus;
-
-  if (explicit) {
-    return normalizeStatus(explicit);
+  // 2. Refunded / Reversed
+  const isRefunded = statusCandidates.some((s) =>
+    ["refunded", "refund", "reversed", "reversal"].includes(s)
+  );
+  if (isRefunded) {
+    return "refunded";
   }
 
-  // 3. Top-level status fallback
-  if (data.status) {
-    const s = String(data.status).toLowerCase().trim();
-    // Confirmed completed or delivered on DataMart
-    if (["delivered", "completed", "successful", "success", "fulfilled", "done"].includes(s)) {
-      const subPending =
-        String(data.fulfillmentStatus || "").toLowerCase() === "pending" ||
-        String(data.deliveryStatus || "").toLowerCase() === "pending" ||
-        String(data.orderStatus || "").toLowerCase() === "pending" ||
-        String(data.carrierStatus || "").toLowerCase() === "pending";
-      if (subPending) {
-        return "processing";
-      }
-      return "delivered";
-    }
-    return normalizeStatus(data.status);
+  // 3. Failed / Rejected
+  const isFailed = statusCandidates.some((s) =>
+    ["failed", "rejected", "declined", "error", "unsuccessful", "carrier_rejected", "not_servable"].includes(s)
+  );
+  if (isFailed) {
+    return "failed";
+  }
+
+  // 4. Cancelled
+  const isCancelled = statusCandidates.some((s) =>
+    ["cancelled", "canceled", "aborted", "terminated"].includes(s)
+  );
+  if (isCancelled) {
+    return "cancelled";
+  }
+
+  // 5. Processing / In-progress
+  const isProcessing = statusCandidates.some((s) =>
+    ["processing", "in_progress", "in-progress", "sending", "delivering", "active"].includes(s)
+  );
+  if (isProcessing) {
+    return "processing";
+  }
+
+  // 6. Queued / Waiting / Pending
+  const isQueued = statusCandidates.some((s) =>
+    ["queued", "waiting", "pending", "in_queue", "order_received", "received"].includes(s)
+  );
+  if (isQueued) {
+    return "queued";
   }
 
   return "processing";
@@ -921,14 +954,13 @@ export async function checkDataMartDeliveryStatus({
   extraReferences?: string[];
 }): Promise<"delivered" | "failed" | "processing" | "refunded" | "queued" | "cancelled" | "not_found"> {
   const creds = await getDatamartCredentials();
-  const activeKey = apiKey || creds.apiKey;
-  const activeSecret = apiSecret || creds.apiSecret;
+  const activeKey = cleanCred(apiKey || creds.apiKey);
+  const activeSecret = cleanCred(apiSecret || creds.apiSecret);
   const devBase = creds.apiUrl || "https://api.datamartgh.shop/api/developer";
 
-  const headers = {
-    ...getDatamartAuthHeaders(activeKey, activeSecret),
-    "Accept": "application/json",
-  };
+  if (!activeKey) {
+    return "not_found";
+  }
 
   const cleanRef = String(reference || "").trim();
   const cleanSuffix = cleanRef.replace(/^bmgh-/i, "").replace(/^bmgh/i, "");
@@ -938,123 +970,126 @@ export async function checkDataMartDeliveryStatus({
     `BMGH-${cleanSuffix}`,
     cleanSuffix,
     cleanRef.toLowerCase(),
+    cleanRef.toUpperCase(),
     ...(extraReferences || []),
   ])).filter(Boolean);
 
-  let inFlightStatus: "processing" | null = null;
+  let inFlightStatus: "processing" | "queued" | null = null;
+
+  // Resilient multi-credential fetcher:
+  // First tries with secret (if present); if DataMart returns 401/403, immediately retries with pure API key alone
+  async function fetchDatamart(url: string): Promise<any | null> {
+    const attempts: Record<string, string>[] = [];
+    if (activeSecret) {
+      attempts.push({
+        "x-api-key": activeKey,
+        "x-api-secret": activeSecret,
+        "User-Agent": "BundleMartGh/1.0",
+        "Accept": "application/json",
+      });
+    }
+    attempts.push({
+      "x-api-key": activeKey,
+      "User-Agent": "BundleMartGh/1.0",
+      "Accept": "application/json",
+    });
+
+    for (const h of attempts) {
+      try {
+        const res = await fetch(url, {
+          headers: h,
+          cache: "no-store",
+          signal: AbortSignal.timeout(8000),
+        });
+        if (res.status === 401 || res.status === 403) {
+          continue;
+        }
+        if (res.ok) {
+          const json = await res.json().catch(() => null);
+          if (json) return json;
+        }
+      } catch {}
+    }
+    return null;
+  }
 
   // --------------------------------------------------------------------------
   // TIER 1: Direct Single-Order Endpoint (Primary Developer Route)
   // --------------------------------------------------------------------------
+  const orderStatusUrls = [
+    `${devBase}/order-status`,
+    `https://api.datamartgh.shop/api/developer/order-status`,
+    `https://api.datamartgh.shop/api/order-status`,
+  ];
+
   for (const ref of candidateRefs) {
-    try {
-      const res = await fetch(`${devBase}/order-status/${encodeURIComponent(ref)}`, {
-        headers,
-        cache: "no-store",
-        signal: AbortSignal.timeout(8000),
-      });
-      if (res.ok) {
-        const json = await res.json().catch(() => null);
-        if (json && (json.success !== false || json.status === "success" || json.data)) {
-          const status = extractCarrierStatus(json);
-          if (status === "delivered" || status === "failed" || status === "refunded") {
-            return status;
-          }
-          if (status === "processing") {
-            inFlightStatus = "processing";
-          }
+    for (const baseUrl of orderStatusUrls) {
+      const json = await fetchDatamart(`${baseUrl}/${encodeURIComponent(ref)}`);
+      if (json && (json.success !== false || json.status === "success" || json.data)) {
+        const status = extractCarrierStatus(json);
+        if (status === "delivered" || status === "failed" || status === "refunded" || status === "cancelled") {
+          return status;
+        }
+        if (status === "processing" || status === "queued") {
+          inFlightStatus = status;
         }
       }
-    } catch (err) {
-      // 404 or indexing error; proceed to Tier 2
     }
   }
 
   // --------------------------------------------------------------------------
-  // TIER 2: Secondary Public Order-Status Endpoint
-  // --------------------------------------------------------------------------
-  for (const ref of candidateRefs) {
-    try {
-      const res = await fetch(`https://api.datamartgh.shop/api/order-status/${encodeURIComponent(ref)}`, {
-        cache: "no-store",
-        signal: AbortSignal.timeout(8000),
-      });
-      if (res.ok) {
-        const json = await res.json().catch(() => null);
-        if (json && (json.success !== false || json.status === "success" || json.data)) {
-          const status = extractCarrierStatus(json);
-          if (status === "delivered" || status === "failed" || status === "refunded") {
-            return status;
-          }
-          if (status === "processing") {
-            inFlightStatus = "processing";
-          }
-        }
-      }
-    } catch (_) {
-      // Proceed to Tier 3
-    }
-  }
-
-  // --------------------------------------------------------------------------
-  // TIER 3: Cross-Reference via Live /transactions Feed
+  // TIER 2: Cross-Reference via Live /transactions Feed
   // (Matches by Reference OR by Phone Number + GB Capacity)
   // --------------------------------------------------------------------------
-  try {
-    const urlsToTry = [
-      `${devBase}/transactions?limit=100`,
-      `${devBase.replace(/\/developer\/?$/, "")}/transactions?limit=100`,
-      `https://api.datamartgh.shop/api/transactions?limit=100`,
-    ];
+  const txUrls = [
+    `${devBase}/transactions?limit=100`,
+    `https://api.datamartgh.shop/api/developer/transactions?limit=100`,
+    `https://api.datamartgh.shop/api/transactions?limit=100`,
+  ];
 
-    for (const txUrl of urlsToTry) {
-      try {
-        const res = await fetch(txUrl, {
-          headers,
-          cache: "no-store",
-          signal: AbortSignal.timeout(10000),
-        });
+  for (const txUrl of txUrls) {
+    const json = await fetchDatamart(txUrl);
+    if (!json) continue;
 
-        if (res.ok) {
-          const json = await res.json().catch(() => null);
-          const transactions = json?.data?.transactions || json?.transactions || (Array.isArray(json?.data) ? json.data : []) || [];
+    const transactions =
+      json?.data?.transactions ||
+      json?.transactions ||
+      (Array.isArray(json?.data) ? json.data : []) ||
+      [];
 
-          // Normalize phone to last 9 digits (handles 054..., 23354..., +23354...)
-          const cleanPhone = String(recipientPhone || "").replace(/\D/g, "").slice(-9);
-          const cleanCap = String(capacity || "").replace(/[^\d.]/g, "");
+    // Normalize phone to last 9 digits (handles 054..., 23354..., +23354...)
+    const cleanPhone = String(recipientPhone || "").replace(/\D/g, "").slice(-9);
+    const cleanCap = String(capacity || "").replace(/[^\d.]/g, "");
 
-          const matched = transactions.find((t: any) => {
-            const tRef = String(t.reference || t.ref || t.id || t.purchaseId || "");
-            const rpRef = String(t.relatedPurchase?.reference || t.relatedPurchase?.orderReference || t.relatedPurchase?.purchaseId || "");
-            const tPhone = String(t.recipient || t.phoneNumber || t.phone || t.relatedPurchase?.phoneNumber || t.relatedPurchase?.recipient || "").replace(/\D/g, "");
-            const tCap = String(t.capacity || t.packageSize || t.relatedPurchase?.capacity || "").replace(/[^\d.]/g, "");
+    const matched = transactions.find((t: any) => {
+      const tRef = String(t.reference || t.ref || t.id || t._id || t.purchaseId || "");
+      const rpRef = String(t.relatedPurchase?.reference || t.relatedPurchase?.orderReference || t.relatedPurchase?.purchaseId || "");
+      const tPhone = String(t.recipient || t.phoneNumber || t.phone || t.relatedPurchase?.phoneNumber || t.relatedPurchase?.recipient || "").replace(/\D/g, "");
+      const tCap = String(t.capacity || t.packageSize || t.relatedPurchase?.capacity || "").replace(/[^\d.]/g, "");
 
-            // Match A: By Reference or internal purchase IDs
-            for (const ref of candidateRefs) {
-              if (tRef === ref || rpRef === ref || matchesDatamartReference(tRef, ref) || matchesDatamartReference(rpRef, ref)) {
-                return true;
-              }
-            }
-
-            // Match B: By Phone Number + Capacity
-            if (cleanPhone && tPhone.includes(cleanPhone)) {
-              if (!cleanCap || !tCap || cleanCap === tCap || Math.abs(parseFloat(cleanCap) - parseFloat(tCap)) < 0.25) {
-                return true;
-              }
-            }
-
-            return false;
-          });
-
-          if (matched) {
-            return extractCarrierStatus(matched);
-          }
+      // Match A: By Reference or internal purchase IDs
+      for (const ref of candidateRefs) {
+        if (tRef === ref || rpRef === ref || matchesDatamartReference(tRef, ref) || matchesDatamartReference(rpRef, ref)) {
+          return true;
         }
-      } catch (_) {}
-    }
-  } catch (_) {}
+      }
 
-  // If order was confirmed found on DataMart and reported as in-flight processing, return "processing"
+      // Match B: By Phone Number + Capacity
+      if (cleanPhone && tPhone.includes(cleanPhone)) {
+        if (!cleanCap || !tCap || cleanCap === tCap || Math.abs(parseFloat(cleanCap) - parseFloat(tCap)) < 0.25) {
+          return true;
+        }
+      }
+
+      return false;
+    });
+
+    if (matched) {
+      return extractCarrierStatus(matched);
+    }
+  }
+
+  // If order was confirmed found on DataMart and reported in-flight or queued
   if (inFlightStatus) {
     return inFlightStatus;
   }
@@ -1124,15 +1159,23 @@ export async function syncOrderWithDataMart(order: Order, forceSync = false): Pr
     dmResp.order_reference,
     dmResp.purchaseId,
     dmResp.reference,
+    dmResp.id,
+    dmResp._id,
     dmResp.data?.purchaseId,
     dmResp.data?.orderReference,
     dmResp.data?.reference,
+    dmResp.data?.id,
+    dmResp.data?._id,
     dmResp.raw_response?.data?.purchaseId,
     dmResp.raw_response?.data?.orderReference,
     dmResp.raw_response?.data?.reference,
+    dmResp.raw_response?.data?.id,
+    dmResp.raw_response?.data?._id,
     dmResp.raw_response?.purchaseId,
     dmResp.raw_response?.orderReference,
     dmResp.raw_response?.reference,
+    dmResp.raw_response?.id,
+    dmResp.raw_response?._id,
   ].filter(Boolean).map(String);
 
   const deliveryStatus = await checkDataMartDeliveryStatus({

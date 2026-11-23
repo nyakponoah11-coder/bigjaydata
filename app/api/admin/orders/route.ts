@@ -29,14 +29,14 @@ export async function GET(request: Request) {
       search,
     }, true);
 
-    // Auto-sync: Silently re-verify any recent processing orders so the list is always fresh on load
+    // Auto-sync: Silently re-verify any recent in-flight orders so the list is always fresh on load
     const processingOrders = orders
       .filter((o) => {
         const st = (o.delivery_status || o.status || "").toLowerCase().trim();
         const ageHours = (Date.now() - new Date(o.created_at || Date.now()).getTime()) / (1000 * 60 * 60);
-        return (st === "processing" || st === "pending") && ageHours <= 48;
+        return (st === "processing" || st === "pending" || st === "waiting" || st === "queued") && ageHours <= 72;
       })
-      .slice(0, 5);
+      .slice(0, 10);
 
     if (processingOrders.length > 0) {
       await Promise.all(
