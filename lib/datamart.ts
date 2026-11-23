@@ -1073,22 +1073,25 @@ export async function checkDataMartDeliveryStatus({
   // Fast single fetcher with 3.5s timeout
   async function fetchDatamart(url: string): Promise<any | null> {
     for (const key of allCandidateKeys) {
-      const attempts: Record<string, string>[] = [];
+      const attempts: Record<string, string>[] = [
+        {
+          "X-API-Key": key,
+          "Accept": "application/json",
+          "User-Agent": "BundleMartGh/1.0",
+        },
+      ];
       if (activeSecret) {
         attempts.push({
           "X-API-Key": key,
-          "x-api-key": key,
-          "x-api-secret": activeSecret,
           "X-API-Secret": activeSecret,
-          "User-Agent": "BundleMartGh/1.0",
           "Accept": "application/json",
+          "User-Agent": "BundleMartGh/1.0",
         });
       }
       attempts.push({
-        "X-API-Key": key,
         "x-api-key": key,
-        "User-Agent": "BundleMartGh/1.0",
         "Accept": "application/json",
+        "User-Agent": "BundleMartGh/1.0",
       });
 
       for (const h of attempts) {
@@ -1224,22 +1227,25 @@ export async function syncMultipleOrdersWithDataMart(orders: Order[]): Promise<{
   try {
     for (const key of allCandidateKeys) {
       if (transactions.length > 0) break;
-      const attempts: Record<string, string>[] = [];
+      const attempts: Record<string, string>[] = [
+        {
+          "X-API-Key": key,
+          "Accept": "application/json",
+          "User-Agent": "BundleMartGh/1.0",
+        },
+      ];
       if (apiSecret) {
         attempts.push({
           "X-API-Key": key,
-          "x-api-key": key,
-          "x-api-secret": apiSecret,
           "X-API-Secret": apiSecret,
-          "User-Agent": "BundleMartGh/1.0",
           "Accept": "application/json",
+          "User-Agent": "BundleMartGh/1.0",
         });
       }
       attempts.push({
-        "X-API-Key": key,
         "x-api-key": key,
-        "User-Agent": "BundleMartGh/1.0",
         "Accept": "application/json",
+        "User-Agent": "BundleMartGh/1.0",
       });
 
       for (const h of attempts) {
