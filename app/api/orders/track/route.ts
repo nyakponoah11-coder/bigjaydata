@@ -55,7 +55,12 @@ export async function GET(request: Request) {
           console.warn("[Track API] DataMart live sync error:", syncErr);
         }
       }
-      return NextResponse.json({ success: true, order, orders: [order] });
+      return NextResponse.json({
+        success: true,
+        order,
+        orders: [order],
+        datamart_details: order.datamart_response || null,
+      });
     }
 
     // Otherwise search by phone number
