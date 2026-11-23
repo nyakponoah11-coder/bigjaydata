@@ -28,6 +28,31 @@ export async function GET(request: Request) {
       payment_status,
       search,
     }, true);
+
+    // Auto-sync: Silently re-verify any recent processing orders so the list is always fresh on load
+    const processingOrders = orders
+      .filter((o) => {
+        const st = (o.delivery_status || o.status || "").toLowerCase().trim();
+        const ageHours = (Date.now() - new Date(o.created_at || Date.now()).getTime()) / (1000 * 60 * 60);
+        return (st === "processing" || st === "pending") && ageHours <= 48;
+      })
+      .slice(0, 5);
+
+    if (processingOrders.length > 0) {
+      await Promise.all(
+        processingOrders.map(async (ord) => {
+          try {
+            const synced = await syncOrderWithDataMart(ord, false);
+            if (synced && synced.delivery_status !== ord.delivery_status) {
+              ord.delivery_status = synced.delivery_status;
+              ord.status = synced.status;
+              await db.updateAgentOrderStatus(ord.reference, synced.delivery_status).catch(() => {});
+            }
+          } catch {}
+        })
+      );
+    }
+
     return NextResponse.json({ success: true, orders }, {
       headers: {
         "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",

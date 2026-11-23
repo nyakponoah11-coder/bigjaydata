@@ -73,6 +73,33 @@ export default function AdminOrdersPage() {
     fetchOrders();
   }, [networkFilter, deliveryFilter, paymentFilter, dateFilter]);
 
+  // Automated background heartbeat: polls DataMart every 30s while processing orders exist
+  useEffect(() => {
+    const hasProcessing = orders.some((o) => {
+      const st = (o.delivery_status || o.status || "").toLowerCase().trim();
+      return st === "processing" || st === "pending";
+    });
+    if (!hasProcessing) return;
+
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch("/api/admin/orders", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sync_all_active: true }),
+        });
+        const data = await res.json();
+        if (data?.success && Array.isArray(data.orders)) {
+          setOrders(data.orders);
+        }
+      } catch (err) {
+        // silent background poll
+      }
+    }, 30000);
+
+    return () => clearInterval(interval);
+  }, [orders]);
+
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     fetchOrders();

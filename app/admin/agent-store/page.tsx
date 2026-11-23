@@ -393,6 +393,21 @@ export default function AdminAgentStorePage() {
     fetchData();
   }, []);
 
+  // Background auto-sync: refresh orders while processing orders exist
+  useEffect(() => {
+    const hasProcessing = orders.some((o: any) => {
+      const st = (o.delivery_status || o.status || "").toLowerCase().trim();
+      return st === "processing" || st === "pending";
+    });
+    if (!hasProcessing) return;
+
+    const interval = setInterval(() => {
+      fetchData();
+    }, 35000);
+
+    return () => clearInterval(interval);
+  }, [orders]);
+
   const handleToggleSystem = async () => {
     try {
       setUpdatingConfig(true);
