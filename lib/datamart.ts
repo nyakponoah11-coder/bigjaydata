@@ -150,8 +150,8 @@ export function getDatamartAuthHeaders(apiKey: string, apiSecret?: string): Reco
  * True telecom carrier delivery lives inside `relatedPurchase.orderStatus` or
  * `relatedPurchase.deliveryStatus`.
  */
-export function normalizeStatus(raw: any): "delivered" | "failed" | "processing" | "refunded" {
-  if (!raw) return "processing";
+export function normalizeStatus(raw: any): "delivered" | "failed" | "processing" | "refunded" | "queued" | "cancelled" {
+  if (!raw) return "queued";
   const s = String(raw).toLowerCase().trim();
 
   // Success / Delivered
@@ -164,16 +164,30 @@ export function normalizeStatus(raw: any): "delivered" | "failed" | "processing"
     return "refunded";
   }
 
-  // Failed
-  if (["failed", "cancelled", "canceled", "rejected", "declined", "error"].includes(s)) {
+  // Cancelled
+  if (["cancelled", "canceled", "void"].includes(s)) {
+    return "cancelled";
+  }
+
+  // Failed / Rejected
+  if (["failed", "rejected", "declined", "error", "unsuccessful", "carrier_rejected", "not_servable"].includes(s)) {
     return "failed";
   }
 
-  // Pending / In flight
+  // Queued / Waiting
+  if (["queued", "waiting", "pending", "in_queue", "order_received", "received"].includes(s)) {
+    return "queued";
+  }
+
+  // Processing / In flight
+  if (["processing", "in_progress", "in-progress", "sending", "delivering", "active"].includes(s)) {
+    return "processing";
+  }
+
   return "processing";
 }
 
-export function extractCarrierStatus(payload: any): "delivered" | "failed" | "processing" | "refunded" {
+export function extractCarrierStatus(payload: any): "delivered" | "failed" | "processing" | "refunded" | "queued" | "cancelled" {
   if (!payload) return "processing";
   const data = payload.data || payload;
 
@@ -221,7 +235,7 @@ export function extractCarrierStatus(payload: any): "delivered" | "failed" | "pr
   return "processing";
 }
 
-export function mapDatamartStatus(s: string | undefined | null): "delivered" | "failed" | "processing" | "refunded" {
+export function mapDatamartStatus(s: string | undefined | null): "delivered" | "failed" | "processing" | "refunded" | "queued" | "cancelled" {
   return normalizeStatus(s);
 }
 
@@ -905,7 +919,7 @@ export async function checkDataMartDeliveryStatus({
   apiKey?: string;
   apiSecret?: string;
   extraReferences?: string[];
-}): Promise<"delivered" | "failed" | "processing" | "refunded" | "not_found"> {
+}): Promise<"delivered" | "failed" | "processing" | "refunded" | "queued" | "cancelled" | "not_found"> {
   const creds = await getDatamartCredentials();
   const activeKey = apiKey || creds.apiKey;
   const activeSecret = apiSecret || creds.apiSecret;
