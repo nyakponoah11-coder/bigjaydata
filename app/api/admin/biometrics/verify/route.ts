@@ -38,8 +38,16 @@ export async function POST(req: Request) {
       );
     }
 
+    function normalizeBase64(str: string): string {
+      return String(str || "").replace(/-/g, "+").replace(/_/g, "/").replace(/=+$/, "").trim();
+    }
+
+    const cleanId = String(credentialId).trim();
     const enrolled = await getEnrolledBiometricCredentials();
-    const matched = enrolled.find((c) => c.id === String(credentialId).trim());
+    const matched = enrolled.find((c) => {
+      if (c.id === cleanId) return true;
+      return normalizeBase64(c.id) === normalizeBase64(cleanId);
+    });
 
     if (!matched) {
       // Record failure

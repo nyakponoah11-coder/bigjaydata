@@ -180,26 +180,23 @@ export default function AdminLayout({ children }: Props) {
     setError("");
     setBiometricLoading(true);
     try {
-      // Pre-check if any biometric passkey is registered
-      const statusRes = await fetch("/api/admin/biometrics/status").catch(() => null);
-      const statusData = statusRes && statusRes.ok ? await statusRes.json().catch(() => null) : null;
-      if (statusData && statusData.hasEnrolled === false) {
-        localStorage.removeItem("bmgh_biometric_device_registered");
-        setDeviceRegistered(false);
-        setError("Face ID / Fingerprint is not yet enrolled on this device. Enter your Admin Password below, then tap 'Activate Face ID / Fingerprint on this device' to scan your face/fingerprint.");
-        setBiometricLoading(false);
-        return;
-      }
-
       const res = await loginWithBiometrics();
       if (res.success) {
         if (res.email) setActiveAdminEmail(res.email);
+        localStorage.setItem("bmgh_biometric_device_registered", "true");
+        setDeviceRegistered(true);
         setIsAuthenticated(true);
       }
     } catch (err: any) {
       const msg = err?.message || "Biometric authentication failed";
-      // Ignore user cancellations
-      if (!msg.toLowerCase().includes("cancel") && !msg.toLowerCase().includes("timed out") && !msg.toLowerCase().includes("abort")) {
+      if (
+        msg.toLowerCase().includes("unrecognized") ||
+        msg.toLowerCase().includes("not supported") ||
+        msg.toLowerCase().includes("unauthorized") ||
+        msg.toLowerCase().includes("no passkey")
+      ) {
+        setError("Face ID / Fingerprint is not yet enrolled on this browser. Enter your Admin Password below, then click 'Activate Face ID / Fingerprint on this device' to scan your face/fingerprint.");
+      } else if (!msg.toLowerCase().includes("cancel") && !msg.toLowerCase().includes("timed out") && !msg.toLowerCase().includes("abort")) {
         setError(msg);
       }
     } finally {
@@ -306,7 +303,7 @@ export default function AdminLayout({ children }: Props) {
             </div>
           )}
 
-          {biometricSupported && deviceRegistered && !biometricDisabled && (
+          {biometricSupported && !biometricDisabled && (
             <div className="mb-5">
               <button
                 type="button"

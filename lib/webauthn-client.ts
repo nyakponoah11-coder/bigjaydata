@@ -32,6 +32,18 @@ export function detectDeviceName(): string {
   return "Biometric Authenticator";
 }
 
+export function getValidRpId(): string {
+  if (typeof window === "undefined") return "localhost";
+  const hostname = window.location.hostname;
+  if (hostname === "localhost" || hostname === "127.0.0.1") return hostname;
+  if (hostname.endsWith(".vercel.app")) return hostname;
+  const parts = hostname.split(".");
+  if (parts.length > 2) {
+    return parts.slice(-2).join(".");
+  }
+  return hostname;
+}
+
 /**
  * Checks if the user's current device and browser support platform biometrics
  * (Touch ID, Face ID, Windows Hello, Android Fingerprint)
@@ -81,32 +93,52 @@ export async function registerBiometricPasskey(
   const userIdBuffer = new TextEncoder().encode(adminEmail);
   const deviceName = customDeviceName || detectDeviceName();
 
+  const validRpId = getValidRpId();
+
   // 2. Request native platform authenticator creation (Apple Face ID / Android Fingerprint / Windows Hello)
-  const credential = (await navigator.credentials.create({
-    publicKey: {
-      challenge: challengeBuffer,
-      rp: {
-        name: "BundleMartGh Admin Portal",
-        id: window.location.hostname,
-      },
-      user: {
-        id: userIdBuffer,
-        name: adminEmail,
-        displayName: `BundleMartGh Admin (${adminEmail})`,
-      },
-      pubKeyCredParams: [
-        { alg: -7, type: "public-key" }, // ES256 (required for Apple Face ID & Android)
-        { alg: -257, type: "public-key" }, // RS256 (Windows Hello)
-      ],
-      authenticatorSelection: {
-        authenticatorAttachment: "platform", // Native built-in sensor (Face ID / Fingerprint)
-        userVerification: "required", // Forces Face ID / Fingerprint scan
-        residentKey: "preferred", // Required by Apple Face ID and Android
-      },
-      timeout: 60000,
-      attestation: "none",
+  let credential: PublicKeyCredential | null = null;
+  const pubKeyConfig = {
+    challenge: challengeBuffer,
+    rp: {
+      name: "BundleMartGh Admin Portal",
+      id: validRpId,
     },
-  })) as PublicKeyCredential | null;
+    user: {
+      id: userIdBuffer,
+      name: adminEmail,
+      displayName: `BundleMartGh Admin (${adminEmail})`,
+    },
+    pubKeyCredParams: [
+      { alg: -7, type: "public-key" as const }, // ES256 (Apple Face ID, Touch ID & Android)
+      { alg: -257, type: "public-key" as const }, // RS256 (Windows Hello)
+      { alg: -8, type: "public-key" as const }, // Ed25519
+      { alg: -37, type: "public-key" as const }, // PS256
+    ],
+    authenticatorSelection: {
+      authenticatorAttachment: "platform" as AuthenticatorAttachment, // Native built-in sensor (Face ID / Fingerprint / Windows Hello)
+      userVerification: "preferred" as UserVerificationRequirement,
+      residentKey: "preferred" as ResidentKeyRequirement,
+    },
+    timeout: 60000,
+    attestation: "none" as AttestationConveyancePreference,
+  };
+
+  try {
+    credential = (await navigator.credentials.create({
+      publicKey: pubKeyConfig,
+    })) as PublicKeyCredential | null;
+  } catch (err: any) {
+    if (validRpId !== window.location.hostname && (err?.name === "SecurityError" || err?.name === "NotSupportedError")) {
+      credential = (await navigator.credentials.create({
+        publicKey: {
+          ...pubKeyConfig,
+          rp: { ...pubKeyConfig.rp, id: window.location.hostname },
+        },
+      })) as PublicKeyCredential | null;
+    } else {
+      throw err;
+    }
+  }
 
   if (!credential) {
     throw new Error("Biometric enrollment was cancelled by device.");
@@ -172,51 +204,59 @@ export async function loginWithBiometrics(): Promise<{
 
   const challengeBuffer = base64urlToBuffer(data.challenge);
 
-  // 2. Build allowCredentials with transports: internal
-  // Check if we have this device's registered credential ID in localStorage
+  // 2. Build allowCredentials without restrictive transport filters so Windows Hello, Touch ID & Android sensors match smoothly
   const localCredId = typeof window !== "undefined" ? localStorage.getItem("bmgh_biometric_last_id") : null;
-  const credMap = new Map<string, { id: string; type: "public-key"; transports: AuthenticatorTransport[] }>();
+  const credSet = new Set<string>();
 
   if (localCredId) {
-    credMap.set(localCredId, {
-      id: localCredId,
-      type: "public-key",
-      transports: ["internal"],
-    });
+    credSet.add(localCredId);
   }
 
   if (Array.isArray(data.allowCredentials)) {
     for (const c of data.allowCredentials) {
-      if (c?.id && !credMap.has(c.id)) {
-        credMap.set(c.id, {
-          id: c.id,
-          type: "public-key",
-          transports: ["internal"],
-        });
+      if (c?.id) {
+        credSet.add(c.id);
       }
     }
   }
 
-  // Supplying explicit internal transport forces the device's native built-in sensor
-  // (Apple Face ID / Touch ID / Android Fingerprint) instead of prompting for generic external passkeys
-  const allowCredentials = credMap.size > 0
-    ? Array.from(credMap.values()).map((c) => ({
-        id: base64urlToBuffer(c.id),
+  const allowCredentials = credSet.size > 0
+    ? Array.from(credSet).map((id) => ({
+        id: base64urlToBuffer(id),
         type: "public-key" as const,
-        transports: ["internal" as AuthenticatorTransport],
       }))
     : undefined;
 
+  const validRpId = getValidRpId();
+
   // 3. Prompt native Apple Face ID / Android Fingerprint / Windows Hello
-  const credential = (await navigator.credentials.get({
-    publicKey: {
-      challenge: challengeBuffer,
-      rpId: window.location.hostname,
-      allowCredentials,
-      userVerification: "required", // Forces native Face ID / Fingerprint scan
-      timeout: 60000,
-    },
-  })) as PublicKeyCredential | null;
+  let credential: PublicKeyCredential | null = null;
+  try {
+    credential = (await navigator.credentials.get({
+      publicKey: {
+        challenge: challengeBuffer,
+        rpId: validRpId,
+        allowCredentials,
+        userVerification: "preferred", // Seamless biometric scan across Windows Hello & mobile
+        timeout: 60000,
+      },
+    })) as PublicKeyCredential | null;
+  } catch (err: any) {
+    // If apex rpId had domain permission issue, fallback to exact window.location.hostname
+    if (validRpId !== window.location.hostname && (err?.name === "SecurityError" || err?.name === "NotSupportedError")) {
+      credential = (await navigator.credentials.get({
+        publicKey: {
+          challenge: challengeBuffer,
+          rpId: window.location.hostname,
+          allowCredentials,
+          userVerification: "preferred",
+          timeout: 60000,
+        },
+      })) as PublicKeyCredential | null;
+    } else {
+      throw err;
+    }
+  }
 
   if (!credential) {
     throw new Error("Biometric sign-in was cancelled or timed out.");

@@ -97,6 +97,9 @@ export async function saveBiometricCredential(cred: BiometricCredential): Promis
       const { error } = await supabaseAdmin.from("settings").upsert({
         id: "admin_biometric_credentials",
         store_name: JSON.stringify(filtered),
+        email: "admin@bundlemartgh.com",
+        support_phone: "+233 55 123 4567",
+        whatsapp_number: "233551234567",
       });
 
       if (error) {
