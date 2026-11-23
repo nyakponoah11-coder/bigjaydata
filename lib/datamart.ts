@@ -1070,8 +1070,6 @@ export async function checkDataMartDeliveryStatus({
 
   const allCandidateKeys = Array.from(new Set([activeKey, ...(await resolveDatamartKeys())])).filter(Boolean);
 
-  let lastDiagnostic: any = { note: "No attempts made" };
-
   // Fast single fetcher with 3.5s timeout
   async function fetchDatamart(url: string): Promise<any | null> {
     for (const key of allCandidateKeys) {
@@ -1146,8 +1144,9 @@ export async function checkDataMartDeliveryStatus({
     }
   }
 
-  // 2. FALLBACK (DATA-EASE METHOD): Match from /transactions feed (multi-page up to 3 pages)
-  for (let page = 1; page <= 3; page++) {
+  // 2. FALLBACK (DATA-EASE METHOD): Match from /transactions feed (multi-page up to 6 pages)
+  let maxPages = 6;
+  for (let page = 1; page <= maxPages; page++) {
     const jsonRecent = await fetchDatamart(`${devBase}/transactions?page=${page}&limit=100`);
     if (jsonRecent) {
       const items =
@@ -1167,6 +1166,8 @@ export async function checkDataMartDeliveryStatus({
           return mapDatamartStatus(status);
         }
       }
+      const reportedTotalPages = Number(jsonRecent?.data?.pagination?.totalPages || jsonRecent?.pagination?.totalPages || 0);
+      if (reportedTotalPages > 0 && reportedTotalPages < maxPages) maxPages = reportedTotalPages;
       if (items.length < 100) break;
     } else {
       break;
@@ -1447,20 +1448,21 @@ export async function syncOrderWithDataMart(order: Order, forceSync = false): Pr
     return order;
   }
 
-  const updatedPayload = {
+  const finalPayload = {
     ...(order.datamart_response || {}),
     is_manual_override: false,
     last_datamart_sync: {
       timestamp: new Date().toISOString(),
       matched_ref: order.reference,
       matched_status: deliveryStatus,
+      diagnostic: lastDataMartDiagnostic,
     },
   };
 
   const updated = await db.updateOrderStatus(
     order.id,
     deliveryStatus,
-    updatedPayload,
+    finalPayload,
     {
       delivery_status: deliveryStatus,
       status: deliveryStatus,
@@ -1473,7 +1475,7 @@ export async function syncOrderWithDataMart(order: Order, forceSync = false): Pr
     ...order,
     delivery_status: deliveryStatus,
     status: deliveryStatus,
-    datamart_response: updatedPayload,
+    datamart_response: finalPayload,
   };
 }
 
