@@ -1024,6 +1024,8 @@ function matchTransaction(t: any, candidateRefs: string[], cleanPhone: string, c
  *
  * @returns {Promise<"delivered"|"failed"|"processing">}
  */
+export let lastDataMartDiagnostic: any = {};
+
 export async function checkDataMartDeliveryStatus({
   reference,
   recipientPhone,
@@ -1044,7 +1046,10 @@ export async function checkDataMartDeliveryStatus({
   const activeSecret = cleanCred(apiSecret || creds.apiSecret);
   const devBase = creds.apiUrl || "https://api.datamartgh.shop/api/developer";
 
+  let lastDiagnostic: any = { note: "No attempts made" };
+
   if (!activeKey) {
+    lastDataMartDiagnostic = { error: "No active DataMart API key found" };
     return "not_found";
   }
 
@@ -1064,6 +1069,8 @@ export async function checkDataMartDeliveryStatus({
   const cleanCap = String(capacity || "").replace(/[^\d.]/g, "");
 
   const allCandidateKeys = Array.from(new Set([activeKey, ...(await resolveDatamartKeys())])).filter(Boolean);
+
+  let lastDiagnostic: any = { note: "No attempts made" };
 
   // Fast single fetcher with 3.5s timeout
   async function fetchDatamart(url: string): Promise<any | null> {
@@ -1093,14 +1100,30 @@ export async function checkDataMartDeliveryStatus({
             cache: "no-store",
             signal: AbortSignal.timeout(3500),
           });
+          const text = await res.text().catch(() => "");
+          lastDiagnostic = {
+            url,
+            status: res.status,
+            statusText: res.statusText,
+            keyPreview: key.length > 8 ? `${key.slice(0, 4)}...${key.slice(-4)}` : key,
+            responseSnippet: text.slice(0, 200),
+          };
           if (res.status === 401 || res.status === 403) {
             continue;
           }
           if (res.ok) {
-            const json = await res.json().catch(() => null);
-            if (json) return json;
+            try {
+              const json = JSON.parse(text);
+              if (json) return json;
+            } catch {}
           }
-        } catch {}
+        } catch (fetchErr: any) {
+          lastDiagnostic = {
+            url,
+            error: fetchErr?.message || "fetch_failed",
+            keyPreview: key.length > 8 ? `${key.slice(0, 4)}...${key.slice(-4)}` : key,
+          };
+        }
       }
     }
     return null;
@@ -1176,6 +1199,7 @@ export async function checkDataMartDeliveryStatus({
     }
   }
 
+  lastDataMartDiagnostic = lastDiagnostic;
   return "not_found";
 }
 
@@ -1395,10 +1419,25 @@ export async function syncOrderWithDataMart(order: Order, forceSync = false): Pr
 
   console.log(`[DataMart 3-Tier Delivery Sync] Order ${order.reference}: Carrier status is "${deliveryStatus}"`);
 
-  // 2. If order was not found on DataMart, DO NOT touch or downgrade existing status!
+  const updatedPayload = {
+    ...(order.datamart_response || {}),
+    is_manual_override: false,
+    last_datamart_sync: {
+      timestamp: new Date().toISOString(),
+      matched_ref: order.reference,
+      matched_status: deliveryStatus,
+      diagnostic: lastDataMartDiagnostic,
+    },
+  };
+
+  // 2. If order was not found on DataMart, record diagnostic and do not change delivery_status
   if (deliveryStatus === "not_found") {
     console.log(`[DataMart Sync] Order ${order.reference} not found on DataMart yet. Keeping current status "${currentStatus}".`);
-    return order;
+    await db.updateOrderStatus(order.id, currentStatus, updatedPayload).catch(() => {});
+    return {
+      ...order,
+      datamart_response: updatedPayload,
+    };
   }
 
   // 3. If an automated background sync sees a non-terminal status for an already delivered order,
