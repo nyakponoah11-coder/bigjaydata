@@ -44,7 +44,7 @@ export async function verifyPaystackTransaction(paystackRef: string): Promise<Pa
         success: false,
         amount: 0,
         reference: paystackRef,
-        message: "Invalid Key Configuration: A Public Key (starts with pk_) was entered in the Secret Key field in Admin Settings. Please paste your Paystack Secret Key (starts with sk_).",
+        message: "Invalid Key Configuration: A Public Key (starts with pk_) was entered in the Secret Key field. Please configure your Paystack Secret Key (starts with sk_).",
       };
     }
 
@@ -56,7 +56,7 @@ export async function verifyPaystackTransaction(paystackRef: string): Promise<Pa
         success: false,
         amount: 0,
         reference: paystackRef,
-        message: "Paystack secret key is not properly configured in Admin Settings.",
+        message: "Paystack secret key is not properly configured in Vercel Environment Variables (PAYSTACK_SECRET_KEY) or Admin Settings.",
       };
     }
 

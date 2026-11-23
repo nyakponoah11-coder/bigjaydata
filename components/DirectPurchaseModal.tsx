@@ -80,9 +80,9 @@ export default function DirectPurchaseModal({
         const rawMsg = data.error || data.message || "Failed to dispatch direct order.";
         let helpfulMsg = rawMsg;
         if (rawMsg.toLowerCase().includes("could not complete your purchase") || rawMsg.toLowerCase().includes("route not found")) {
-          helpfulMsg = "DataMart gateway error: Please verify your DataMart wallet balance and check that your DataMart API Key & Secret are active in Admin Settings.";
-        } else if (rawMsg.toLowerCase().includes("invalid or inactive api key")) {
-          helpfulMsg = "DataMart rejected API Key: Please verify that your active DataMart API key and secret are saved in Admin Settings.";
+          helpfulMsg = "DataMart gateway error: Please verify your DataMart wallet balance and check that your DataMart API Key is active.";
+        } else if (rawMsg.toLowerCase().includes("invalid or inactive api key") || rawMsg.toLowerCase().includes("rejected api key")) {
+          helpfulMsg = "DataMart rejected API Key: DataMart returned 'Invalid or inactive API key'. Please ensure the key matches your active DataMart dashboard and that your latest Vercel deployment with DATAMART_API_KEY is active.";
         }
         throw new Error(helpfulMsg);
       }

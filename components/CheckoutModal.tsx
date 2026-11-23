@@ -305,7 +305,7 @@ export default function CheckoutModal({ product, isOpen, onClose, settings }: Pr
     const isMock = !publicKey || publicKey.includes("placeholder") || publicKey.includes("sample");
 
     if (isMock) {
-      setError("Payment gateway is not configured. Please add your live Paystack keys in Admin Settings.");
+      setError("Payment gateway is not configured. Please add your live Paystack keys in Vercel Environment Variables (NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY) or Admin Settings.");
       setLoading(false);
       return;
     }

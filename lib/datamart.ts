@@ -24,38 +24,49 @@ const REVOKED_DATAMART_KEYS = new Set([
   "dm_test_sample_key",
 ]);
 
+export function cleanCred(val?: string | null): string {
+  if (!val) return "";
+  return val.trim().replace(/^["']|["']$/g, "").replace(/[\r\n\t]/g, "").trim();
+}
+
 export function isRevokedDatamartKey(key?: string | null): boolean {
   if (!key) return true;
-  const clean = key.trim();
+  const clean = cleanCred(key);
   if (REVOKED_DATAMART_KEYS.has(clean) || clean.toLowerCase().includes("jollof")) {
     return true;
   }
   return false;
 }
 
-export async function getDatamartCredentials(): Promise<{ apiKey: string; apiSecret: string; apiUrl: string }> {
+export async function getDatamartCredentials(): Promise<{ apiKey: string; apiSecret: string; apiUrl: string; isFromEnv: boolean }> {
   // Read all common Vercel environment variable aliases
-  const envKey = (
+  const envKey = cleanCred(
     process.env.DATAMART_API_KEY ||
     process.env.DATAMART_KEY ||
+    process.env.DATA_MART_API_KEY ||
+    process.env.DATA_MART_KEY ||
     process.env.DATAMART_TOKEN ||
+    process.env.DATAMART_API_TOKEN ||
     process.env.X_API_KEY ||
     ""
-  ).trim();
-  const envSecret = (
+  );
+  const envSecret = cleanCred(
     process.env.DATAMART_API_SECRET ||
     process.env.DATAMART_SECRET ||
+    process.env.DATA_MART_API_SECRET ||
+    process.env.DATA_MART_SECRET ||
     process.env.DATAMART_SECRET_KEY ||
     process.env.DATAMART_SECOND_SECRET ||
     process.env.X_API_SECRET ||
     ""
-  ).trim();
-  const envUrl = (
+  );
+  const envUrl = cleanCred(
     process.env.DATAMART_API_URL ||
     process.env.DATAMART_URL ||
+    process.env.DATA_MART_URL ||
     process.env.DATAMART_BASE_URL ||
     ""
-  ).trim();
+  );
 
   let dbKey = "";
   let dbSecret = "";
@@ -63,15 +74,17 @@ export async function getDatamartCredentials(): Promise<{ apiKey: string; apiSec
 
   try {
     const settings = await db.getSettings();
-    dbKey = (settings?.datamart_api_key || "").trim();
-    dbSecret = ((settings as any)?.datamart_api_secret || "").trim();
-    dbUrl = (settings?.datamart_api_url || "").trim();
+    dbKey = cleanCred(settings?.datamart_api_key || "");
+    dbSecret = cleanCred((settings as any)?.datamart_api_secret || "");
+    dbUrl = cleanCred(settings?.datamart_api_url || "");
   } catch {}
 
   // Active key selection: Prioritize Vercel environment variables, else DB settings
   let apiKey = "";
+  let isFromEnv = false;
   if (envKey && !isRevokedDatamartKey(envKey)) {
     apiKey = envKey;
+    isFromEnv = true;
   } else if (dbKey && !isRevokedDatamartKey(dbKey)) {
     apiKey = dbKey;
   }
@@ -82,21 +95,24 @@ export async function getDatamartCredentials(): Promise<{ apiKey: string; apiSec
   // Base URL: Strictly DataMart developer API
   const apiUrl = resolveDeveloperBaseUrl(envUrl || dbUrl || "https://api.datamartgh.shop/api/developer");
 
-  return { apiKey, apiSecret, apiUrl };
+  return { apiKey, apiSecret, apiUrl, isFromEnv };
 }
 
 export async function resolveDatamartKeys(): Promise<string[]> {
-  const envKey = (
+  const envKey = cleanCred(
     process.env.DATAMART_API_KEY ||
     process.env.DATAMART_KEY ||
+    process.env.DATA_MART_API_KEY ||
+    process.env.DATA_MART_KEY ||
     process.env.DATAMART_TOKEN ||
+    process.env.DATAMART_API_TOKEN ||
     process.env.X_API_KEY ||
     ""
-  ).trim();
+  );
   let dbKey = "";
   try {
     const settings = await db.getSettings();
-    dbKey = (settings?.datamart_api_key || "").trim();
+    dbKey = cleanCred(settings?.datamart_api_key || "");
   } catch {}
 
   const keys: string[] = [];
@@ -506,12 +522,13 @@ export async function sendDataMartDelivery(params: DataMartDeliveryParams): Prom
                 lastErrorResponse = responseData;
 
                 if (response.status === 401 || response.status === 403) {
-                  lastErrorMessage = "DataMart API Key or Secret rejected (HTTP " + response.status + ": " + (responseData?.message || "Invalid or inactive API key") + "). Please update your DataMart Key & Secret in Admin Settings or Vercel.";
+                  const keyMask = currentKey.length > 8 ? `${currentKey.slice(0, 4)}...${currentKey.slice(-4)}` : "masked";
+                  lastErrorMessage = `DataMart API rejected key [${keyMask}]: ${responseData?.message || "Invalid or inactive API key"}. Please check DATAMART_API_KEY in your Vercel Environment Variables.`;
                   break;
                 }
 
                 if (response.status === 404 || responseData?.message === "Route not found") {
-                  lastErrorMessage = "DataMart API endpoint error (Route not found). Please ensure your DataMart Developer API Key and Secret are active in Admin Settings.";
+                  lastErrorMessage = "DataMart API endpoint error (Route not found). Please verify the DataMart Developer API endpoint.";
                   break;
                 }
 
@@ -720,17 +737,27 @@ export async function testDataMartConnection(
 }> {
   try {
     const settings = await db.getSettings();
+    const creds = await getDatamartCredentials();
     const keys = await resolveDatamartKeys();
-    const apiKey = (customApiKey || keys[0] || "").trim();
-    const apiSecret = (customApiSecret || process.env.DATAMART_API_SECRET || (settings as any).datamart_api_secret || "").trim();
-    const devBaseUrl = resolveDeveloperBaseUrl(customApiUrl || settings.datamart_api_url || process.env.DATAMART_API_URL);
-    const purchaseUrl = resolvePurchaseUrl(customApiUrl || settings.datamart_api_url || process.env.DATAMART_API_URL);
+    const apiKey = cleanCred(customApiKey || keys[0] || creds.apiKey || "");
+    const apiSecret = cleanCred(customApiSecret || creds.apiSecret || (settings as any).datamart_api_secret || "");
+    const devBaseUrl = resolveDeveloperBaseUrl(customApiUrl || creds.apiUrl || settings.datamart_api_url);
+    const purchaseUrl = resolvePurchaseUrl(customApiUrl || creds.apiUrl || settings.datamart_api_url);
+
+    const isFromEnv = Boolean(
+      process.env.DATAMART_API_KEY ||
+      process.env.DATAMART_KEY ||
+      process.env.DATA_MART_API_KEY
+    );
+    const keySource = customApiKey ? "custom_input" : isFromEnv ? "vercel_environment" : "database";
+    const keyPreview = apiKey.length > 8 ? `${apiKey.slice(0, 4)}...${apiKey.slice(-4)}` : (apiKey ? `${apiKey.slice(0, 2)}***` : "None");
 
     if (!apiKey) {
       return {
         success: false,
-        message: "No DataMart API Key provided. Please enter your API key.",
+        message: "No DataMart API Key provided. Set DATAMART_API_KEY in your Vercel Environment Variables.",
         status: 400,
+        details: { keySource },
       };
     }
 
@@ -768,9 +795,9 @@ export async function testDataMartConnection(
       if (balRes.status === 401 || balRes.status === 403 || balData?.message?.toLowerCase().includes("invalid") || balData?.message?.toLowerCase().includes("inactive")) {
         return {
           success: false,
-          message: balData?.message || "DataMart rejected API key: Invalid or inactive API key.",
+          message: `DataMart rejected API key (${keyPreview} from ${keySource === "vercel_environment" ? "Vercel Environment" : keySource}): ${balData?.message || "Invalid or inactive API key"}. Please check that the key matches your active DataMart dashboard and that you redeployed Vercel.`,
           status: balRes.status,
-          details: balData,
+          details: { ...balData, keySource, keyPreview },
         };
       }
     } catch (balErr) {
@@ -782,10 +809,12 @@ export async function testDataMartConnection(
 
     return {
       success: true,
-      message: `Connected to DataMart${accountOwner}! Reseller Wallet Balance: GHS ${bal !== undefined ? (Number(bal) ? Number(bal).toFixed(2) : bal) : "Active"}`,
+      message: `Connected to DataMart${accountOwner}! [Key Source: ${keySource === "vercel_environment" ? "Vercel Environment" : keySource} (${keyPreview})] Reseller Wallet Balance: GHS ${bal !== undefined ? (Number(bal) ? Number(bal).toFixed(2) : bal) : "Active"}`,
       status: 200,
       details: {
         balance: balData,
+        keySource,
+        keyPreview,
         apiUrl: devBaseUrl,
         purchaseUrl,
       },
