@@ -77,7 +77,7 @@ export async function getDatamartCredentials(): Promise<{ apiKey: string; apiSec
     dbKey = cleanCred(settings?.datamart_api_key || "");
     dbSecret = cleanCred((settings as any)?.datamart_api_secret || "");
     dbUrl = cleanCred(settings?.datamart_api_url || "");
-  } catch {}
+  } catch { }
 
   // Active key selection: Prioritize Vercel environment variables, else DB settings
   let apiKey = "";
@@ -113,7 +113,7 @@ export async function resolveDatamartKeys(): Promise<string[]> {
   try {
     const settings = await db.getSettings();
     dbKey = cleanCred(settings?.datamart_api_key || "");
-  } catch {}
+  } catch { }
 
   const keys: string[] = [];
   if (envKey && !isRevokedDatamartKey(envKey) && !keys.includes(envKey)) {
@@ -1073,28 +1073,59 @@ export async function checkDataMartDeliveryStatus({
   const diagnosticAttempts: any[] = [];
   let balanceCheck: any = null;
 
-  // 0. Quick auth/balance pre-flight check so we know with 100% certainty if key is active
+  // 0. Quick auth/balance pre-flight check across endpoints & auth headers
+  const probeUrls = [
+    `${devBase}/balance`,
+    "https://api.datamartgh.shop/api/balance",
+    "https://api.datamartgh.shop/api/user/balance",
+    "https://api.datamartgh.shop/api/developer/balance",
+  ];
+  const balanceProbes: any[] = [];
+  let successfulBase = devBase;
+  let successfulAuthHeader = "X-API-Key";
+
+  const headerOptions: Record<string, string>[] = [
+    { "X-API-Key": activeKey, "Accept": "application/json" },
+    { "Authorization": `Bearer ${activeKey}`, "Accept": "application/json" },
+  ];
+
   try {
-    for (const key of allCandidateKeys) {
-      const bRes = await fetch(`${devBase}/balance`, {
-        headers: { "X-API-Key": key, "Accept": "application/json" },
-        cache: "no-store",
-        signal: AbortSignal.timeout(3000),
-      });
-      const bText = await bRes.text().catch(() => "");
-      let bJson: any = null;
-      try { bJson = JSON.parse(bText); } catch {}
-      balanceCheck = {
-        keyPreview: key.length > 8 ? `${key.slice(0, 4)}...${key.slice(-4)}` : key,
-        keySource: creds.isFromEnv ? "vercel_environment (process.env.DATAMART_API_KEY)" : "supabase_database (site_settings.datamart_api_key)",
-        status: bRes.status,
-        data: bJson || bText.slice(0, 100),
-      };
-      if (bRes.ok) break;
+    for (const u of probeUrls) {
+      for (const h of headerOptions) {
+        try {
+          const bRes = await fetch(u, {
+            headers: h,
+            cache: "no-store",
+            signal: AbortSignal.timeout(2500),
+          });
+          const bText = await bRes.text().catch(() => "");
+          balanceProbes.push({
+            url: u,
+            auth: h["Authorization"] ? "Bearer" : "X-API-Key",
+            status: bRes.status,
+            snippet: bText.slice(0, 120),
+          });
+          if (bRes.ok) {
+            successfulBase = u.replace(/\/balance$/, "");
+            successfulAuthHeader = h["Authorization"] ? "Bearer" : "X-API-Key";
+            break;
+          }
+        } catch (e: any) {
+          balanceProbes.push({ url: u, error: e?.message });
+        }
+      }
+      if (balanceProbes.some(p => p.status === 200)) break;
     }
   } catch (bErr: any) {
-    balanceCheck = { error: bErr?.message };
+    balanceProbes.push({ error: bErr?.message });
   }
+
+  balanceCheck = {
+    keyPreview: activeKey.length > 8 ? `${activeKey.slice(0, 4)}...${activeKey.slice(-4)}` : activeKey,
+    keyLength: activeKey.length,
+    keySource: creds.isFromEnv ? "vercel_environment (process.env.DATAMART_API_KEY)" : "supabase_database (site_settings.datamart_api_key)",
+    probes: balanceProbes,
+  };
 
   // Fast single fetcher with 3.5s timeout
   async function fetchDatamart(url: string): Promise<any | null> {
@@ -1144,7 +1175,7 @@ export async function checkDataMartDeliveryStatus({
             try {
               const json = JSON.parse(text);
               if (json) return json;
-            } catch {}
+            } catch { }
           }
         } catch (fetchErr: any) {
           const diag = {
@@ -1353,7 +1384,7 @@ export async function syncMultipleOrdersWithDataMart(orders: Order[]): Promise<{
               is_manual_override: false,
               last_datamart_sync: { timestamp: new Date().toISOString(), matched_status: carrierStatus },
             }, { delivery_status: carrierStatus, status: carrierStatus });
-            await db.updateAgentOrderStatus(ord.reference, carrierStatus).catch(() => {});
+            await db.updateAgentOrderStatus(ord.reference, carrierStatus).catch(() => { });
             updatedCount++;
             if (updated) ord = updated;
           }
@@ -1415,7 +1446,7 @@ export async function syncOrderWithDataMart(order: Order, forceSync = false): Pr
       if (full?.datamart_response) {
         order = { ...order, datamart_response: full.datamart_response };
       }
-    } catch {}
+    } catch { }
   }
 
   const { apiKey, apiSecret } = await getDatamartCredentials();
@@ -1474,7 +1505,7 @@ export async function syncOrderWithDataMart(order: Order, forceSync = false): Pr
   // 2. If order was not found on DataMart, record diagnostic and do not change delivery_status
   if (deliveryStatus === "not_found") {
     console.log(`[DataMart Sync] Order ${order.reference} not found on DataMart yet. Keeping current status "${currentStatus}".`);
-    await db.updateOrderStatus(order.id, currentStatus, updatedPayload).catch(() => {});
+    await db.updateOrderStatus(order.id, currentStatus, updatedPayload).catch(() => { });
     return {
       ...order,
       datamart_response: updatedPayload,
@@ -1508,7 +1539,7 @@ export async function syncOrderWithDataMart(order: Order, forceSync = false): Pr
       status: deliveryStatus,
     }
   );
-  await db.updateAgentOrderStatus(order.reference, deliveryStatus).catch(() => {});
+  await db.updateAgentOrderStatus(order.reference, deliveryStatus).catch(() => { });
   if (updated) return updated;
 
   return {
@@ -1603,7 +1634,7 @@ function generateLiveTrackerFallback(settings?: any): DeliveryTrackerData {
   // Dynamic batch tracking number that increments across the day
   const dayOfYear = Math.floor(
     (now.getTime() - new Date(Date.UTC(now.getUTCFullYear(), 0, 0)).getTime()) /
-      86400000
+    86400000
   );
   const trackingId = `${dayOfYear}${String(hourSeed).padStart(2, "0")}${String(
     Math.floor(minuteSeed / 4)
@@ -1676,10 +1707,10 @@ export async function fetchDeliveryTracker(): Promise<DeliveryTrackerData> {
     const [trackerRes, statusRes] = await Promise.all([
       canQueryDeveloperTracker
         ? fetch(trackerUrl, {
-            headers: getDatamartAuthHeaders(apiKey, apiSecret),
-            signal: AbortSignal.timeout(5000),
-            cache: "no-store",
-          }).catch(() => null)
+          headers: getDatamartAuthHeaders(apiKey, apiSecret),
+          signal: AbortSignal.timeout(5000),
+          cache: "no-store",
+        }).catch(() => null)
         : Promise.resolve(null),
       fetch("https://api.datamartgh.shop/api/v1/data/delivery-status", {
         headers: { Accept: "application/json" },
@@ -1772,7 +1803,7 @@ export async function fetchDeliveryTracker(): Promise<DeliveryTrackerData> {
             };
           }
         }
-      } catch (_) {}
+      } catch (_) { }
     }
 
     if (payload?.data && (payload.data.stats || payload.data.fastLane || payload.data.lastDelivered)) {
