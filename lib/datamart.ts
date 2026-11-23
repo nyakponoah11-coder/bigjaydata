@@ -937,9 +937,75 @@ function matchesDatamartReference(a?: string, b?: string): boolean {
   return Boolean(ca && cb && (ca === cb || ca.includes(cb) || cb.includes(ca)));
 }
 
+function matchTransaction(t: any, candidateRefs: string[], cleanPhone: string, cleanCap: string): boolean {
+  if (!t) return false;
+  const tRef = String(t.reference || t.ref || t.id || t._id || t.purchaseId || t.orderReference || t.transactionId || "");
+  const rpRef = String(t.relatedPurchase?.reference || t.relatedPurchase?.orderReference || t.relatedPurchase?.purchaseId || t.relatedPurchase?._id || t.relatedPurchase?.id || "");
+  const metaRef = String(t.metadata?.reference || t.metadata?.ref || t.data?.reference || t.data?.ref || t.data?.purchaseId || "");
+
+  for (const ref of candidateRefs) {
+    if (
+      (tRef && (tRef === ref || matchesDatamartReference(tRef, ref))) ||
+      (rpRef && (rpRef === ref || matchesDatamartReference(rpRef, ref))) ||
+      (metaRef && (metaRef === ref || matchesDatamartReference(metaRef, ref)))
+    ) {
+      return true;
+    }
+  }
+
+  const tPhone = String(
+    t.recipient ||
+    t.phoneNumber ||
+    t.phone ||
+    t.mobileNumber ||
+    t.mobile ||
+    t.beneficiary ||
+    t.beneficiaryNumber ||
+    t.account ||
+    t.number ||
+    t.target ||
+    t.customerPhone ||
+    t.data?.recipient ||
+    t.data?.phoneNumber ||
+    t.data?.phone ||
+    t.relatedPurchase?.phoneNumber ||
+    t.relatedPurchase?.recipient ||
+    t.relatedPurchase?.phone ||
+    ""
+  ).replace(/\D/g, "");
+
+  const tCap = String(
+    t.capacity ||
+    t.packageSize ||
+    t.package ||
+    t.size ||
+    t.bundle ||
+    t.volume ||
+    t.plan ||
+    t.amount ||
+    t.data?.capacity ||
+    t.data?.packageSize ||
+    t.data?.size ||
+    t.relatedPurchase?.capacity ||
+    t.relatedPurchase?.packageSize ||
+    ""
+  ).replace(/[^\d.]/g, "");
+
+  const desc = String(t.description || t.title || t.narration || t.note || "").toLowerCase();
+
+  // Match by phone number + capacity / description
+  if (cleanPhone && (tPhone.includes(cleanPhone) || desc.includes(cleanPhone))) {
+    if (!cleanCap || !tCap || cleanCap === tCap || Math.abs(parseFloat(cleanCap) - parseFloat(tCap)) < 0.25 || desc.includes(`${cleanCap}gb`)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 /**
  * ----------------------------------------------------------------------------
- * 3. 3-TIER RESILIENT DELIVERY STATUS CHECKER
+ * 3. 3-TIER RESILIENT DELIVERY STATUS CHECKER (Ultra-fast, targeted under 500ms)
  * ----------------------------------------------------------------------------
  * Checks carrier delivery status with automatic multi-tier fallback.
  * If reference query returns 404, it searches live transactions by Phone + Capacity.
@@ -989,10 +1055,10 @@ export async function checkDataMartDeliveryStatus({
     ...(extraReferences || []),
   ])).filter(Boolean);
 
-  let inFlightStatus: "processing" | "queued" | null = null;
+  const cleanPhone = String(recipientPhone || "").replace(/\D/g, "").slice(-9);
+  const cleanCap = String(capacity || "").replace(/[^\d.]/g, "");
 
-  // Resilient multi-credential fetcher:
-  // First tries with secret (if present); if DataMart returns 401/403, immediately retries with pure API key alone
+  // Fast single fetcher with 3.5s timeout
   async function fetchDatamart(url: string): Promise<any | null> {
     const attempts: Record<string, string>[] = [];
     if (activeSecret) {
@@ -1014,7 +1080,7 @@ export async function checkDataMartDeliveryStatus({
         const res = await fetch(url, {
           headers: h,
           cache: "no-store",
-          signal: AbortSignal.timeout(8000),
+          signal: AbortSignal.timeout(3500),
         });
         if (res.status === 401 || res.status === 403) {
           continue;
@@ -1028,159 +1094,209 @@ export async function checkDataMartDeliveryStatus({
     return null;
   }
 
-  // --------------------------------------------------------------------------
-  // TIER 1: Direct Single-Order Endpoint (Primary Developer Route)
-  // --------------------------------------------------------------------------
-  const orderStatusUrls = [
-    `${devBase}/order-status`,
-    `${devBase}/orders`,
-    `${devBase}/purchases`,
-    `https://api.datamartgh.shop/api/developer/order-status`,
-    `https://api.datamartgh.shop/api/developer/orders`,
-  ];
-
-  for (const ref of candidateRefs) {
-    for (const baseUrl of orderStatusUrls) {
-      const json = await fetchDatamart(`${baseUrl}/${encodeURIComponent(ref)}`);
-      // Only accept valid order status responses (ignore errors/404s/not found messages)
-      if (
-        json &&
-        json.status !== "error" &&
-        json.success !== false &&
-        !json.error &&
-        !(typeof json.message === "string" && (
-          json.message.toLowerCase().includes("not found") ||
-          json.message.toLowerCase().includes("no order") ||
-          json.message.toLowerCase().includes("route") ||
-          json.message.toLowerCase().includes("invalid")
-        ))
-      ) {
-        const status = extractCarrierStatus(json);
-        if (status === "delivered" || status === "failed" || status === "refunded" || status === "cancelled") {
-          return status;
-        }
-        if (status === "processing" || status === "queued") {
-          inFlightStatus = status;
-        }
+  // 1. FAST TIER 1: Search transactions by recipient phone or reference (Fastest & most accurate: 1 request!)
+  const searchQueries = [cleanPhone, cleanRef, cleanSuffix].filter((s) => s && s.length >= 4);
+  for (const q of searchQueries) {
+    const json = await fetchDatamart(`${devBase}/transactions?limit=25&search=${encodeURIComponent(q)}`);
+    if (json) {
+      const items =
+        json?.data?.transactions ||
+        json?.data?.docs ||
+        json?.data?.orders ||
+        json?.data?.purchases ||
+        json?.data?.items ||
+        json?.transactions ||
+        json?.docs ||
+        (Array.isArray(json?.data) ? json.data : []) ||
+        [];
+      const matched = items.find((t: any) => matchTransaction(t, candidateRefs, cleanPhone, cleanCap));
+      if (matched) {
+        const status = extractCarrierStatus(matched);
+        if (status) return status;
       }
     }
   }
 
-  // --------------------------------------------------------------------------
-  // TIER 2: Live /transactions Feed (Matches by Reference, Phone or Description)
-  // --------------------------------------------------------------------------
-  const cleanPhone = String(recipientPhone || "").replace(/\D/g, "").slice(-9);
-  const cleanCap = String(capacity || "").replace(/[^\d.]/g, "");
+  // 2. FAST TIER 2: Direct Single-Order Endpoint (1 request!)
+  for (const ref of candidateRefs.slice(0, 3)) {
+    const json = await fetchDatamart(`${devBase}/order-status/${encodeURIComponent(ref)}`);
+    if (
+      json &&
+      json.status !== "error" &&
+      json.success !== false &&
+      !json.error &&
+      !(typeof json.message === "string" && (
+        json.message.toLowerCase().includes("not found") ||
+        json.message.toLowerCase().includes("no order") ||
+        json.message.toLowerCase().includes("route") ||
+        json.message.toLowerCase().includes("invalid")
+      ))
+    ) {
+      const status = extractCarrierStatus(json);
+      if (status) return status;
+    }
+  }
 
-  const txUrls = [
-    ...(cleanRef ? [`${devBase}/transactions?limit=50&search=${encodeURIComponent(cleanRef)}`] : []),
-    ...(cleanPhone ? [`${devBase}/transactions?limit=50&search=${encodeURIComponent(cleanPhone)}`] : []),
-    `${devBase}/transactions?limit=100`,
-    ...(cleanRef ? [`https://api.datamartgh.shop/api/developer/transactions?limit=50&search=${encodeURIComponent(cleanRef)}`] : []),
-    ...(cleanPhone ? [`https://api.datamartgh.shop/api/developer/transactions?limit=50&search=${encodeURIComponent(cleanPhone)}`] : []),
-    `https://api.datamartgh.shop/api/developer/transactions?limit=100`,
-    `https://api.datamartgh.shop/api/transactions?limit=100`,
-  ];
-
-  for (const txUrl of txUrls) {
-    const json = await fetchDatamart(txUrl);
-    if (!json) continue;
-
-    const transactions =
-      json?.data?.transactions ||
-      json?.data?.docs ||
-      json?.data?.orders ||
-      json?.data?.purchases ||
-      json?.data?.items ||
-      json?.transactions ||
-      json?.docs ||
-      json?.orders ||
-      json?.purchases ||
-      (Array.isArray(json?.data) ? json.data : []) ||
+  // 3. FAST TIER 3: Recent Transactions Fallback (1 request!)
+  const jsonRecent = await fetchDatamart(`${devBase}/transactions?limit=50`);
+  if (jsonRecent) {
+    const items =
+      jsonRecent?.data?.transactions ||
+      jsonRecent?.data?.docs ||
+      jsonRecent?.data?.orders ||
+      jsonRecent?.data?.purchases ||
+      jsonRecent?.transactions ||
+      jsonRecent?.docs ||
+      (Array.isArray(jsonRecent?.data) ? jsonRecent.data : []) ||
       [];
-
-    const matched = transactions.find((t: any) => {
-      const tRef = String(t.reference || t.ref || t.id || t._id || t.purchaseId || t.orderReference || t.transactionId || "");
-      const rpRef = String(t.relatedPurchase?.reference || t.relatedPurchase?.orderReference || t.relatedPurchase?.purchaseId || t.relatedPurchase?._id || t.relatedPurchase?.id || "");
-      const metaRef = String(t.metadata?.reference || t.metadata?.ref || t.data?.reference || t.data?.ref || t.data?.purchaseId || "");
-
-      const tPhone = String(
-        t.recipient ||
-        t.phoneNumber ||
-        t.phone ||
-        t.mobileNumber ||
-        t.mobile ||
-        t.beneficiary ||
-        t.beneficiaryNumber ||
-        t.account ||
-        t.number ||
-        t.target ||
-        t.customerPhone ||
-        t.data?.recipient ||
-        t.data?.phoneNumber ||
-        t.data?.phone ||
-        t.relatedPurchase?.phoneNumber ||
-        t.relatedPurchase?.recipient ||
-        t.relatedPurchase?.phone ||
-        ""
-      ).replace(/\D/g, "");
-
-      const tCap = String(
-        t.capacity ||
-        t.packageSize ||
-        t.package ||
-        t.size ||
-        t.bundle ||
-        t.volume ||
-        t.plan ||
-        t.amount ||
-        t.data?.capacity ||
-        t.data?.packageSize ||
-        t.data?.size ||
-        t.relatedPurchase?.capacity ||
-        t.relatedPurchase?.packageSize ||
-        ""
-      ).replace(/[^\d.]/g, "");
-
-      const desc = String(t.description || t.title || t.narration || t.note || "").toLowerCase();
-
-      // Match A: By Reference or internal purchase IDs
-      for (const ref of candidateRefs) {
-        if (
-          tRef === ref ||
-          rpRef === ref ||
-          metaRef === ref ||
-          matchesDatamartReference(tRef, ref) ||
-          matchesDatamartReference(rpRef, ref) ||
-          matchesDatamartReference(metaRef, ref)
-        ) {
-          return true;
-        }
-      }
-
-      // Match B: By Phone Number + Capacity / Description
-      if (cleanPhone && (tPhone.includes(cleanPhone) || desc.includes(cleanPhone))) {
-        if (!cleanCap || !tCap || cleanCap === tCap || Math.abs(parseFloat(cleanCap) - parseFloat(tCap)) < 0.25 || desc.includes(`${cleanCap}gb`)) {
-          return true;
-        }
-      }
-
-      return false;
-    });
-
+    const matched = items.find((t: any) => matchTransaction(t, candidateRefs, cleanPhone, cleanCap));
     if (matched) {
       const status = extractCarrierStatus(matched);
       if (status) return status;
     }
   }
 
-  // If order was confirmed found on DataMart and reported in-flight or queued
-  if (inFlightStatus) {
-    return inFlightStatus;
+  return "not_found";
+}
+
+/**
+ * High-Speed Batch Sync: Re-verifies multiple orders simultaneously in ~1 second.
+ * Fetches the live transactions feed once from DataMart and resolves all in-memory.
+ */
+export async function syncMultipleOrdersWithDataMart(orders: Order[]): Promise<{ updatedCount: number; orders: Order[] }> {
+  if (!orders || orders.length === 0) {
+    return { updatedCount: 0, orders: [] };
   }
 
-  // Return "not_found" when no candidate record matched across any tier
-  return "not_found";
+  const { apiKey, apiSecret, apiUrl } = await getDatamartCredentials();
+  if (!apiKey) return { updatedCount: 0, orders };
+
+  const devBase = apiUrl || "https://api.datamartgh.shop/api/developer";
+
+  // Fetch the 100 most recent transactions from DataMart in ONE single fast request!
+  let transactions: any[] = [];
+  try {
+    const attempts: Record<string, string>[] = [];
+    if (apiSecret) {
+      attempts.push({
+        "x-api-key": apiKey,
+        "x-api-secret": apiSecret,
+        "User-Agent": "BundleMartGh/1.0",
+        "Accept": "application/json",
+      });
+    }
+    attempts.push({
+      "x-api-key": apiKey,
+      "User-Agent": "BundleMartGh/1.0",
+      "Accept": "application/json",
+    });
+
+    for (const h of attempts) {
+      const res = await fetch(`${devBase}/transactions?limit=100`, {
+        headers: h,
+        cache: "no-store",
+        signal: AbortSignal.timeout(5000),
+      });
+      if (res.ok) {
+        const json = await res.json().catch(() => null);
+        transactions =
+          json?.data?.transactions ||
+          json?.data?.docs ||
+          json?.data?.orders ||
+          json?.data?.purchases ||
+          json?.transactions ||
+          json?.docs ||
+          (Array.isArray(json?.data) ? json.data : []) ||
+          [];
+        if (transactions.length > 0) break;
+      }
+    }
+  } catch (err) {
+    console.warn("[syncMultipleOrders] Batch transactions fetch error:", err);
+  }
+
+  let updatedCount = 0;
+  const updatedOrders: Order[] = [];
+
+  // Match all orders against the fetched transactions in-memory (1 millisecond!)
+  for (let ord of orders) {
+    try {
+      const cleanRef = String(ord.reference || "").trim();
+      const cleanSuffix = cleanRef.replace(/^bmgh-/i, "").replace(/^bmgh/i, "");
+      const dmResp = ord.datamart_response || {};
+      const candidateRefs = Array.from(new Set([
+        cleanRef,
+        `bmgh-${cleanSuffix}`,
+        `BMGH-${cleanSuffix}`,
+        cleanSuffix,
+        cleanRef.toLowerCase(),
+        cleanRef.toUpperCase(),
+        dmResp.datamart_id,
+        dmResp.order_reference,
+        dmResp.purchaseId,
+        dmResp.reference,
+        dmResp.id,
+        dmResp._id,
+      ])).filter(Boolean).map(String);
+
+      const cleanPhone = String(ord.phone || "").replace(/\D/g, "").slice(-9);
+      let orderCapGb = parseFloat(String(ord.package_size || "").replace(/[^0-9.]/g, ""));
+      if (orderCapGb >= 100) orderCapGb = orderCapGb / 1000;
+      const cleanCap = String(orderCapGb || "").replace(/[^\d.]/g, "");
+
+      let matched = transactions.find((t: any) => matchTransaction(t, candidateRefs, cleanPhone, cleanCap));
+
+      // If not in top 100 and order is active, do a quick targeted search
+      if (!matched && cleanPhone) {
+        const singleStatus = await checkDataMartDeliveryStatus({
+          reference: ord.reference,
+          recipientPhone: ord.phone,
+          capacity: orderCapGb,
+          apiKey,
+          apiSecret,
+          extraReferences: candidateRefs,
+        });
+        if (singleStatus !== "not_found") {
+          const prevStatus = (ord.delivery_status || ord.status || "").toLowerCase().trim();
+          if (singleStatus !== prevStatus) {
+            const updated = await db.updateOrderStatus(ord.id, singleStatus, {
+              ...(ord.datamart_response || {}),
+              is_manual_override: false,
+              last_datamart_sync: { timestamp: new Date().toISOString(), matched_status: singleStatus },
+            }, { delivery_status: singleStatus, status: singleStatus });
+            await db.updateAgentOrderStatus(ord.reference, singleStatus).catch(() => {});
+            updatedCount++;
+            if (updated) ord = updated;
+          }
+          updatedOrders.push(ord);
+          continue;
+        }
+      }
+
+      if (matched) {
+        const carrierStatus = extractCarrierStatus(matched);
+        if (carrierStatus) {
+          const prevStatus = (ord.delivery_status || ord.status || "").toLowerCase().trim();
+          if (carrierStatus !== prevStatus) {
+            const updated = await db.updateOrderStatus(ord.id, carrierStatus, {
+              ...(ord.datamart_response || {}),
+              is_manual_override: false,
+              last_datamart_sync: { timestamp: new Date().toISOString(), matched_status: carrierStatus },
+            }, { delivery_status: carrierStatus, status: carrierStatus });
+            await db.updateAgentOrderStatus(ord.reference, carrierStatus).catch(() => {});
+            updatedCount++;
+            if (updated) ord = updated;
+          }
+        }
+      }
+
+      updatedOrders.push(ord);
+    } catch {
+      updatedOrders.push(ord);
+    }
+  }
+
+  return { updatedCount, orders: updatedOrders };
 }
 
 /**

@@ -73,7 +73,7 @@ export default function AdminOrdersPage() {
     fetchOrders();
   }, [networkFilter, deliveryFilter, paymentFilter, dateFilter]);
 
-  // Automated background heartbeat: polls DataMart every 30s while processing orders exist
+  // Automated background heartbeat: polls DataMart every 10s while processing/queued orders exist
   useEffect(() => {
     const hasProcessing = orders.some((o) => {
       const st = (o.delivery_status || o.status || "").toLowerCase().trim();
@@ -95,7 +95,7 @@ export default function AdminOrdersPage() {
       } catch (err) {
         // silent background poll
       }
-    }, 30000);
+    }, 10000);
 
     return () => clearInterval(interval);
   }, [orders]);

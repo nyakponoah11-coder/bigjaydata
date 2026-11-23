@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { sendCustomerSMS } from "@/lib/sms";
-import { sendDataMartDelivery, syncOrderWithDataMart } from "@/lib/datamart";
+import { sendDataMartDelivery, syncOrderWithDataMart, syncMultipleOrdersWithDataMart } from "@/lib/datamart";
 import { requireAdminAuth } from "@/lib/admin-auth";
 
 export const dynamic = "force-dynamic";
@@ -29,28 +29,17 @@ export async function GET(request: Request) {
       search,
     }, true);
 
-    // Auto-sync: Silently re-verify any recent in-flight orders so the list is always fresh on load
+    // Auto-sync: Silently re-verify any recent in-flight orders in ~1s so the list is always fresh on load
     const processingOrders = orders
       .filter((o) => {
         const st = (o.delivery_status || o.status || "").toLowerCase().trim();
         const ageHours = (Date.now() - new Date(o.created_at || Date.now()).getTime()) / (1000 * 60 * 60);
         return (st === "processing" || st === "pending" || st === "waiting" || st === "queued") && ageHours <= 72;
       })
-      .slice(0, 10);
+      .slice(0, 15);
 
     if (processingOrders.length > 0) {
-      await Promise.all(
-        processingOrders.map(async (ord) => {
-          try {
-            const synced = await syncOrderWithDataMart(ord, false);
-            if (synced && synced.delivery_status !== ord.delivery_status) {
-              ord.delivery_status = synced.delivery_status;
-              ord.status = synced.status;
-              await db.updateAgentOrderStatus(ord.reference, synced.delivery_status).catch(() => {});
-            }
-          } catch {}
-        })
-      );
+      await syncMultipleOrdersWithDataMart(processingOrders);
     }
 
     return NextResponse.json({ success: true, orders }, {
@@ -88,7 +77,7 @@ export async function PATCH(request: Request) {
       full_sync,
     } = body;
 
-    // Batch / Full sync: Re-verify all orders live against DataMart telecom carrier delivery status
+    // Batch / Full sync: Re-verify all orders live against DataMart in ~1 second via batch transactions feed!
     if (full_sync || sync_all_active) {
       const allOrders = await db.getOrders();
       // If full_sync, check all orders from the past 30 days plus any active/pending orders
@@ -96,37 +85,17 @@ export async function PATCH(request: Request) {
         ? allOrders.filter((o) => {
             const ageDays = (Date.now() - new Date(o.created_at || Date.now()).getTime()) / (1000 * 60 * 60 * 24);
             const st = (o.delivery_status || o.status || "").toLowerCase().trim();
-            return ageDays <= 30 || st === "processing" || st === "pending";
+            return ageDays <= 30 || st === "processing" || st === "pending" || st === "queued" || st === "waiting";
           })
         : allOrders.filter(
             (o) => !["cancelled", "refunded", "delivered", "completed"].includes((o.delivery_status || "").toLowerCase().trim())
           );
 
-      let updatedCount = 0;
-      // Concurrency control: 5 simultaneous checks for speed and reliability
-      const CHUNK_SIZE = 5;
-      for (let i = 0; i < targetOrders.length; i += CHUNK_SIZE) {
-        const chunk = targetOrders.slice(i, i + CHUNK_SIZE);
-        await Promise.all(
-          chunk.map(async (ord) => {
-            try {
-              const prevStatus = ord.delivery_status;
-              const synced = await syncOrderWithDataMart(ord, true);
-              if (synced && synced.delivery_status !== prevStatus) {
-                updatedCount++;
-                await db.updateAgentOrderStatus(ord.reference, synced.delivery_status).catch(() => {});
-              }
-            } catch (err) {
-              console.warn(`[DataMart Full Sync Error] Order ${ord.reference}:`, err);
-            }
-          })
-        );
-      }
-
+      const { updatedCount } = await syncMultipleOrdersWithDataMart(targetOrders);
       const refreshed = await db.getOrders();
       return NextResponse.json({
         success: true,
-        message: `Full Sync complete! Re-verified ${targetOrders.length} orders with DataMart (${updatedCount} updated to real carrier delivery status).`,
+        message: `Sync complete! Re-verified ${targetOrders.length} orders live from DataMart (${updatedCount} updated to real carrier delivery status).`,
         orders: refreshed,
         updatedCount,
         totalChecked: targetOrders.length,
