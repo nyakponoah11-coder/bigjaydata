@@ -190,86 +190,61 @@ export function normalizeStatus(raw: any): "delivered" | "failed" | "processing"
 export function extractCarrierStatus(payload: any): "delivered" | "failed" | "processing" | "refunded" | "queued" | "cancelled" | null {
   if (!payload) return null;
   const data = payload.data || payload;
-  const rp = (data.relatedPurchase && typeof data.relatedPurchase === "object") ? data.relatedPurchase : {};
+  const rp = (data.relatedPurchase && typeof data.relatedPurchase === "object") ? data.relatedPurchase : null;
 
-  // Collect all possible status strings from every known DataMart field
-  const statusCandidates = [
-    rp.orderStatus,
-    rp.deliveryStatus,
-    rp.delivery_status,
-    rp.status,
-    rp.carrierStatus,
-    rp.fulfillmentStatus,
-    rp.telecomStatus,
-    data.orderStatus,
-    data.order_status,
-    data.deliveryStatus,
-    data.delivery_status,
-    data.carrierStatus,
-    data.telecomStatus,
-    data.fulfillmentStatus,
-    data.status,
-    payload.delivery_status,
-    payload.deliveryStatus,
-    payload.orderStatus,
-    payload.status,
-  ]
-    .filter(Boolean)
-    .map((s) => String(s).toLowerCase().trim());
-
-  if (statusCandidates.length === 0) {
-    return null;
+  // PRIORITY 1: relatedPurchase (the telecom carrier delivery object in DataMart)
+  // In DataMart, true bundle delivery status lives inside relatedPurchase
+  if (rp) {
+    const rpStatus =
+      rp.orderStatus ||
+      rp.deliveryStatus ||
+      rp.delivery_status ||
+      rp.telecomStatus ||
+      rp.fulfillmentStatus ||
+      rp.carrierStatus ||
+      rp.status;
+    if (rpStatus) {
+      return normalizeStatus(rpStatus);
+    }
   }
 
-  // 1. Any definitive completed / delivered signal from DataMart wins immediately
-  const isDelivered = statusCandidates.some((s) =>
-    ["delivered", "completed", "successful", "success", "fulfilled", "done"].includes(s)
-  );
-  if (isDelivered) {
-    return "delivered";
+  // PRIORITY 2: Explicit delivery / order status fields on the record
+  const explicitDelivery =
+    data.deliveryStatus ||
+    data.delivery_status ||
+    data.orderStatus ||
+    data.order_status ||
+    data.telecomStatus ||
+    data.carrierStatus ||
+    data.fulfillmentStatus ||
+    payload.deliveryStatus ||
+    payload.delivery_status ||
+    payload.orderStatus ||
+    payload.order_status;
+
+  if (explicitDelivery) {
+    return normalizeStatus(explicitDelivery);
   }
 
-  // 2. Refunded / Reversed
-  const isRefunded = statusCandidates.some((s) =>
-    ["refunded", "refund", "reversed", "reversal"].includes(s)
-  );
-  if (isRefunded) {
-    return "refunded";
+  // PRIORITY 3: Top-level status
+  // CRITICAL: In DataMart's transactions list, top-level `status: "completed"` refers to
+  // the WALLET DEBIT transaction, NOT the telecom delivery!
+  // If an entry represents an order (has recipient/phone/capacity) but delivery is still in flight,
+  // it must not be falsely treated as delivered!
+  const topStatus = data.status || payload.status;
+  if (topStatus) {
+    const s = String(topStatus).toLowerCase().trim();
+    if (["completed", "successful", "success"].includes(s)) {
+      // If this record has transaction fields (gateway: "wallet", type: "debit", or amount) without explicit deliveryStatus,
+      // it means the wallet payment was completed, but delivery is still processing.
+      if (data.gateway === "wallet" || data.type === "debit" || data.recipient || data.phoneNumber) {
+        return "processing";
+      }
+    }
+    return normalizeStatus(topStatus);
   }
 
-  // 3. Failed / Rejected
-  const isFailed = statusCandidates.some((s) =>
-    ["failed", "rejected", "declined", "error", "unsuccessful", "carrier_rejected", "not_servable"].includes(s)
-  );
-  if (isFailed) {
-    return "failed";
-  }
-
-  // 4. Cancelled
-  const isCancelled = statusCandidates.some((s) =>
-    ["cancelled", "canceled", "aborted", "terminated"].includes(s)
-  );
-  if (isCancelled) {
-    return "cancelled";
-  }
-
-  // 5. Processing / In-progress
-  const isProcessing = statusCandidates.some((s) =>
-    ["processing", "in_progress", "in-progress", "sending", "delivering", "active"].includes(s)
-  );
-  if (isProcessing) {
-    return "processing";
-  }
-
-  // 6. Queued / Waiting / Pending
-  const isQueued = statusCandidates.some((s) =>
-    ["queued", "waiting", "pending", "in_queue", "order_received", "received"].includes(s)
-  );
-  if (isQueued) {
-    return "queued";
-  }
-
-  return "processing";
+  return null;
 }
 
 export function mapDatamartStatus(s: string | undefined | null): "delivered" | "failed" | "processing" | "refunded" | "queued" | "cancelled" {
@@ -1396,9 +1371,10 @@ export async function syncOrderWithDataMart(order: Order, forceSync = false): Pr
     return order;
   }
 
-  // 3. Never downgrade an already delivered order to processing
-  if (currentStatus === "delivered" && deliveryStatus !== "delivered") {
-    console.log(`[DataMart Sync] Order ${order.reference} is already delivered. Refusing to downgrade to processing.`);
+  // 3. If an automated background sync sees a non-terminal status for an already delivered order,
+  // only preserve if previously confirmed delivered by carrier (allow explicit forceSync to correct falsely marked orders)
+  if (!forceSync && currentStatus === "delivered" && deliveryStatus === "processing" && order.datamart_response?.last_datamart_sync?.matched_status === "delivered") {
+    console.log(`[DataMart Sync] Order ${order.reference} confirmed delivered in previous sync. Preserving status.`);
     return order;
   }
 

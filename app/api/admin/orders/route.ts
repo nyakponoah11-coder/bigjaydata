@@ -80,15 +80,14 @@ export async function PATCH(request: Request) {
     // Batch / Full sync: Re-verify all orders live against DataMart in ~1 second via batch transactions feed!
     if (full_sync || sync_all_active) {
       const allOrders = await db.getOrders();
-      // If full_sync, check all orders from the past 30 days plus any active/pending orders
+      // If full_sync, re-verify all orders from the past 14 days to correct any false statuses
       const targetOrders = full_sync
         ? allOrders.filter((o) => {
             const ageDays = (Date.now() - new Date(o.created_at || Date.now()).getTime()) / (1000 * 60 * 60 * 24);
-            const st = (o.delivery_status || o.status || "").toLowerCase().trim();
-            return ageDays <= 30 || st === "processing" || st === "pending" || st === "queued" || st === "waiting";
+            return ageDays <= 14;
           })
         : allOrders.filter(
-            (o) => !["cancelled", "refunded", "delivered", "completed"].includes((o.delivery_status || "").toLowerCase().trim())
+            (o) => !["cancelled", "refunded"].includes((o.delivery_status || "").toLowerCase().trim())
           );
 
       const { updatedCount } = await syncMultipleOrdersWithDataMart(targetOrders);
