@@ -116,11 +116,11 @@ export async function resolveDatamartKeys(): Promise<string[]> {
   } catch { }
 
   const keys: string[] = [];
-  if (envKey && !isRevokedDatamartKey(envKey) && !keys.includes(envKey)) {
-    keys.push(envKey);
-  }
   if (dbKey && !isRevokedDatamartKey(dbKey) && !keys.includes(dbKey)) {
     keys.push(dbKey);
+  }
+  if (envKey && !isRevokedDatamartKey(envKey) && !keys.includes(envKey)) {
+    keys.push(envKey);
   }
   return keys;
 }
