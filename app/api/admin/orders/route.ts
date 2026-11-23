@@ -36,13 +36,24 @@ export async function GET(request: Request) {
         const ageHours = (Date.now() - new Date(o.created_at || Date.now()).getTime()) / (1000 * 60 * 60);
         return (st === "processing" || st === "pending" || st === "waiting" || st === "queued") && ageHours <= 72;
       })
-      .slice(0, 15);
+      .slice(0, 50);
 
+    let finalOrders = orders;
     if (processingOrders.length > 0) {
-      await syncMultipleOrdersWithDataMart(processingOrders);
+      const { updatedCount } = await syncMultipleOrdersWithDataMart(processingOrders);
+      if (updatedCount > 0) {
+        finalOrders = await db.getOrders({
+          date,
+          network,
+          status,
+          delivery_status,
+          payment_status,
+          search,
+        }, true);
+      }
     }
 
-    return NextResponse.json({ success: true, orders }, {
+    return NextResponse.json({ success: true, orders: finalOrders }, {
       headers: {
         "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
         "Pragma": "no-cache",
