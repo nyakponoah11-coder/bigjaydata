@@ -1070,6 +1070,31 @@ export async function checkDataMartDeliveryStatus({
 
   const allCandidateKeys = Array.from(new Set([activeKey, ...(await resolveDatamartKeys())])).filter(Boolean);
 
+  const diagnosticAttempts: any[] = [];
+  let balanceCheck: any = null;
+
+  // 0. Quick auth/balance pre-flight check so we know with 100% certainty if key is active
+  try {
+    for (const key of allCandidateKeys) {
+      const bRes = await fetch(`${devBase}/balance`, {
+        headers: { "X-API-Key": key, "Accept": "application/json" },
+        cache: "no-store",
+        signal: AbortSignal.timeout(3000),
+      });
+      const bText = await bRes.text().catch(() => "");
+      let bJson: any = null;
+      try { bJson = JSON.parse(bText); } catch {}
+      balanceCheck = {
+        keyPreview: key.length > 8 ? `${key.slice(0, 4)}...${key.slice(-4)}` : key,
+        status: bRes.status,
+        data: bJson || bText.slice(0, 100),
+      };
+      if (bRes.ok) break;
+    }
+  } catch (bErr: any) {
+    balanceCheck = { error: bErr?.message };
+  }
+
   // Fast single fetcher with 3.5s timeout
   async function fetchDatamart(url: string): Promise<any | null> {
     for (const key of allCandidateKeys) {
@@ -1102,13 +1127,15 @@ export async function checkDataMartDeliveryStatus({
             signal: AbortSignal.timeout(3500),
           });
           const text = await res.text().catch(() => "");
-          lastDiagnostic = {
+          const diag = {
             url,
             status: res.status,
             statusText: res.statusText,
             keyPreview: key.length > 8 ? `${key.slice(0, 4)}...${key.slice(-4)}` : key,
             responseSnippet: text.slice(0, 200),
           };
+          lastDiagnostic = diag;
+          diagnosticAttempts.push(diag);
           if (res.status === 401 || res.status === 403) {
             continue;
           }
@@ -1119,11 +1146,13 @@ export async function checkDataMartDeliveryStatus({
             } catch {}
           }
         } catch (fetchErr: any) {
-          lastDiagnostic = {
+          const diag = {
             url,
             error: fetchErr?.message || "fetch_failed",
             keyPreview: key.length > 8 ? `${key.slice(0, 4)}...${key.slice(-4)}` : key,
           };
+          lastDiagnostic = diag;
+          diagnosticAttempts.push(diag);
         }
       }
     }
@@ -1203,7 +1232,11 @@ export async function checkDataMartDeliveryStatus({
     }
   }
 
-  lastDataMartDiagnostic = lastDiagnostic;
+  lastDataMartDiagnostic = {
+    balanceCheck,
+    lastDiagnostic,
+    attempts: diagnosticAttempts.slice(0, 10),
+  };
   return "not_found";
 }
 
