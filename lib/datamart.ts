@@ -1038,13 +1038,16 @@ export async function checkDataMartDeliveryStatus({
       const attempts: Record<string, string>[] = [];
       if (activeSecret) {
         attempts.push({
+          "X-API-Key": key,
           "x-api-key": key,
           "x-api-secret": activeSecret,
+          "X-API-Secret": activeSecret,
           "User-Agent": "BundleMartGh/1.0",
           "Accept": "application/json",
         });
       }
       attempts.push({
+        "X-API-Key": key,
         "x-api-key": key,
         "User-Agent": "BundleMartGh/1.0",
         "Accept": "application/json",
@@ -1070,51 +1073,25 @@ export async function checkDataMartDeliveryStatus({
     return null;
   }
 
-  // 1. FAST TIER 1: Search transactions by recipient phone or reference (Fastest & most accurate: 1 request!)
-  const searchQueries = [cleanPhone, cleanRef, cleanSuffix].filter((s) => s && s.length >= 4);
-  for (const q of searchQueries) {
-    const json = await fetchDatamart(`${devBase}/transactions?limit=25&search=${encodeURIComponent(q)}`);
-    if (json) {
-      const items =
-        json?.data?.transactions ||
-        json?.data?.docs ||
-        json?.data?.orders ||
-        json?.data?.purchases ||
-        json?.data?.items ||
-        json?.transactions ||
-        json?.docs ||
-        (Array.isArray(json?.data) ? json.data : []) ||
-        [];
-      const matched = items.find((t: any) => matchTransaction(t, candidateRefs, cleanPhone, cleanCap));
-      if (matched) {
-        const status = extractCarrierStatus(matched);
-        if (status) return status;
+  // 1. PRIMARY (DATA-EASE METHOD): Direct /order-status/:ref endpoint
+  for (const ref of candidateRefs) {
+    if (!ref) continue;
+    const json = await fetchDatamart(`${devBase}/order-status/${encodeURIComponent(ref)}`);
+    if (json && (json.status === "success" || json.success === true)) {
+      const rawStatus =
+        json.data?.orderStatus ||
+        json.data?.deliveryStatus ||
+        json.data?.status ||
+        json.orderStatus ||
+        json.status;
+      if (rawStatus) {
+        return mapDatamartStatus(rawStatus);
       }
     }
   }
 
-  // 2. FAST TIER 2: Direct Single-Order Endpoint (1 request!)
-  for (const ref of candidateRefs.slice(0, 3)) {
-    const json = await fetchDatamart(`${devBase}/order-status/${encodeURIComponent(ref)}`);
-    if (
-      json &&
-      json.status !== "error" &&
-      json.success !== false &&
-      !json.error &&
-      !(typeof json.message === "string" && (
-        json.message.toLowerCase().includes("not found") ||
-        json.message.toLowerCase().includes("no order") ||
-        json.message.toLowerCase().includes("route") ||
-        json.message.toLowerCase().includes("invalid")
-      ))
-    ) {
-      const status = extractCarrierStatus(json);
-      if (status) return status;
-    }
-  }
-
-  // 3. FAST TIER 3: Recent Transactions Fallback (1 request!)
-  const jsonRecent = await fetchDatamart(`${devBase}/transactions?limit=50`);
+  // 2. FALLBACK (DATA-EASE METHOD): Match from /transactions feed
+  const jsonRecent = await fetchDatamart(`${devBase}/transactions?limit=100`);
   if (jsonRecent) {
     const items =
       jsonRecent?.data?.transactions ||
@@ -1127,8 +1104,36 @@ export async function checkDataMartDeliveryStatus({
       [];
     const matched = items.find((t: any) => matchTransaction(t, candidateRefs, cleanPhone, cleanCap));
     if (matched) {
-      const status = extractCarrierStatus(matched);
-      if (status) return status;
+      const rp = (matched.relatedPurchase && typeof matched.relatedPurchase === "object") ? matched.relatedPurchase : {};
+      const status = rp.orderStatus || rp.deliveryStatus || rp.status || matched.orderStatus || matched.deliveryStatus || matched.status;
+      if (status) {
+        return mapDatamartStatus(status);
+      }
+    }
+  }
+
+  // 3. TARGETED SEARCH FALLBACK
+  const searchQueries = [cleanPhone, cleanRef, cleanSuffix].filter((s) => s && s.length >= 4);
+  for (const q of searchQueries) {
+    const json = await fetchDatamart(`${devBase}/transactions?limit=25&search=${encodeURIComponent(q)}`);
+    if (json) {
+      const items =
+        json?.data?.transactions ||
+        json?.data?.docs ||
+        json?.data?.orders ||
+        json?.data?.purchases ||
+        json?.transactions ||
+        json?.docs ||
+        (Array.isArray(json?.data) ? json.data : []) ||
+        [];
+      const matched = items.find((t: any) => matchTransaction(t, candidateRefs, cleanPhone, cleanCap));
+      if (matched) {
+        const rp = (matched.relatedPurchase && typeof matched.relatedPurchase === "object") ? matched.relatedPurchase : {};
+        const status = rp.orderStatus || rp.deliveryStatus || rp.status || matched.orderStatus || matched.deliveryStatus || matched.status;
+        if (status) {
+          return mapDatamartStatus(status);
+        }
+      }
     }
   }
 
@@ -1158,13 +1163,16 @@ export async function syncMultipleOrdersWithDataMart(orders: Order[]): Promise<{
       const attempts: Record<string, string>[] = [];
       if (apiSecret) {
         attempts.push({
+          "X-API-Key": key,
           "x-api-key": key,
           "x-api-secret": apiSecret,
+          "X-API-Secret": apiSecret,
           "User-Agent": "BundleMartGh/1.0",
           "Accept": "application/json",
         });
       }
       attempts.push({
+        "X-API-Key": key,
         "x-api-key": key,
         "User-Agent": "BundleMartGh/1.0",
         "Accept": "application/json",
@@ -1230,7 +1238,9 @@ export async function syncMultipleOrdersWithDataMart(orders: Order[]): Promise<{
       let matched = transactions.find((t: any) => matchTransaction(t, candidateRefs, cleanPhone, cleanCap));
 
       if (matched) {
-        const carrierStatus = extractCarrierStatus(matched);
+        const rp = (matched.relatedPurchase && typeof matched.relatedPurchase === "object") ? matched.relatedPurchase : {};
+        const rawStatus = rp.orderStatus || rp.deliveryStatus || rp.status || matched.orderStatus || matched.deliveryStatus || matched.status;
+        const carrierStatus = (rawStatus ? mapDatamartStatus(rawStatus) : null) || extractCarrierStatus(matched);
         if (carrierStatus) {
           const prevStatus = (ord.delivery_status || ord.status || "").toLowerCase().trim();
           if (carrierStatus !== prevStatus) {
