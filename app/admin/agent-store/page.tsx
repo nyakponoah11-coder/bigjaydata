@@ -397,7 +397,7 @@ export default function AdminAgentStorePage() {
   useEffect(() => {
     const hasProcessing = orders.some((o: any) => {
       const st = (o.delivery_status || o.status || "").toLowerCase().trim();
-      return st === "processing" || st === "pending";
+      return st === "processing" || st === "pending" || st === "queued" || st === "waiting";
     });
     if (!hasProcessing) return;
 

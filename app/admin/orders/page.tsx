@@ -77,7 +77,7 @@ export default function AdminOrdersPage() {
   useEffect(() => {
     const hasProcessing = orders.some((o) => {
       const st = (o.delivery_status || o.status || "").toLowerCase().trim();
-      return st === "processing" || st === "pending";
+      return st === "processing" || st === "pending" || st === "queued" || st === "waiting";
     });
     if (!hasProcessing) return;
 
