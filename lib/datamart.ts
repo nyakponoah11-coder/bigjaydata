@@ -187,8 +187,8 @@ export function normalizeStatus(raw: any): "delivered" | "failed" | "processing"
   return "processing";
 }
 
-export function extractCarrierStatus(payload: any): "delivered" | "failed" | "processing" | "refunded" | "queued" | "cancelled" {
-  if (!payload) return "processing";
+export function extractCarrierStatus(payload: any): "delivered" | "failed" | "processing" | "refunded" | "queued" | "cancelled" | null {
+  if (!payload) return null;
   const data = payload.data || payload;
   const rp = (data.relatedPurchase && typeof data.relatedPurchase === "object") ? data.relatedPurchase : {};
 
@@ -216,6 +216,10 @@ export function extractCarrierStatus(payload: any): "delivered" | "failed" | "pr
   ]
     .filter(Boolean)
     .map((s) => String(s).toLowerCase().trim());
+
+  if (statusCandidates.length === 0) {
+    return null;
+  }
 
   // 1. Any definitive completed / delivered signal from DataMart wins immediately
   const isDelivered = statusCandidates.some((s) =>
@@ -546,7 +550,18 @@ export async function sendDataMartDelivery(params: DataMartDeliveryParams): Prom
                     if (mapped === "delivered") returnedStatus = "delivered";
                     else if (mapped === "failed") returnedStatus = "failed";
                     else if (mapped === "refunded") returnedStatus = "refunded";
+                    else if (mapped === "cancelled") returnedStatus = "cancelled";
+                    else if (mapped === "queued") returnedStatus = "queued";
                     else returnedStatus = "processing";
+                  } else if (
+                    responseData?.status === "completed" ||
+                    responseData?.status === "success" ||
+                    dataPayload?.status === "completed" ||
+                    dataPayload?.status === "success" ||
+                    dataPayload?.deliveryStatus === "completed" ||
+                    dataPayload?.orderStatus === "completed"
+                  ) {
+                    returnedStatus = "delivered";
                   }
 
                   const successResult: DataMartResult = {
@@ -1018,14 +1033,28 @@ export async function checkDataMartDeliveryStatus({
   // --------------------------------------------------------------------------
   const orderStatusUrls = [
     `${devBase}/order-status`,
+    `${devBase}/orders`,
+    `${devBase}/purchases`,
     `https://api.datamartgh.shop/api/developer/order-status`,
-    `https://api.datamartgh.shop/api/order-status`,
+    `https://api.datamartgh.shop/api/developer/orders`,
   ];
 
   for (const ref of candidateRefs) {
     for (const baseUrl of orderStatusUrls) {
       const json = await fetchDatamart(`${baseUrl}/${encodeURIComponent(ref)}`);
-      if (json && (json.success !== false || json.status === "success" || json.data)) {
+      // Only accept valid order status responses (ignore errors/404s/not found messages)
+      if (
+        json &&
+        json.status !== "error" &&
+        json.success !== false &&
+        !json.error &&
+        !(typeof json.message === "string" && (
+          json.message.toLowerCase().includes("not found") ||
+          json.message.toLowerCase().includes("no order") ||
+          json.message.toLowerCase().includes("route") ||
+          json.message.toLowerCase().includes("invalid")
+        ))
+      ) {
         const status = extractCarrierStatus(json);
         if (status === "delivered" || status === "failed" || status === "refunded" || status === "cancelled") {
           return status;
@@ -1038,11 +1067,17 @@ export async function checkDataMartDeliveryStatus({
   }
 
   // --------------------------------------------------------------------------
-  // TIER 2: Cross-Reference via Live /transactions Feed
-  // (Matches by Reference OR by Phone Number + GB Capacity)
+  // TIER 2: Live /transactions Feed (Matches by Reference, Phone or Description)
   // --------------------------------------------------------------------------
+  const cleanPhone = String(recipientPhone || "").replace(/\D/g, "").slice(-9);
+  const cleanCap = String(capacity || "").replace(/[^\d.]/g, "");
+
   const txUrls = [
+    ...(cleanRef ? [`${devBase}/transactions?limit=50&search=${encodeURIComponent(cleanRef)}`] : []),
+    ...(cleanPhone ? [`${devBase}/transactions?limit=50&search=${encodeURIComponent(cleanPhone)}`] : []),
     `${devBase}/transactions?limit=100`,
+    ...(cleanRef ? [`https://api.datamartgh.shop/api/developer/transactions?limit=50&search=${encodeURIComponent(cleanRef)}`] : []),
+    ...(cleanPhone ? [`https://api.datamartgh.shop/api/developer/transactions?limit=50&search=${encodeURIComponent(cleanPhone)}`] : []),
     `https://api.datamartgh.shop/api/developer/transactions?limit=100`,
     `https://api.datamartgh.shop/api/transactions?limit=100`,
   ];
@@ -1053,30 +1088,79 @@ export async function checkDataMartDeliveryStatus({
 
     const transactions =
       json?.data?.transactions ||
+      json?.data?.docs ||
+      json?.data?.orders ||
+      json?.data?.purchases ||
+      json?.data?.items ||
       json?.transactions ||
+      json?.docs ||
+      json?.orders ||
+      json?.purchases ||
       (Array.isArray(json?.data) ? json.data : []) ||
       [];
 
-    // Normalize phone to last 9 digits (handles 054..., 23354..., +23354...)
-    const cleanPhone = String(recipientPhone || "").replace(/\D/g, "").slice(-9);
-    const cleanCap = String(capacity || "").replace(/[^\d.]/g, "");
-
     const matched = transactions.find((t: any) => {
-      const tRef = String(t.reference || t.ref || t.id || t._id || t.purchaseId || "");
-      const rpRef = String(t.relatedPurchase?.reference || t.relatedPurchase?.orderReference || t.relatedPurchase?.purchaseId || "");
-      const tPhone = String(t.recipient || t.phoneNumber || t.phone || t.relatedPurchase?.phoneNumber || t.relatedPurchase?.recipient || "").replace(/\D/g, "");
-      const tCap = String(t.capacity || t.packageSize || t.relatedPurchase?.capacity || "").replace(/[^\d.]/g, "");
+      const tRef = String(t.reference || t.ref || t.id || t._id || t.purchaseId || t.orderReference || t.transactionId || "");
+      const rpRef = String(t.relatedPurchase?.reference || t.relatedPurchase?.orderReference || t.relatedPurchase?.purchaseId || t.relatedPurchase?._id || t.relatedPurchase?.id || "");
+      const metaRef = String(t.metadata?.reference || t.metadata?.ref || t.data?.reference || t.data?.ref || t.data?.purchaseId || "");
+
+      const tPhone = String(
+        t.recipient ||
+        t.phoneNumber ||
+        t.phone ||
+        t.mobileNumber ||
+        t.mobile ||
+        t.beneficiary ||
+        t.beneficiaryNumber ||
+        t.account ||
+        t.number ||
+        t.target ||
+        t.customerPhone ||
+        t.data?.recipient ||
+        t.data?.phoneNumber ||
+        t.data?.phone ||
+        t.relatedPurchase?.phoneNumber ||
+        t.relatedPurchase?.recipient ||
+        t.relatedPurchase?.phone ||
+        ""
+      ).replace(/\D/g, "");
+
+      const tCap = String(
+        t.capacity ||
+        t.packageSize ||
+        t.package ||
+        t.size ||
+        t.bundle ||
+        t.volume ||
+        t.plan ||
+        t.amount ||
+        t.data?.capacity ||
+        t.data?.packageSize ||
+        t.data?.size ||
+        t.relatedPurchase?.capacity ||
+        t.relatedPurchase?.packageSize ||
+        ""
+      ).replace(/[^\d.]/g, "");
+
+      const desc = String(t.description || t.title || t.narration || t.note || "").toLowerCase();
 
       // Match A: By Reference or internal purchase IDs
       for (const ref of candidateRefs) {
-        if (tRef === ref || rpRef === ref || matchesDatamartReference(tRef, ref) || matchesDatamartReference(rpRef, ref)) {
+        if (
+          tRef === ref ||
+          rpRef === ref ||
+          metaRef === ref ||
+          matchesDatamartReference(tRef, ref) ||
+          matchesDatamartReference(rpRef, ref) ||
+          matchesDatamartReference(metaRef, ref)
+        ) {
           return true;
         }
       }
 
-      // Match B: By Phone Number + Capacity
-      if (cleanPhone && tPhone.includes(cleanPhone)) {
-        if (!cleanCap || !tCap || cleanCap === tCap || Math.abs(parseFloat(cleanCap) - parseFloat(tCap)) < 0.25) {
+      // Match B: By Phone Number + Capacity / Description
+      if (cleanPhone && (tPhone.includes(cleanPhone) || desc.includes(cleanPhone))) {
+        if (!cleanCap || !tCap || cleanCap === tCap || Math.abs(parseFloat(cleanCap) - parseFloat(tCap)) < 0.25 || desc.includes(`${cleanCap}gb`)) {
           return true;
         }
       }
@@ -1085,7 +1169,8 @@ export async function checkDataMartDeliveryStatus({
     });
 
     if (matched) {
-      return extractCarrierStatus(matched);
+      const status = extractCarrierStatus(matched);
+      if (status) return status;
     }
   }
 
@@ -1125,8 +1210,8 @@ export async function checkDataMartOrderStatus(orderReference: string): Promise<
 export async function syncOrderWithDataMart(order: Order, forceSync = false): Promise<Order> {
   if (!order) return order;
 
-  // 1. If admin manually set this order's status, NEVER overwrite it with an automated sync
-  if (order.datamart_response?.is_manual_override) {
+  // 1. If admin manually set this order's status, preserve it during automated sync, but allow explicit manual sync
+  if (!forceSync && order.datamart_response?.is_manual_override) {
     console.log(`[DataMart Sync] Order ${order.reference} has admin manual override. Preserving status.`);
     return order;
   }
@@ -1203,6 +1288,7 @@ export async function syncOrderWithDataMart(order: Order, forceSync = false): Pr
 
   const updatedPayload = {
     ...(order.datamart_response || {}),
+    is_manual_override: false,
     last_datamart_sync: {
       timestamp: new Date().toISOString(),
       matched_ref: order.reference,
