@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import AdminLayout from "@/components/AdminLayout";
 import DeliveryTrackerCard from "@/components/DeliveryTrackerCard";
 import DirectPurchaseModal from "@/components/DirectPurchaseModal";
@@ -43,6 +43,7 @@ export default function AdminOrdersPage() {
 
   // Direct Buy Modal
   const [isDirectBuyOpen, setIsDirectBuyOpen] = useState(false);
+  const syncingRef = useRef<Set<string>>(new Set());
 
   const fetchOrders = async () => {
     setLoading(true);
@@ -60,7 +61,36 @@ export default function AdminOrdersPage() {
       });
       const data = await res.json();
       if (data.success) {
-        setOrders(data.orders || []);
+        const loadedOrders = data.orders || [];
+        setOrders(loadedOrders);
+
+        // Exact Data-Ease pattern: Auto-sync any paid-but-not-delivered orders with DataMart
+        for (const o of loadedOrders) {
+          const st = (o.delivery_status || o.status || "").toLowerCase().trim();
+          if (
+            (o.payment_status === "paid" || o.payment_status === "completed") &&
+            !["delivered", "failed", "refunded", "cancelled"].includes(st) &&
+            !syncingRef.current.has(o.id)
+          ) {
+            syncingRef.current.add(o.id);
+            fetch(`/api/orders/track?q=${encodeURIComponent(o.reference)}&sync=true`)
+              .then((r) => r.json())
+              .then((res) => {
+                const newStatus = res?.order?.delivery_status || res?.order?.status;
+                if (newStatus && newStatus.toLowerCase().trim() !== st) {
+                  setOrders((prev) =>
+                    prev.map((item) =>
+                      item.id === o.id
+                        ? { ...item, delivery_status: newStatus as any, status: newStatus as any }
+                        : item
+                    )
+                  );
+                }
+              })
+              .catch(() => {})
+              .finally(() => syncingRef.current.delete(o.id));
+          }
+        }
       }
     } catch (e) {
       console.error("Fetch orders error:", e);
