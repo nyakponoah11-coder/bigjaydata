@@ -900,7 +900,14 @@ function matchesDatamartReference(a?: string, b?: string): boolean {
   return Boolean(ca && cb && (ca === cb || ca.includes(cb) || cb.includes(ca)));
 }
 
-function matchTransaction(t: any, candidateRefs: string[], cleanPhone: string, cleanCap: string): boolean {
+// Datamart returns masked recipients like "054*****79" (from Data-Ease). Mask ours the same way to compare.
+export function maskPhoneForDataMart(raw: string): string {
+  const d = (raw || "").replace(/\D/g, "").replace(/^233/, "0");
+  if (d.length < 6) return d;
+  return `${d.slice(0, 3)}${"*".repeat(d.length - 5)}${d.slice(-2)}`;
+}
+
+function matchTransaction(t: any, candidateRefs: string[], cleanPhone: string, cleanCap: string, rawPhone?: string): boolean {
   if (!t) return false;
   const tRef = String(t.reference || t.ref || t.id || t._id || t.purchaseId || t.orderReference || t.transactionId || "");
   const rpRef = String(t.relatedPurchase?.reference || t.relatedPurchase?.orderReference || t.relatedPurchase?.purchaseId || t.relatedPurchase?._id || t.relatedPurchase?.id || "");
@@ -916,7 +923,7 @@ function matchTransaction(t: any, candidateRefs: string[], cleanPhone: string, c
     }
   }
 
-  const tPhone = String(
+  const rawTPhone = String(
     t.recipient ||
     t.phoneNumber ||
     t.phone ||
@@ -935,7 +942,11 @@ function matchTransaction(t: any, candidateRefs: string[], cleanPhone: string, c
     t.relatedPurchase?.recipient ||
     t.relatedPurchase?.phone ||
     ""
-  ).replace(/\D/g, "");
+  ).trim();
+
+  const tDigits = rawTPhone.replace(/\D/g, "");
+  const targetDigits = (rawPhone || cleanPhone || "").replace(/\D/g, "").replace(/^233/, "0");
+  const maskedTarget = maskPhoneForDataMart(targetDigits);
 
   const tCap = String(
     t.capacity ||
@@ -955,8 +966,31 @@ function matchTransaction(t: any, candidateRefs: string[], cleanPhone: string, c
 
   const desc = String(t.description || t.title || t.narration || t.note || "").toLowerCase();
 
-  // Match by phone number
-  if (cleanPhone && (tPhone.includes(cleanPhone) || desc.includes(cleanPhone))) {
+  // Check 1: Direct full number match
+  let phoneMatched = false;
+  if (targetDigits && tDigits && (tDigits === targetDigits || tDigits.endsWith(targetDigits.slice(-9)) || targetDigits.endsWith(tDigits.slice(-9)))) {
+    phoneMatched = true;
+  }
+
+  // Check 2: Exact Data-Ease masked recipient match (e.g. "054*****43" vs "054*****43")
+  if (!phoneMatched && rawTPhone && targetDigits.length >= 9) {
+    if (rawTPhone === maskedTarget || rawTPhone.toLowerCase() === maskedTarget.toLowerCase()) {
+      phoneMatched = true;
+    } else if (rawTPhone.includes("*")) {
+      const prefix = targetDigits.slice(0, 3);
+      const suffix = targetDigits.slice(-2);
+      if (rawTPhone.startsWith(prefix) && rawTPhone.endsWith(suffix)) {
+        phoneMatched = true;
+      }
+    }
+  }
+
+  // Check 3: Description mentions the phone
+  if (!phoneMatched && cleanPhone && desc.includes(cleanPhone)) {
+    phoneMatched = true;
+  }
+
+  if (phoneMatched) {
     if (
       !cleanCap ||
       !tCap ||
@@ -968,7 +1002,6 @@ function matchTransaction(t: any, candidateRefs: string[], cleanPhone: string, c
     ) {
       return true;
     }
-    // Even if capacity wasn't extracted, matching recipient phone is a solid match
     return true;
   }
 
@@ -1090,30 +1123,36 @@ export async function checkDataMartDeliveryStatus({
     }
   }
 
-  // 2. FALLBACK (DATA-EASE METHOD): Match from /transactions feed
-  const jsonRecent = await fetchDatamart(`${devBase}/transactions?limit=100`);
-  if (jsonRecent) {
-    const items =
-      jsonRecent?.data?.transactions ||
-      jsonRecent?.data?.docs ||
-      jsonRecent?.data?.orders ||
-      jsonRecent?.data?.purchases ||
-      jsonRecent?.transactions ||
-      jsonRecent?.docs ||
-      (Array.isArray(jsonRecent?.data) ? jsonRecent.data : []) ||
-      [];
-    const matched = items.find((t: any) => matchTransaction(t, candidateRefs, cleanPhone, cleanCap));
-    if (matched) {
-      const rp = (matched.relatedPurchase && typeof matched.relatedPurchase === "object") ? matched.relatedPurchase : {};
-      const status = rp.orderStatus || rp.deliveryStatus || rp.status || matched.orderStatus || matched.deliveryStatus || matched.status;
-      if (status) {
-        return mapDatamartStatus(status);
+  // 2. FALLBACK (DATA-EASE METHOD): Match from /transactions feed (multi-page up to 3 pages)
+  for (let page = 1; page <= 3; page++) {
+    const jsonRecent = await fetchDatamart(`${devBase}/transactions?page=${page}&limit=100`);
+    if (jsonRecent) {
+      const items =
+        jsonRecent?.data?.transactions ||
+        jsonRecent?.data?.docs ||
+        jsonRecent?.data?.orders ||
+        jsonRecent?.data?.purchases ||
+        jsonRecent?.transactions ||
+        jsonRecent?.docs ||
+        (Array.isArray(jsonRecent?.data) ? jsonRecent.data : []) ||
+        [];
+      const matched = items.find((t: any) => matchTransaction(t, candidateRefs, cleanPhone, cleanCap, recipientPhone));
+      if (matched) {
+        const rp = (matched.relatedPurchase && typeof matched.relatedPurchase === "object") ? matched.relatedPurchase : {};
+        const status = rp.orderStatus || rp.deliveryStatus || rp.status || matched.orderStatus || matched.deliveryStatus || matched.status;
+        if (status) {
+          return mapDatamartStatus(status);
+        }
       }
+      if (items.length < 100) break;
+    } else {
+      break;
     }
   }
 
   // 3. TARGETED SEARCH FALLBACK
-  const searchQueries = [cleanPhone, cleanRef, cleanSuffix].filter((s) => s && s.length >= 4);
+  const rawTargetPhone = String(recipientPhone || "").trim();
+  const searchQueries = [rawTargetPhone, cleanPhone, cleanRef, `bmgh-${cleanSuffix}`, cleanSuffix].filter((s) => s && s.length >= 4);
   for (const q of searchQueries) {
     const json = await fetchDatamart(`${devBase}/transactions?limit=25&search=${encodeURIComponent(q)}`);
     if (json) {
@@ -1126,7 +1165,7 @@ export async function checkDataMartDeliveryStatus({
         json?.docs ||
         (Array.isArray(json?.data) ? json.data : []) ||
         [];
-      const matched = items.find((t: any) => matchTransaction(t, candidateRefs, cleanPhone, cleanCap));
+      const matched = items.find((t: any) => matchTransaction(t, candidateRefs, cleanPhone, cleanCap, recipientPhone));
       if (matched) {
         const rp = (matched.relatedPurchase && typeof matched.relatedPurchase === "object") ? matched.relatedPurchase : {};
         const status = rp.orderStatus || rp.deliveryStatus || rp.status || matched.orderStatus || matched.deliveryStatus || matched.status;
@@ -1235,7 +1274,7 @@ export async function syncMultipleOrdersWithDataMart(orders: Order[]): Promise<{
       if (orderCapGb >= 100) orderCapGb = orderCapGb / 1000;
       const cleanCap = String(orderCapGb || "").replace(/[^\d.]/g, "");
 
-      let matched = transactions.find((t: any) => matchTransaction(t, candidateRefs, cleanPhone, cleanCap));
+      let matched = transactions.find((t: any) => matchTransaction(t, candidateRefs, cleanPhone, cleanCap, ord.phone));
 
       if (matched) {
         const rp = (matched.relatedPurchase && typeof matched.relatedPurchase === "object") ? matched.relatedPurchase : {};
