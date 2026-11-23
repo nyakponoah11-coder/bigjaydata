@@ -126,16 +126,15 @@ export async function resolveDatamartKeys(): Promise<string[]> {
 }
 
 export function getDatamartAuthHeaders(apiKey: string, apiSecret?: string): Record<string, string> {
+  const cleanKey = cleanCred(apiKey);
   const headers: Record<string, string> = {
-    "x-api-key": apiKey,
-    "X-API-Key": apiKey,
+    "x-api-key": cleanKey,
     "User-Agent": "BundleMartGh/1.0",
     "Accept": "application/json",
   };
-  const secret = (apiSecret || process.env.DATAMART_API_SECRET || "").trim();
+  const secret = cleanCred(apiSecret || process.env.DATAMART_API_SECRET || "");
   if (secret) {
     headers["x-api-secret"] = secret;
-    headers["X-API-Secret"] = secret;
   }
   return headers;
 }
@@ -436,14 +435,12 @@ export async function sendDataMartDelivery(params: DataMartDeliveryParams): Prom
                 "Content-Type": "application/json",
                 "Accept": "application/json",
                 "x-api-key": currentKey,
-                "X-API-Key": currentKey,
                 "X-Idempotency-Key": orderRef,
                 "User-Agent": "BundleMartGh/1.0",
               };
 
               if (apiSecret) {
                 baseHeaders["x-api-secret"] = apiSecret;
-                baseHeaders["X-API-Secret"] = apiSecret;
               }
 
               try {
@@ -764,39 +761,66 @@ export async function testDataMartConnection(
     const testHeaders: Record<string, string> = {
       "Content-Type": "application/json",
       "x-api-key": apiKey,
-      "X-API-Key": apiKey,
       "X-Idempotency-Key": crypto.randomUUID(),
       "User-Agent": "BundleMartGh/1.0",
       "Accept": "application/json",
     };
     if (apiSecret) {
       testHeaders["x-api-secret"] = apiSecret;
-      testHeaders["X-API-Secret"] = apiSecret;
     }
 
     // 1. Primary check: Query developer wallet balance
     let balData: any = null;
+    let balStatus = 200;
     try {
-      const balRes = await fetch(`${devBaseUrl}/balance`, {
+      let balRes = await fetch(`${devBaseUrl}/balance`, {
         method: "GET",
         headers: testHeaders,
         cache: "no-store",
       });
 
-      const balText = await balRes.text();
+      let balText = await balRes.text();
       try {
         balData = JSON.parse(balText);
       } catch {
         balData = { raw: balText };
       }
+      balStatus = balRes.status;
 
-      console.log(`[DataMart Test] Balance check status ${balRes.status}:`, balText);
+      // If rejected and a secret was sent, retry once WITHOUT x-api-secret
+      if ((balRes.status === 401 || balRes.status === 403) && apiSecret) {
+        console.log(`[DataMart Test] Rejected with secret, retrying with pure x-api-key only...`);
+        const pureKeyHeaders = {
+          "Content-Type": "application/json",
+          "x-api-key": apiKey,
+          "X-Idempotency-Key": crypto.randomUUID(),
+          "User-Agent": "BundleMartGh/1.0",
+          "Accept": "application/json",
+        };
+        const retryRes = await fetch(`${devBaseUrl}/balance`, {
+          method: "GET",
+          headers: pureKeyHeaders,
+          cache: "no-store",
+        });
+        const retryText = await retryRes.text();
+        let retryData: any = null;
+        try { retryData = JSON.parse(retryText); } catch { retryData = { raw: retryText }; }
+        if (retryRes.ok && (retryData?.status === "success" || retryData?.balance !== undefined || retryData?.data?.balance !== undefined)) {
+          balRes = retryRes;
+          balText = retryText;
+          balData = retryData;
+          balStatus = retryRes.status;
+          console.log(`[DataMart Test] Success with pure x-api-key!`);
+        }
+      }
 
-      if (balRes.status === 401 || balRes.status === 403 || balData?.message?.toLowerCase().includes("invalid") || balData?.message?.toLowerCase().includes("inactive")) {
+      console.log(`[DataMart Test] Balance check status ${balStatus}:`, balText);
+
+      if (balStatus === 401 || balStatus === 403 || balData?.message?.toLowerCase().includes("invalid") || balData?.message?.toLowerCase().includes("inactive")) {
         return {
           success: false,
           message: `DataMart rejected API key (${keyPreview} from ${keySource === "vercel_environment" ? "Vercel Environment" : keySource}): ${balData?.message || "Invalid or inactive API key"}. Please check that the key matches your active DataMart dashboard and that you redeployed Vercel.`,
-          status: balRes.status,
+          status: balStatus,
           details: { ...balData, keySource, keyPreview },
         };
       }
