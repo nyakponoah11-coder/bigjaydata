@@ -945,7 +945,6 @@ function matchTransaction(t: any, candidateRefs: string[], cleanPhone: string, c
     t.bundle ||
     t.volume ||
     t.plan ||
-    t.amount ||
     t.data?.capacity ||
     t.data?.packageSize ||
     t.data?.size ||
@@ -956,11 +955,21 @@ function matchTransaction(t: any, candidateRefs: string[], cleanPhone: string, c
 
   const desc = String(t.description || t.title || t.narration || t.note || "").toLowerCase();
 
-  // Match by phone number + capacity / description
+  // Match by phone number
   if (cleanPhone && (tPhone.includes(cleanPhone) || desc.includes(cleanPhone))) {
-    if (!cleanCap || !tCap || cleanCap === tCap || Math.abs(parseFloat(cleanCap) - parseFloat(tCap)) < 0.25 || desc.includes(`${cleanCap}gb`)) {
+    if (
+      !cleanCap ||
+      !tCap ||
+      cleanCap === tCap ||
+      Math.abs(parseFloat(cleanCap) - parseFloat(tCap)) < 0.25 ||
+      desc.includes(`${cleanCap}gb`) ||
+      desc.includes(`${cleanCap} gb`) ||
+      desc.includes(cleanCap)
+    ) {
       return true;
     }
+    // Even if capacity wasn't extracted, matching recipient phone is a solid match
+    return true;
   }
 
   return false;
@@ -1021,38 +1030,42 @@ export async function checkDataMartDeliveryStatus({
   const cleanPhone = String(recipientPhone || "").replace(/\D/g, "").slice(-9);
   const cleanCap = String(capacity || "").replace(/[^\d.]/g, "");
 
+  const allCandidateKeys = Array.from(new Set([activeKey, ...(await resolveDatamartKeys())])).filter(Boolean);
+
   // Fast single fetcher with 3.5s timeout
   async function fetchDatamart(url: string): Promise<any | null> {
-    const attempts: Record<string, string>[] = [];
-    if (activeSecret) {
+    for (const key of allCandidateKeys) {
+      const attempts: Record<string, string>[] = [];
+      if (activeSecret) {
+        attempts.push({
+          "x-api-key": key,
+          "x-api-secret": activeSecret,
+          "User-Agent": "BundleMartGh/1.0",
+          "Accept": "application/json",
+        });
+      }
       attempts.push({
-        "x-api-key": activeKey,
-        "x-api-secret": activeSecret,
+        "x-api-key": key,
         "User-Agent": "BundleMartGh/1.0",
         "Accept": "application/json",
       });
-    }
-    attempts.push({
-      "x-api-key": activeKey,
-      "User-Agent": "BundleMartGh/1.0",
-      "Accept": "application/json",
-    });
 
-    for (const h of attempts) {
-      try {
-        const res = await fetch(url, {
-          headers: h,
-          cache: "no-store",
-          signal: AbortSignal.timeout(3500),
-        });
-        if (res.status === 401 || res.status === 403) {
-          continue;
-        }
-        if (res.ok) {
-          const json = await res.json().catch(() => null);
-          if (json) return json;
-        }
-      } catch {}
+      for (const h of attempts) {
+        try {
+          const res = await fetch(url, {
+            headers: h,
+            cache: "no-store",
+            signal: AbortSignal.timeout(3500),
+          });
+          if (res.status === 401 || res.status === 403) {
+            continue;
+          }
+          if (res.ok) {
+            const json = await res.json().catch(() => null);
+            if (json) return json;
+          }
+        } catch {}
+      }
     }
     return null;
   }
@@ -1135,43 +1148,50 @@ export async function syncMultipleOrdersWithDataMart(orders: Order[]): Promise<{
   if (!apiKey) return { updatedCount: 0, orders };
 
   const devBase = apiUrl || "https://api.datamartgh.shop/api/developer";
+  const allCandidateKeys = Array.from(new Set([apiKey, ...(await resolveDatamartKeys())])).filter(Boolean);
 
   // Fetch the 100 most recent transactions from DataMart in ONE single fast request!
   let transactions: any[] = [];
   try {
-    const attempts: Record<string, string>[] = [];
-    if (apiSecret) {
+    for (const key of allCandidateKeys) {
+      if (transactions.length > 0) break;
+      const attempts: Record<string, string>[] = [];
+      if (apiSecret) {
+        attempts.push({
+          "x-api-key": key,
+          "x-api-secret": apiSecret,
+          "User-Agent": "BundleMartGh/1.0",
+          "Accept": "application/json",
+        });
+      }
       attempts.push({
-        "x-api-key": apiKey,
-        "x-api-secret": apiSecret,
+        "x-api-key": key,
         "User-Agent": "BundleMartGh/1.0",
         "Accept": "application/json",
       });
-    }
-    attempts.push({
-      "x-api-key": apiKey,
-      "User-Agent": "BundleMartGh/1.0",
-      "Accept": "application/json",
-    });
 
-    for (const h of attempts) {
-      const res = await fetch(`${devBase}/transactions?limit=100`, {
-        headers: h,
-        cache: "no-store",
-        signal: AbortSignal.timeout(5000),
-      });
-      if (res.ok) {
-        const json = await res.json().catch(() => null);
-        transactions =
-          json?.data?.transactions ||
-          json?.data?.docs ||
-          json?.data?.orders ||
-          json?.data?.purchases ||
-          json?.transactions ||
-          json?.docs ||
-          (Array.isArray(json?.data) ? json.data : []) ||
-          [];
-        if (transactions.length > 0) break;
+      for (const h of attempts) {
+        const res = await fetch(`${devBase}/transactions?limit=100`, {
+          headers: h,
+          cache: "no-store",
+          signal: AbortSignal.timeout(5000),
+        });
+        if (res.ok) {
+          const json = await res.json().catch(() => null);
+          const items =
+            json?.data?.transactions ||
+            json?.data?.docs ||
+            json?.data?.orders ||
+            json?.data?.purchases ||
+            json?.transactions ||
+            json?.docs ||
+            (Array.isArray(json?.data) ? json.data : []) ||
+            [];
+          if (items.length > 0) {
+            transactions = items;
+            break;
+          }
+        }
       }
     }
   } catch (err) {
