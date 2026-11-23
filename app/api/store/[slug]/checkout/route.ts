@@ -190,9 +190,8 @@ export async function POST(
       existingOrder &&
       (existingOrder.delivery_status === "delivered" ||
         existingOrder.status === "delivered" ||
-        existingOrder.delivery_status === "processing" ||
-        existingOrder.delivery_status === "completed" ||
         Boolean((existingOrder.datamart_response as any)?.purchaseId) ||
+        Boolean((existingOrder.datamart_response as any)?.datamart_id) ||
         Boolean((existingOrder.datamart_response as any)?.dispatched_at));
 
     if (alreadyDispatched) {

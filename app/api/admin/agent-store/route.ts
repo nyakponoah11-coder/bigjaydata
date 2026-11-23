@@ -58,23 +58,32 @@ export async function GET(req: Request) {
       .filter((a) => !isGhostAgent(a))
       .map((agent) => {
         const friendlyName = cleanAgentName(agent.name, agent.store_name, agent.email);
-        const agentOrders = orders.filter(
-          (o) => (o.agent_id === agent.id || o.agent_id === agent.store_slug) && isPaid(o)
-        );
+        const agentOrders = orders.filter((o: any) => {
+          const aid = String(o.agent_id || o.datamart_response?.agent_id || "").toLowerCase().trim();
+          const aslug = String(o.agent_slug || o.store_slug || o.datamart_response?.store_slug || "").toLowerCase().trim();
+          const targetId = String(agent.id || "").toLowerCase().trim();
+          const targetSlug = String(agent.store_slug || "").toLowerCase().trim();
+          return (aid === targetId || aid === targetSlug || aslug === targetId || aslug === targetSlug) && isPaid(o);
+        });
         const earned = Number(agentOrders.reduce((sum, o) => sum + (Number(o.agent_profit) || 0), 0).toFixed(2));
-        const agentWithdrawals = withdrawals.filter(
-          (w) => (w.agent_id === agent.id || w.agent_id === agent.store_slug) && w.status === "completed"
-        );
+        const agentWithdrawals = withdrawals.filter((w) => {
+          const wid = String(w.agent_id || "").toLowerCase().trim();
+          const targetId = String(agent.id || "").toLowerCase().trim();
+          const targetSlug = String(agent.store_slug || "").toLowerCase().trim();
+          return (wid === targetId || wid === targetSlug) && w.status === "completed";
+        });
         const withdrawn = Number(agentWithdrawals.reduce((sum, w) => sum + (Number(w.amount) || 0), 0).toFixed(2));
-        const pendingWithdrawals = withdrawals.filter(
-          (w) => (w.agent_id === agent.id || w.agent_id === agent.store_slug) && w.status === "pending" && Number(w.amount) <= earned
-        );
+        const pendingWithdrawals = withdrawals.filter((w) => {
+          const wid = String(w.agent_id || "").toLowerCase().trim();
+          const targetId = String(agent.id || "").toLowerCase().trim();
+          const targetSlug = String(agent.store_slug || "").toLowerCase().trim();
+          return (wid === targetId || wid === targetSlug) && w.status === "pending";
+        });
         const pendingWithdrawn = Number(pendingWithdrawals.reduce((sum, w) => sum + (Number(w.amount) || 0), 0).toFixed(2));
         const storedBalance = Number(agent.wallet_balance || 0);
         const calculatedBalance = Number(Math.max(0, earned - withdrawn - pendingWithdrawn).toFixed(2));
-        const balance = earned > 0 || agentWithdrawals.length > 0 || pendingWithdrawals.length > 0
-          ? calculatedBalance
-          : storedBalance;
+        // Safe balance: never truncate or drop an agent's stored wallet balance
+        const balance = Math.max(storedBalance, calculatedBalance);
 
         return {
           ...agent,

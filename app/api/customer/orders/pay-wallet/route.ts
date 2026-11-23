@@ -173,16 +173,21 @@ export async function POST(req: Request) {
       }
     } else {
       try {
-        const deliveryResult = await sendDataMartDelivery(order);
-        if (deliveryResult && deliveryResult.success) {
-          order =
-            (await db.updateOrderStatus(
-              order.reference,
-              "delivered",
-              deliveryResult.raw_response || deliveryResult,
-              { delivery_status: "delivered" }
-            )) || order;
-        }
+        const deliveryResult = await sendDataMartDelivery({
+          network: order.network,
+          package_size: order.package_size,
+          phone: order.phone,
+          reference: order.reference,
+        });
+        const isDelivered = deliveryResult?.status === "delivered" || deliveryResult?.status === "completed";
+        const finalStatus = isDelivered ? "delivered" : "processing";
+        order =
+          (await db.updateOrderStatus(
+            order.reference,
+            finalStatus,
+            deliveryResult.raw_response || deliveryResult,
+            { delivery_status: finalStatus }
+          )) || order;
       } catch (deliveryErr: any) {
         console.warn("Automated delivery trigger notice:", deliveryErr?.message || deliveryErr);
       }

@@ -233,6 +233,16 @@ export function mapNetworkToDataMart(network: string): string {
  * "YELLO" (MTN), "TELECEL", or "AT_PREMIUM" (AirtelTigo)
  */
 export function getNetworkCandidates(network: string): string[] {
+  const net = (network || "").toLowerCase().trim();
+  if (net === "mtn" || net === "yello") {
+    return ["YELLO", "MTN"];
+  }
+  if (net === "telecel" || net === "vodafone") {
+    return ["TELECEL", "VODAFONE"];
+  }
+  if (net === "at" || net === "airteltigo" || net === "at_premium") {
+    return ["AT_PREMIUM", "AT"];
+  }
   const primary = mapNetworkToDataMart(network);
   return [primary];
 }
@@ -382,6 +392,7 @@ export async function sendDataMartDelivery(params: DataMartDeliveryParams): Prom
                 name: "standard_spec_payload",
                 body: {
                   phoneNumber: formattedPhone,
+                  phone: formattedPhone,
                   network: net,
                   capacity: String(capacityGb).replace(/[^\d.]/g, "") || "1",
                   gateway: "wallet",
@@ -394,6 +405,7 @@ export async function sendDataMartDelivery(params: DataMartDeliveryParams): Prom
                 name: "numeric_cap_fallback",
                 body: {
                   phoneNumber: formattedPhone,
+                  phone: formattedPhone,
                   network: net,
                   capacity: validNumCap,
                   gateway: "wallet",
