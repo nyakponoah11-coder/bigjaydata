@@ -226,21 +226,9 @@ export function extractCarrierStatus(payload: any): "delivered" | "failed" | "pr
     return normalizeStatus(explicitDelivery);
   }
 
-  // PRIORITY 3: Top-level status
-  // CRITICAL: In DataMart's transactions list, top-level `status: "completed"` refers to
-  // the WALLET DEBIT transaction, NOT the telecom delivery!
-  // If an entry represents an order (has recipient/phone/capacity) but delivery is still in flight,
-  // it must not be falsely treated as delivered!
+  // PRIORITY 3: Top-level status directly from DataMart record
   const topStatus = data.status || payload.status;
   if (topStatus) {
-    const s = String(topStatus).toLowerCase().trim();
-    if (["completed", "successful", "success"].includes(s)) {
-      // If this record has transaction fields (gateway: "wallet", type: "debit", or amount) without explicit deliveryStatus,
-      // it means the wallet payment was completed, but delivery is still processing.
-      if (data.gateway === "wallet" || data.type === "debit" || data.recipient || data.phoneNumber) {
-        return "processing";
-      }
-    }
     return normalizeStatus(topStatus);
   }
 
