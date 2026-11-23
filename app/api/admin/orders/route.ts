@@ -29,7 +29,7 @@ export async function GET(request: Request) {
       search,
     }, true);
 
-    // Auto-sync: Silently re-verify any recent in-flight orders in ~1s so the list is always fresh on load
+    // Non-blocking background sync: Refresh in-flight orders without delaying the page response
     const processingOrders = orders
       .filter((o) => {
         const st = (o.delivery_status || o.status || "").toLowerCase().trim();
@@ -38,22 +38,13 @@ export async function GET(request: Request) {
       })
       .slice(0, 50);
 
-    let finalOrders = orders;
     if (processingOrders.length > 0) {
-      const { updatedCount } = await syncMultipleOrdersWithDataMart(processingOrders);
-      if (updatedCount > 0) {
-        finalOrders = await db.getOrders({
-          date,
-          network,
-          status,
-          delivery_status,
-          payment_status,
-          search,
-        }, true);
-      }
+      syncMultipleOrdersWithDataMart(processingOrders).catch((err) => {
+        console.warn("[Orders API] Background sync non-fatal error:", err?.message || err);
+      });
     }
 
-    return NextResponse.json({ success: true, orders: finalOrders }, {
+    return NextResponse.json({ success: true, orders }, {
       headers: {
         "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
         "Pragma": "no-cache",

@@ -1229,33 +1229,6 @@ export async function syncMultipleOrdersWithDataMart(orders: Order[]): Promise<{
 
       let matched = transactions.find((t: any) => matchTransaction(t, candidateRefs, cleanPhone, cleanCap));
 
-      // If not in top 100 and order is active, do a quick targeted search
-      if (!matched && cleanPhone) {
-        const singleStatus = await checkDataMartDeliveryStatus({
-          reference: ord.reference,
-          recipientPhone: ord.phone,
-          capacity: orderCapGb,
-          apiKey,
-          apiSecret,
-          extraReferences: candidateRefs,
-        });
-        if (singleStatus !== "not_found") {
-          const prevStatus = (ord.delivery_status || ord.status || "").toLowerCase().trim();
-          if (singleStatus !== prevStatus) {
-            const updated = await db.updateOrderStatus(ord.id, singleStatus, {
-              ...(ord.datamart_response || {}),
-              is_manual_override: false,
-              last_datamart_sync: { timestamp: new Date().toISOString(), matched_status: singleStatus },
-            }, { delivery_status: singleStatus, status: singleStatus });
-            await db.updateAgentOrderStatus(ord.reference, singleStatus).catch(() => {});
-            updatedCount++;
-            if (updated) ord = updated;
-          }
-          updatedOrders.push(ord);
-          continue;
-        }
-      }
-
       if (matched) {
         const carrierStatus = extractCarrierStatus(matched);
         if (carrierStatus) {
