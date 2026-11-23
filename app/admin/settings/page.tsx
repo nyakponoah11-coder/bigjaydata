@@ -87,10 +87,6 @@ export default function AdminSettingsPage() {
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
 
   const handleTestDataMart = async () => {
-    if (!datamartApiKey.trim()) {
-      setTestResult({ success: false, message: "Please enter your DataMart API key first." });
-      return;
-    }
     setTestingDataMart(true);
     setTestResult(null);
     try {
@@ -98,9 +94,9 @@ export default function AdminSettingsPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          api_key: datamartApiKey.trim(),
-          api_secret: datamartApiSecret.trim(),
-          api_url: datamartApiUrl.trim(),
+          api_key: datamartApiKey ? datamartApiKey.trim() : undefined,
+          api_secret: datamartApiSecret ? datamartApiSecret.trim() : undefined,
+          api_url: datamartApiUrl ? datamartApiUrl.trim() : undefined,
         }),
       });
       const data = await res.json();
@@ -222,14 +218,6 @@ export default function AdminSettingsPage() {
   };
 
   const handleTestPaystack = async () => {
-    if (!paystackPublicKey.trim() && !paystackSecretKey.trim()) {
-      setPaystackTestResult({
-        success: false,
-        message: "Please enter your Paystack Public Key and Secret Key first.",
-      });
-      return;
-    }
-
     setTestingPaystack(true);
     setPaystackTestResult(null);
 
@@ -238,8 +226,8 @@ export default function AdminSettingsPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          public_key: paystackPublicKey.trim(),
-          secret_key: isValidPaystackSecret(paystackSecretKey) ? paystackSecretKey.trim() : "",
+          public_key: paystackPublicKey ? paystackPublicKey.trim() : undefined,
+          secret_key: isValidPaystackSecret(paystackSecretKey) ? paystackSecretKey.trim() : undefined,
         }),
       });
       const data = await res.json();
@@ -331,14 +319,15 @@ export default function AdminSettingsPage() {
         whatsapp_number: whatsappNumber.trim(),
         whatsapp_channel_url: whatsappChannelUrl.trim(),
         email: email.trim(),
-        paystack_public_key: cleanPaystackPublic,
-        datamart_api_key: datamartApiKey.trim(),
-        datamart_api_url: datamartApiUrl.trim(),
         announcement_text: announcementText.trim(),
         announcement_active: announcementActive,
       };
 
-      // Only include secret key if entered/changed (don't overwrite with placeholder bullet dots)
+      if (cleanPaystackPublic && !isMaskedSecret(cleanPaystackPublic)) {
+        updates.paystack_public_key = cleanPaystackPublic;
+      }
+
+      // Only include secret key if entered/changed (don't overwrite with placeholder bullet dots or blank)
       if (paystackSecretKey && isValidPaystackSecret(paystackSecretKey)) {
         const cleanSecret = paystackSecretKey
           .trim()
@@ -349,13 +338,13 @@ export default function AdminSettingsPage() {
       }
 
       // DataMart API Key & Second Secret
-      if (datamartApiKey !== undefined && !isMaskedSecret(datamartApiKey)) {
+      if (datamartApiKey && datamartApiKey.trim() && !isMaskedSecret(datamartApiKey)) {
         updates.datamart_api_key = datamartApiKey.trim();
       }
-      if (datamartApiSecret !== undefined && !isMaskedSecret(datamartApiSecret)) {
+      if (datamartApiSecret && datamartApiSecret.trim() && !isMaskedSecret(datamartApiSecret)) {
         updates.datamart_api_secret = datamartApiSecret.trim();
       }
-      if (datamartApiUrl !== undefined) {
+      if (datamartApiUrl && datamartApiUrl.trim()) {
         updates.datamart_api_url = datamartApiUrl.trim();
       }
       if (geminiApiKey !== undefined && !isMaskedSecret(geminiApiKey)) {
@@ -665,8 +654,9 @@ export default function AdminSettingsPage() {
                 <CreditCard className="w-4 h-4 text-emerald-400" />
                 <span>Paystack Payment Configuration</span>
               </div>
-              <span className="text-[11px] text-slate-400">
-                Required for both Main Store and Agent Store checkouts
+              <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 font-semibold flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                Vercel Environment Priority Active
               </span>
             </div>
 
@@ -753,7 +743,7 @@ export default function AdminSettingsPage() {
                 <button
                   type="button"
                   onClick={handleTestPaystack}
-                  disabled={testingPaystack || (!paystackPublicKey.trim() && !paystackSecretKey.trim())}
+                  disabled={testingPaystack}
                   className="px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-lg transition-all flex items-center justify-center gap-2 shrink-0"
                 >
                   {testingPaystack ? (
@@ -837,9 +827,15 @@ export default function AdminSettingsPage() {
 
           {/* SECTION 3: DATAMART API CONFIGURATION */}
           <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-lg space-y-4">
-            <div className="flex items-center gap-2.5 text-white font-bold text-sm border-b border-slate-800 pb-3">
-              <Server className="w-4 h-4 text-emerald-400" />
-              <span>DataMart Delivery API Configuration</span>
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2.5 text-white font-bold text-sm">
+                <Server className="w-4 h-4 text-emerald-400" />
+                <span>DataMart Delivery API Configuration</span>
+              </div>
+              <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 font-semibold flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                Vercel Environment Priority Active
+              </span>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">

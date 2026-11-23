@@ -11,14 +11,27 @@ export async function GET(request: Request) {
     const isAdmin = await verifyAdminRequest(request);
 
     if (isAdmin) {
-      // Authenticated admin: Expose settings for editing in Admin Settings Studio
+      const envDatamartKey = (process.env.DATAMART_API_KEY || process.env.DATAMART_KEY || "").trim();
+      const envDatamartSecret = (process.env.DATAMART_API_SECRET || process.env.DATAMART_SECRET || "").trim();
+      const envPaystackPublic = (process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY || "").trim();
+      const envPaystackSecret = (process.env.PAYSTACK_SECRET_KEY || "").trim();
+
+      // Authenticated admin: Expose settings for editing, prioritizing Vercel environment variables
       return NextResponse.json({
         success: true,
         settings: {
           ...settings,
-          datamart_api_key: settings.datamart_api_key || process.env.DATAMART_API_KEY || "",
-          datamart_api_secret: (settings as any).datamart_api_secret || process.env.DATAMART_API_SECRET || "",
-          datamart_api_url: settings.datamart_api_url || process.env.DATAMART_API_URL || "https://api.datamartgh.shop/api/developer",
+          datamart_api_key: envDatamartKey || settings.datamart_api_key || "",
+          datamart_api_secret: envDatamartSecret || (settings as any).datamart_api_secret || "",
+          datamart_api_url: process.env.DATAMART_API_URL || settings.datamart_api_url || "https://api.datamartgh.shop/api/developer",
+          paystack_public_key: envPaystackPublic || settings.paystack_public_key || "",
+          paystack_secret_key: envPaystackSecret || settings.paystack_secret_key || "",
+        },
+        env_configured: {
+          datamart_key: Boolean(envDatamartKey),
+          datamart_secret: Boolean(envDatamartSecret),
+          paystack_public: Boolean(envPaystackPublic),
+          paystack_secret: Boolean(envPaystackSecret),
         },
         agent_store_enabled: config.is_enabled,
         registration_fee: config.registration_fee || 0,
