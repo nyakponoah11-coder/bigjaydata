@@ -25,7 +25,7 @@ export async function POST(req: Request) {
       );
     }
 
-    const reference = `BMGH-${Math.floor(10000000 + Math.random() * 90000000)}`;
+    const reference = `bmgh-${Math.floor(10000000 + Math.random() * 90000000)}`;
 
     // Dispatch directly to DataMart wallet
     const dmResult = await sendDataMartDelivery({

@@ -464,7 +464,7 @@ export async function sendDataMartDelivery(params: DataMartDeliveryParams): Prom
                 "Accept": "application/json",
               };
 
-              if (variation.withSecret && apiSecret) {
+              if (apiSecret) {
                 baseHeaders["X-API-Secret"] = apiSecret;
               }
 
