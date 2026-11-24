@@ -2931,7 +2931,7 @@ export const db = {
       developer_master_enabled: true,
       admin_enabled: true,
       registration_fee: 0,
-      custom_domain: "fastdata-gh.vercel.app",
+      custom_domain: "www.dataplug1.com",
       auto_paystack_payout: false,
       withdrawal_fee_enabled: true,
       withdrawal_fee_type: "percent",
@@ -4086,7 +4086,7 @@ export const db = {
         const config = await this.getAgentStoreConfig();
         const baseOrigin = config.custom_domain
           ? `https://${config.custom_domain.replace(/^https?:\/\//i, "").replace(/\/+$/, "")}`
-          : "https://fastdata-gh.vercel.app";
+          : "https://www.dataplug1.com";
         const target = `${baseOrigin.replace(/\/+$/, "")}/s/${newAgent.store_slug}`;
         const res = await fetch(`https://tinyurl.com/api-create.php?url=${encodeURIComponent(target)}`, {
           signal: AbortSignal.timeout(3500),

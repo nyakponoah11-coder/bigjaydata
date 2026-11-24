@@ -106,7 +106,39 @@ export default async function DirectStoreSlugPage({
   ]);
 
   if (!agent) {
-    notFound();
+    return (
+      <div className="min-h-screen bg-slate-950 text-white flex flex-col items-center justify-center p-6 text-center">
+        <div className="max-w-md w-full bg-slate-900/90 border border-slate-800 rounded-3xl p-8 space-y-5 shadow-2xl backdrop-blur-xl">
+          <div className="w-14 h-14 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 flex items-center justify-center mx-auto text-2xl">
+            🏪
+          </div>
+          <div>
+            <h1 className="text-xl font-black text-white">Store Not Found</h1>
+            <p className="text-xs text-slate-400 mt-2 leading-relaxed">
+              We couldn't find an agent storefront registered under{" "}
+              <span className="text-indigo-400 font-bold font-mono bg-indigo-950/60 px-1.5 py-0.5 rounded border border-indigo-800/40">
+                "{cleanSlug}"
+              </span>
+              . Please verify the link with your agent or search below.
+            </p>
+          </div>
+          <div className="pt-2 flex flex-col gap-2.5">
+            <a
+              href="/"
+              className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white text-xs font-bold transition-all shadow-lg shadow-indigo-600/30"
+            >
+              Find Agent Store
+            </a>
+            <a
+              href="/agent/signup"
+              className="w-full py-2.5 px-4 rounded-xl bg-slate-800/80 hover:bg-slate-800 text-slate-300 hover:text-white text-xs font-semibold border border-slate-700/60 transition-all"
+            >
+              Register this Store Name as an Agent
+            </a>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   if (!agentStoreConfig.is_enabled) {

@@ -13,6 +13,7 @@ import BackgroundImage from "@/components/BackgroundImage";
 import HeroActionButtons from "@/components/HeroActionButtons";
 import DownloadAppBanner from "@/components/DownloadAppBanner";
 import DeliveryTrackerCard from "@/components/DeliveryTrackerCard";
+import DataPlugStoreFinder from "@/components/DataPlugStoreFinder";
 import {
   Zap,
   ShieldCheck,
@@ -36,31 +37,33 @@ export default async function HomePage() {
     headers(),
   ]);
 
-  // White-Label Bounce-Back Protection:
-  // Only redirect if the visitor accesses through an explicitly configured custom white-label agent domain
+  // White-Label Agent Domain Handling (e.g. www.dataplug1.com):
+  // When visited via the agent domain root, render the DataPlug Agent Store Finder!
   const host = (headersList.get("host") || "").toLowerCase();
   const customDomain = config.custom_domain?.toLowerCase().trim();
   const isMainPlatformHost =
-    host.includes("vercel.app") ||
     host.includes("bundlemartgh") ||
     host.includes("bigjaydata") ||
     host.includes("localhost") ||
     host.includes("127.0.0.1") ||
     host.includes("0.0.0.0");
 
-  const isWhiteLabelHost =
+  const isDataPlugHost =
     !isMainPlatformHost &&
     Boolean(
+      host.includes("dataplug") ||
       (customDomain && host.includes(customDomain)) ||
       host.includes("fastdata") ||
       host.includes("portal")
     );
 
-  if (isWhiteLabelHost) {
+  if (isDataPlugHost) {
     const cookieStore = await cookies();
     const lastAgent = cookieStore.get("bmgh_last_agent")?.value;
-    const targetSlug = lastAgent ? encodeURIComponent(lastAgent) : "stony";
-    redirect(`/${targetSlug}`);
+    if (lastAgent && lastAgent !== "stony") {
+      redirect(`/${encodeURIComponent(lastAgent)}`);
+    }
+    return <DataPlugStoreFinder />;
   }
 
   const [settings, products] = await Promise.all([
