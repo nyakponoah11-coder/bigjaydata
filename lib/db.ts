@@ -1165,7 +1165,7 @@ export const db = {
                 const p = JSON.parse(agentRow.store_name);
                 devMaster = p.developer_master_enabled !== false;
                 adminEn = p.admin_enabled !== false;
-                customDom = p.custom_domain || "";
+                customDom = (p.custom_domain && !p.custom_domain.includes("fastdata") && !p.custom_domain.includes("vercel.app")) ? p.custom_domain : "www.dataplug1.com";
                 autoPayout = Boolean(p.auto_paystack_payout);
                 withdrawal_fee_enabled = p.withdrawal_fee_enabled !== false;
                 withdrawal_fee_type = "percent";
@@ -2881,7 +2881,7 @@ export const db = {
               const parsed = JSON.parse(data.store_name);
               developer_master_enabled = parsed.developer_master_enabled !== false;
               admin_enabled = parsed.admin_enabled !== false;
-              custom_domain = parsed.custom_domain || "";
+              custom_domain = (parsed.custom_domain && !parsed.custom_domain.includes("fastdata") && !parsed.custom_domain.includes("vercel.app")) ? parsed.custom_domain : "www.dataplug1.com";
               auto_paystack_payout = Boolean(parsed.auto_paystack_payout);
               withdrawal_fee_enabled = parsed.withdrawal_fee_enabled !== false;
               withdrawal_fee_type = "percent";

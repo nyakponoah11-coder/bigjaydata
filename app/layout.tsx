@@ -6,7 +6,7 @@ import { db } from "@/lib/db";
 import { headers } from "next/headers";
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://fastdata-gh.vercel.app"),
+  metadataBase: new URL("https://www.bundlemartgh.com"),
   title: "BundleMartGh | Instant Mobile Data Bundles in Ghana",
   description:
     "Buy cheap MTN, Telecel, and AT data bundles instantly in Ghana. Fully automated 24/7 delivery to your phone line via Paystack.",

@@ -317,7 +317,7 @@ export default function DeveloperPortalPage() {
 
   // ================= 2. MASTER SWITCH IS ON -> COMPLETE DEVELOPER PORTAL =================
   const activeKey = currentAccount?.api_key || "fd_live_your_api_key_here";
-  const baseUrl = typeof window !== "undefined" ? window.location.origin : "https://fastdatagh.com";
+  const baseUrl = typeof window !== "undefined" ? window.location.origin : "https://www.bundlemartgh.com";
 
   return (
     <div className="min-h-screen bg-[#070b14] text-slate-100 flex flex-col justify-between selection:bg-indigo-500 selection:text-white font-sans">
