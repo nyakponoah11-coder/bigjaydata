@@ -36,7 +36,9 @@ export async function POST(req: Request) {
     });
 
     // Record order in database
-    const deliveryStatus = dmResult.status || (dmResult.success ? "delivered" : "processing");
+    const isSuccess = Boolean(dmResult.success);
+    const deliveryStatus = isSuccess ? (dmResult.status || "delivered") : "failed";
+    const paymentStatus = isSuccess ? "paid" : "failed";
     const mergedDatamartResponse = {
       ...(typeof dmResult.raw_response === "object" ? dmResult.raw_response : {}),
       datamart_id: dmResult.datamart_id,
@@ -46,6 +48,7 @@ export async function POST(req: Request) {
       message: dmResult.message,
       note,
       source: "admin_direct",
+      is_manual_override: !isSuccess,
     };
 
     const order = await db.createOrder({
@@ -55,7 +58,7 @@ export async function POST(req: Request) {
       phone: formattedPhone,
       amount: 0,
       paystack_ref: null,
-      payment_status: "paid",
+      payment_status: paymentStatus,
       payment_method: "wallet",
       delivery_status: deliveryStatus,
       status: deliveryStatus,

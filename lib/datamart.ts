@@ -918,7 +918,7 @@ export function maskPhoneForDataMart(raw: string): string {
   return `${d.slice(0, 3)}${"*".repeat(d.length - 5)}${d.slice(-2)}`;
 }
 
-function matchTransaction(t: any, candidateRefs: string[], cleanPhone: string, cleanCap: string, rawPhone?: string): boolean {
+function matchTransaction(t: any, candidateRefs: string[], cleanPhone: string, cleanCap: string, rawPhone?: string, orderCreatedAt?: string | number): boolean {
   if (!t) return false;
   const tRef = String(t.reference || t.ref || t.id || t._id || t.purchaseId || t.orderReference || t.transactionId || "");
   const rpRef = String(t.relatedPurchase?.reference || t.relatedPurchase?.orderReference || t.relatedPurchase?.purchaseId || t.relatedPurchase?._id || t.relatedPurchase?.id || "");
@@ -931,6 +931,20 @@ function matchTransaction(t: any, candidateRefs: string[], cleanPhone: string, c
       (metaRef && (metaRef === ref || matchesDatamartReference(metaRef, ref)))
     ) {
       return true;
+    }
+  }
+
+  // Fallback to phone number matching requires timestamp plausibility:
+  // An order created at 07:39 AM should NEVER match a transaction created at 07:00 AM or yesterday!
+  if (orderCreatedAt) {
+    const orderMs = new Date(orderCreatedAt).getTime();
+    const rawTDate = t.createdAt || t.created_at || t.timestamp || t.date || t.relatedPurchase?.createdAt;
+    if (orderMs > 0 && rawTDate) {
+      const tMs = new Date(rawTDate).getTime();
+      if (tMs > 0 && tMs < (orderMs - 5 * 60 * 1000)) {
+        // Transaction occurred BEFORE the order was placed -> Reject phone fallback match
+        return false;
+      }
     }
   }
 
@@ -1381,7 +1395,14 @@ export async function syncMultipleOrdersWithDataMart(orders: Order[]): Promise<{
       if (orderCapGb >= 100) orderCapGb = orderCapGb / 1000;
       const cleanCap = String(orderCapGb || "").replace(/[^\d.]/g, "");
 
-      let matched = transactions.find((t: any) => matchTransaction(t, candidateRefs, cleanPhone, cleanCap, ord.phone));
+      // Do not auto-sync orders that are already marked failed or have a manual override
+      const currentDeliveryStatus = (ord.delivery_status || ord.status || "").toLowerCase().trim();
+      if (currentDeliveryStatus === "failed" || ord.datamart_response?.is_manual_override) {
+        updatedOrders.push(ord);
+        continue;
+      }
+
+      let matched = transactions.find((t: any) => matchTransaction(t, candidateRefs, cleanPhone, cleanCap, ord.phone, ord.created_at));
 
       if (matched) {
         const rp = (matched.relatedPurchase && typeof matched.relatedPurchase === "object") ? matched.relatedPurchase : {};
