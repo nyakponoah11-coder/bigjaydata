@@ -236,7 +236,13 @@ export function extractCarrierStatus(payload: any): "delivered" | "failed" | "pr
 }
 
 export function mapDatamartStatus(s: string | undefined | null): "delivered" | "failed" | "processing" | "refunded" | "queued" | "cancelled" {
-  return normalizeStatus(s);
+  const v = (s || "").toLowerCase().trim();
+  if (v === "completed" || v === "delivered" || v === "fulfilled" || v === "done") return "delivered";
+  if (v === "failed" || v === "cancelled" || v === "canceled" || v === "rejected" || v === "declined") return "failed";
+  if (v === "refunded") return "refunded";
+  if (v === "processing" || v === "in_progress" || v === "in-progress" || v === "sending") return "processing";
+  if (v === "queued" || v === "waiting" || v === "pending") return "queued";
+  return "processing";
 }
 
 export function extractDataMartOrderStatus(json: any): string | null {
@@ -1226,9 +1232,9 @@ export async function checkDataMartDeliveryStatus({
       const rawStatus =
         json.data?.orderStatus ||
         json.data?.deliveryStatus ||
-        json.data?.status ||
+        json.data?.telecomStatus ||
         json.orderStatus ||
-        json.status;
+        json.deliveryStatus;
       if (rawStatus) {
         return mapDatamartStatus(rawStatus);
       }
@@ -1252,7 +1258,7 @@ export async function checkDataMartDeliveryStatus({
       const matched = items.find((t: any) => matchTransaction(t, candidateRefs, cleanPhone, cleanCap, recipientPhone));
       if (matched) {
         const rp = (matched.relatedPurchase && typeof matched.relatedPurchase === "object") ? matched.relatedPurchase : {};
-        const status = rp.orderStatus || rp.deliveryStatus || rp.status || matched.orderStatus || matched.deliveryStatus || matched.status;
+        const status = rp.orderStatus || rp.deliveryStatus || rp.telecomStatus || matched.orderStatus || matched.deliveryStatus;
         if (status) {
           return mapDatamartStatus(status);
         }
@@ -1283,7 +1289,7 @@ export async function checkDataMartDeliveryStatus({
       const matched = items.find((t: any) => matchTransaction(t, candidateRefs, cleanPhone, cleanCap, recipientPhone));
       if (matched) {
         const rp = (matched.relatedPurchase && typeof matched.relatedPurchase === "object") ? matched.relatedPurchase : {};
-        const status = rp.orderStatus || rp.deliveryStatus || rp.status || matched.orderStatus || matched.deliveryStatus || matched.status;
+        const status = rp.orderStatus || rp.deliveryStatus || rp.telecomStatus || matched.orderStatus || matched.deliveryStatus;
         if (status) {
           return mapDatamartStatus(status);
         }
@@ -1408,8 +1414,8 @@ export async function syncMultipleOrdersWithDataMart(orders: Order[]): Promise<{
 
       if (matched) {
         const rp = (matched.relatedPurchase && typeof matched.relatedPurchase === "object") ? matched.relatedPurchase : {};
-        const rawStatus = rp.orderStatus || rp.deliveryStatus || rp.status || matched.orderStatus || matched.deliveryStatus || matched.status;
-        const carrierStatus = (rawStatus ? mapDatamartStatus(rawStatus) : null) || extractCarrierStatus(matched);
+        const rawStatus = rp.orderStatus || rp.deliveryStatus || rp.telecomStatus || matched.orderStatus || matched.deliveryStatus;
+        const carrierStatus = rawStatus ? mapDatamartStatus(rawStatus) : null;
         if (carrierStatus) {
           const prevStatus = (ord.delivery_status || ord.status || "").toLowerCase().trim();
           if (carrierStatus !== prevStatus) {
