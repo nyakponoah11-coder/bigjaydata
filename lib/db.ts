@@ -120,11 +120,12 @@ export function normalizeOrder(order: any): Order {
 
   // 3. Resolve unified delivery and order status so they NEVER contradict each other
   let unifiedStatus = "processing";
-  if (rawDs === "delivered" || rawDs === "completed" || rawSt === "delivered" || rawSt === "completed") {
-    // If order is already confirmed delivered, preserve delivered state
-    unifiedStatus = "delivered";
-  } else if (dmDeliveryStatus) {
+  if (dmDeliveryStatus) {
+    // Authoritative carrier status from DataMart takes precedence
     unifiedStatus = dmDeliveryStatus;
+  } else if (rawDs === "delivered" || rawDs === "completed" || rawSt === "delivered" || rawSt === "completed") {
+    // If order has no contrary DataMart update, preserve delivered state
+    unifiedStatus = "delivered";
   } else if (rawDs === "failed" || rawSt === "failed" || rawDs === "rejected" || rawSt === "rejected") {
     unifiedStatus = "failed";
   } else if (rawDs === "refunded" || rawSt === "refunded") {

@@ -154,8 +154,8 @@ export function normalizeStatus(raw: any): "delivered" | "failed" | "processing"
   if (!raw) return "queued";
   const s = String(raw).toLowerCase().trim();
 
-  // Success / Delivered
-  if (["delivered", "completed", "successful", "success", "fulfilled", "done"].includes(s)) {
+  // Success / Delivered (Strictly carrier completed/delivered, NOT the API wrapper status: "success")
+  if (["delivered", "completed", "fulfilled", "done"].includes(s)) {
     return "delivered";
   }
 
@@ -528,14 +528,16 @@ export async function sendDataMartDelivery(params: DataMartDeliveryParams): Prom
                     else if (mapped === "queued") returnedStatus = "queued";
                     else returnedStatus = "processing";
                   } else if (
-                    responseData?.status === "completed" ||
-                    responseData?.status === "success" ||
-                    dataPayload?.status === "completed" ||
-                    dataPayload?.status === "success" ||
+                    dataPayload?.orderStatus === "completed" ||
+                    dataPayload?.orderStatus === "delivered" ||
                     dataPayload?.deliveryStatus === "completed" ||
-                    dataPayload?.orderStatus === "completed"
+                    dataPayload?.deliveryStatus === "delivered" ||
+                    responseData?.orderStatus === "completed" ||
+                    responseData?.deliveryStatus === "completed"
                   ) {
                     returnedStatus = "delivered";
+                  } else {
+                    returnedStatus = "processing";
                   }
 
                   const successResult: DataMartResult = {
