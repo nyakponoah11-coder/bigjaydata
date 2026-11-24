@@ -253,13 +253,13 @@ export function mapNetworkToDataMart(network: string): string {
   const net = (network || "").toLowerCase().trim();
   if (net === "mtn" || net === "yello") return "YELLO";
   if (net === "telecel" || net === "vodafone") return "TELECEL";
-  if (net === "at" || net === "airteltigo" || net === "at_premium") return "AT_PREMIUM";
+  if (net === "at" || net === "airteltigo" || net === "at_premium") return "AT";
   return net.toUpperCase();
 }
 
 /**
  * Returns the exact network code required by DataMart Developer API:
- * "YELLO" (MTN), "TELECEL", or "AT_PREMIUM" (AirtelTigo)
+ * "YELLO" (MTN), "TELECEL", or "AT" (AirtelTigo)
  */
 export function getNetworkCandidates(network: string): string[] {
   const net = (network || "").toLowerCase().trim();
@@ -270,7 +270,7 @@ export function getNetworkCandidates(network: string): string[] {
     return ["TELECEL", "VODAFONE"];
   }
   if (net === "at" || net === "airteltigo" || net === "at_premium") {
-    return ["AT_PREMIUM", "AT"];
+    return ["AT", "AT_PREMIUM"];
   }
   const primary = mapNetworkToDataMart(network);
   return [primary];
@@ -414,47 +414,58 @@ export async function sendDataMartDelivery(params: DataMartDeliveryParams): Prom
         for (const purchaseUrl of candidateUrls) {
           for (const net of networkCandidates) {
             // Build progressive payload variations for this URL and network.
-            // RULE: Standard DataMart developer payload has 6 clean fields with string capacity & bmgh- reference.
-            const payloadVariations: Array<{ name: string; body: Record<string, any> }> = [
-              // 1. Standard Developer Payload (String capacity, exact 6 fields matching DataMart spec)
+            // RULE: Match exact Data-Ease payload spec (clean 5 fields without unneeded extra attributes)
+            const cleanCapStr = String(capacityGb).replace(/[^\d.]/g, "") || "1";
+            const payloadVariations: Array<{ name: string; body: Record<string, any>; withSecret?: boolean }> = [
+              // 1. Exact Data-Ease Production Spec (5 fields, X-API-Key only, no extra attributes)
               {
-                name: "standard_spec_payload",
+                name: "data_ease_exact_spec",
                 body: {
                   phoneNumber: formattedPhone,
-                  phone: formattedPhone,
                   network: net,
-                  capacity: String(capacityGb).replace(/[^\d.]/g, "") || "1",
+                  capacity: cleanCapStr,
                   gateway: "wallet",
-                  delivery: "fast",
                   ref: orderRef,
                 },
+                withSecret: false,
               },
-              // 2. Numeric capacity fallback
+              // 2. Numeric capacity fallback (some DataMart accounts accept numeric capacity)
               {
                 name: "numeric_cap_fallback",
                 body: {
                   phoneNumber: formattedPhone,
-                  phone: formattedPhone,
                   network: net,
                   capacity: validNumCap,
                   gateway: "wallet",
-                  delivery: "fast",
                   ref: orderRef,
                 },
+                withSecret: false,
               },
+              // 3. Fallback with X-API-Secret if account configured a secret
+              ...(apiSecret ? [
+                {
+                  name: "data_ease_with_secret",
+                  body: {
+                    phoneNumber: formattedPhone,
+                    network: net,
+                    capacity: cleanCapStr,
+                    gateway: "wallet",
+                    ref: orderRef,
+                  },
+                  withSecret: true,
+                }
+              ] : []),
             ];
 
             for (const variation of payloadVariations) {
               const baseHeaders: Record<string, string> = {
+                "X-API-Key": currentKey,
                 "Content-Type": "application/json",
                 "Accept": "application/json",
-                "x-api-key": currentKey,
-                "X-Idempotency-Key": orderRef,
-                "User-Agent": "BundleMartGh/1.0",
               };
 
-              if (apiSecret) {
-                baseHeaders["x-api-secret"] = apiSecret;
+              if (variation.withSecret && apiSecret) {
+                baseHeaders["X-API-Secret"] = apiSecret;
               }
 
               try {
